@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<script>
+// Apply the chosen theme before anything is drawn, so the page never flashes the other one.
+try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<title>Photo Frame</title>
+<meta name="theme-color" content="#0f766e">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='8' width='56' height='48' rx='10' fill='%230f766e'/%3E%3Crect x='11' y='15' width='42' height='34' rx='5' fill='%23e9fbf7'/%3E%3Ccircle cx='24' cy='27' r='5' fill='%23f5b942'/%3E%3Cpath d='M11 44l12-11 9 8 8-10 13 13v0a5 5 0 0 1-5 5H16a5 5 0 0 1-5-5z' fill='%232dd4bf'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f4f2ee; --panel: #ffffff; --raised: #faf9f6; --ink: #1c1e22; --muted: #666b73; --line: #e2dfd8;
+  --accent: #0f766e; --accent-ink: #ffffff; --accent-soft: #d9f0ec; --danger: #b42318; --danger-soft: #fde8e5; --ok: #15803d;
+  --tile: #e7e4dd; --shadow: 0 1px 2px rgba(20, 20, 20, .06), 0 6px 20px rgba(20, 20, 20, .05);
+  --radius: 14px; --gap: 10px; --pad: clamp(14px, 3vw, 28px); color-scheme: light;
+}
+/* Dark: when the system asks for it and the viewer has not chosen light, or when they chose dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131518; --panel: #1b1e22; --raised: #22262b; --ink: #eceef1; --muted: #979da6; --line: #2c3036;
+    --accent: #2dd4bf; --accent-ink: #062b28; --accent-soft: #12332f; --danger: #f97066; --danger-soft: #3a1c1a; --ok: #4ade80;
+    --tile: #262a2f; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+    --bg: #131518; --panel: #1b1e22; --raised: #22262b; --ink: #eceef1; --muted: #979da6; --line: #2c3036;
+    --accent: #2dd4bf; --accent-ink: #062b28; --accent-soft: #12332f; --danger: #f97066; --danger-soft: #3a1c1a; --ok: #4ade80;
+    --tile: #262a2f; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+h1, h2, h3, p { margin: 0; }
+button, select, textarea, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- top bar ------------------------------------------------------------- */
+header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); padding: 10px var(--pad) 0; padding-top: max(10px, env(safe-area-inset-top)); }
+.top { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+h1 { font-size: 18px; letter-spacing: -0.01em; white-space: nowrap; }
+.status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; min-width: 0; flex: 1; }
+.status span:last-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; transition: background .3s; }
+.dot.on { background: var(--ok); } .dot.off { background: var(--danger); }
+nav { display: flex; gap: 2px; margin: 8px calc(var(--pad) * -1) 0; padding: 0 var(--pad); overflow-x: auto; scrollbar-width: none; }
+nav::-webkit-scrollbar { display: none; }
+nav button { flex: none; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px 10px; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
+nav button:hover { color: var(--ink); }
+nav button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+nav .count { font-weight: 400; color: var(--muted); }
+
+/* --- building blocks ------------------------------------------------------ */
+main { max-width: 1440px; margin: 0 auto; padding: var(--pad); padding-bottom: calc(var(--pad) + 60px); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, opacity .15s; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover:not(:disabled) { background: var(--danger-soft); border-color: transparent; }
+.btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+select.small { min-height: 30px; font-size: 13px; padding: 0 6px; }
+select, textarea, input[type=number] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; min-height: 36px; }
+textarea { width: 100%; min-height: 84px; padding: 9px 11px; resize: vertical; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+input[type=number] { width: 110px; }
+input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex: none; margin-top: 3px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 14px; max-width: 78ch; margin-bottom: 14px; }
+.hidden { display: none !important; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: clamp(14px, 2.4vw, 22px); box-shadow: var(--shadow); }
+.card h2 { font-size: 16px; margin-bottom: 4px; }
+.card.narrow { max-width: 780px; }
+label.row { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; cursor: pointer; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { border: 1px solid var(--line); background: none; color: var(--muted); padding: 0 12px; min-height: 32px; border-radius: 999px; cursor: pointer; font-size: 14px; transition: background .15s, color .15s; }
+.chips button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.progress { height: 8px; background: var(--tile); border-radius: 999px; overflow: hidden; margin: 14px 0 6px; }
+.progress div { height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .4s ease; }
+pre.log { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: 260px; overflow: auto; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; margin: 12px 0 0; }
+
+/* --- photos ---------------------------------------------------------------- */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(104px, 22vw, 176px), 1fr)); gap: var(--gap); }
+.tile { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: var(--tile); cursor: zoom-in; isolation: isolate; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .25s ease, transform .25s ease; }
+.tile img.ready { opacity: 1; }
+@media (hover: hover) { .tile:hover img { transform: scale(1.03); } }
+.tile.sel { outline: 3px solid var(--accent); outline-offset: -3px; }
+.pick { position: absolute; top: 6px; left: 6px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, .35); color: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; z-index: 1; }
+.tile.sel .pick { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tag { position: absolute; left: 6px; bottom: 6px; font-size: 11px; line-height: 1.5; padding: 1px 8px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; z-index: 1; pointer-events: none; }
+.month { grid-column: 1 / -1; font-size: 15px; font-weight: 600; margin-top: 10px; }
+.month:first-child { margin-top: 0; }
+.toolbar { position: sticky; top: var(--header, 96px); z-index: 5; background: var(--bg); padding: 10px 0; margin: -10px 0 4px; }
+.now { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; padding: 10px; }
+.now img { width: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 9px; background: var(--tile); flex: none; }
+.now .grow { flex: 1; min-width: 0; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.banner { margin-bottom: 16px; padding: 12px 14px; }
+.banner .progress { margin: 8px 0 0; }
+
+/* --- duplicates ------------------------------------------------------------- */
+.group { margin-bottom: 12px; padding: 12px; }
+.group .bar { margin-bottom: 10px; }
+.group .grid { grid-template-columns: repeat(auto-fill, minmax(clamp(96px, 20vw, 150px), 1fr)); }
+.group .tile { opacity: .7; transition: opacity .15s, outline-color .15s; outline: 4px solid transparent; outline-offset: -4px; }
+.group .tile:hover, .group .tile.keep { opacity: 1; }
+.group .tile.keep { outline-color: var(--accent); }
+.group .tag.state { top: 6px; bottom: auto; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.group .tag.also { top: 6px; bottom: auto; }
+details.hint summary { cursor: pointer; color: var(--accent); width: fit-content; }
+details.hint p { margin-top: 8px; }
+.swap { position: absolute; right: 6px; bottom: 6px; z-index: 1; border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; background: rgba(0, 0, 0, .72); color: #fff; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.tile:hover .swap, .tile:focus-within .swap, .tile.gone .swap { opacity: 1; }
+@media (hover: none) { .swap { opacity: 1; } }
+.group .tile.keep .swap { display: none; }
+.group .note { flex: 1 1 260px; }
+.note { font-size: 13px; color: var(--muted); }
+.tile.gone { cursor: default; }
+.noimg { display: flex; height: 100%; align-items: center; justify-content: center; padding: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+
+/* --- status ----------------------------------------------------------------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.card dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; margin: 12px 0 0; }
+.card dt { color: var(--muted); }
+.card dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.meter { height: 10px; background: var(--tile); border-radius: 999px; overflow: hidden; margin-top: 12px; display: flex; }
+.meter span { height: 100%; }
+.meter .ours { background: var(--accent); } .meter .other { background: var(--muted); opacity: .5; }
+.good { color: var(--ok); } .bad { color: var(--danger); }
+.card a { color: var(--accent); }
+
+/* --- overlays ---------------------------------------------------------------- */
+.drop { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 88%, transparent); color: var(--accent-ink); font-size: clamp(18px, 4vw, 26px); font-weight: 600; pointer-events: none; text-align: center; padding: 24px; }
+.drop.on { display: flex; }
+.lightbox { position: fixed; inset: 0; z-index: 30; background: rgba(8, 9, 10, .94); display: none; flex-direction: column; }
+.lightbox.open { display: flex; }
+.stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: clamp(8px, 2vw, 20px); touch-action: pan-y; }
+.stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 10px; padding: 10px 14px max(14px, env(safe-area-inset-bottom)); color: #d6d8dc; font-size: 14px; }
+.controls .info { flex-basis: 100%; text-align: center; min-height: 1.5em; }
+.controls .info b { color: #fff; }
+.lightbox .btn { background: #24272c; border-color: #3a3e45; color: #eceef1; }
+.lightbox .btn.primary { background: #2dd4bf; color: #062b28; border-color: transparent; }
+.lightbox .btn.danger { color: #f97066; }
+.toast { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; box-shadow: var(--shadow); z-index: 50; max-width: min(92vw, 560px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 640px) {
+  .now img { width: 84px; }
+  .now .btn { padding: 0 10px; }
+  .desktop-only { display: none; }
+  .toolbar { position: static; }
+  .toolbar select { flex: 1 1 140px; min-width: 0; }
+  .toolbar .pager { margin-left: auto; }
+  .toolbar .spacer { display: none; }
+  .group .bar .spacer { display: none; }
+  .group .bar .btn { flex: 1 1 auto; }
+}
+.pager { display: flex; align-items: center; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header id="header">
+  <div class="top">
+    <h1>Photo Frame</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+    <button class="btn small hidden" id="lockBtn" title="A PIN is needed to make changes">Unlock</button>
+    <select id="theme" class="small" title="Colour theme" aria-label="Colour theme">
+      <option value="system">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </div>
+  <nav>
+    <button data-tab="photos" class="active">Photos</button>
+    <button data-tab="duplicates">Duplicates</button>
+    <button data-tab="sync">Google Photos sync</button>
+    <button data-tab="deleted">Bin <span class="count" id="exCount"></span></button>
+    <button data-tab="status">Status</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-photos">
+    <div class="card banner hidden" id="adding"><span id="addText"></span><div class="progress"><div id="addFill"></div></div></div>
+    <div class="card now hidden" id="now">
+      <img id="nowImg" alt="Photo on the frame right now">
+      <div class="grow"><div class="label">Showing on the frame now</div><div id="nowText" class="muted"></div></div>
+      <button class="btn danger" id="nowDelete">Delete</button>
+    </div>
+    <div class="bar">
+      <button class="btn primary" id="addBtn">Add photos…</button>
+      <input type="file" id="addInput" accept="image/*,.heic,.heif" multiple class="hidden">
+      <span class="muted desktop-only">or drop them anywhere on this page</span>
+      <span class="spacer"></span>
+      <button class="btn" id="reloadShow" title="Closes the slideshow on the frame so it restarts with the current photos">Refresh frame slideshow</button>
+    </div>
+    <div class="bar toolbar">
+      <div class="chips" id="chips"></div>
+      <select id="sort" title="Order">
+        <option value="newest">Date taken, newest first</option>
+        <option value="oldest">Date taken, oldest first</option>
+        <option value="added">Recently added to the frame</option>
+      </select>
+      <select id="jump" title="Jump to a month"></select>
+      <span class="spacer"></span>
+      <span id="selInfo" class="hidden"><b id="selCount"></b> selected</span>
+      <button class="btn hidden" id="selClear">Clear</button>
+      <button class="btn danger hidden" id="selDelete">Delete selected</button>
+      <div class="pager">
+        <button class="btn" id="prev" aria-label="Previous page">‹</button>
+        <span id="pageInfo" class="muted"></span>
+        <button class="btn" id="next" aria-label="Next page">›</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="muted" id="empty"></p>
+  </section>
+
+  <section id="tab-duplicates" class="hidden">
+    <div class="bar">
+      <select id="dupLevel" title="How alike photos must be">
+        <option value="0">Look identical</option>
+        <option value="3">Very similar</option>
+        <option value="8">Similar (bursts and retakes)</option>
+      </select>
+      <button class="btn primary" id="dupFind">Find</button>
+      <span id="dupInfo" class="muted"></span>
+      <span class="spacer"></span>
+      <button class="btn danger hidden" id="dupDeleteAll">Delete the others in every group</button>
+    </div>
+    <details class="hint"><summary>How suggestions work</summary><p>Each group keeps one photo, outlined and marked <b>Keeping</b>. It starts as the suggestion: the sharpest, best exposed shot. The frame also looks at faces, slowly, taking the groups on your screen first; once a group has been looked at, its suggestion favours open eyes and smiles, with sharpness as the tie-breaker. Tap a photo to see it large and compare, and choose "Keep this one" to change the choice. Nothing is deleted until you press a Delete button and confirm. Groups are by appearance, not identical files, and the suggestions come from small automatic models that can be wrong.</p></details>
+    <div id="dupGroups"></div>
+  </section>
+
+  <section id="tab-sync" class="hidden">
+    <div class="card narrow">
+      <h2>Sync a Google Photos album to the frame</h2>
+      <p class="muted">One shared-album link per line (in Google Photos: Share, then Create link). The frame downloads the photos itself, and never downloads a photo it already has.</p>
+      <label class="row"><textarea id="sources" placeholder="https://photos.app.goo.gl/…" spellcheck="false"></textarea></label>
+      <label class="row"><input type="checkbox" id="optDelete"> <span>Also remove synced photos that are no longer in these albums</span></label>
+      <label class="row"><input type="checkbox" id="optRefresh" checked> <span>Refresh the frame slideshow when done</span></label>
+      <label class="row" style="align-items:center; flex-wrap:wrap"><span>Download at most</span> <input type="number" id="optLimit" min="1" placeholder="no limit"> <span>new photos this run</span></label>
+      <div class="bar" style="margin: 16px 0 0"><button class="btn primary" id="syncStart">Start sync</button></div>
+      <label class="row" style="margin-top:16px"><input type="checkbox" id="optAuto"> <span>Sync these albums automatically once a day</span></label>
+      <div id="syncLive" class="hidden">
+        <div class="progress"><div id="progFill"></div></div>
+        <div id="progText" class="muted"></div>
+        <pre class="log hidden" id="log"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-deleted" class="hidden">
+    <div class="card">
+      <h2>Bin</h2>
+      <p class="muted" id="binNote"></p>
+      <div class="bar" style="margin: 14px 0">
+        <button class="btn" id="restoreAll">Restore all</button>
+        <button class="btn danger" id="emptyBin">Empty the bin now</button>
+        <span class="spacer"></span>
+        <span class="muted" id="goneInfo"></span>
+        <button class="btn hidden" id="forgetGone">Let them sync again</button>
+      </div>
+      <p class="muted" id="exEmpty"></p>
+      <div class="grid" id="exList"></div>
+      <div class="bar" style="margin: 14px 0 0; justify-content: center"><button class="btn hidden" id="exMore"></button></div>
+    </div>
+  </section>
+
+  <section id="tab-status" class="hidden">
+    <div class="cards" id="statusCards"></div>
+  </section>
+</main>
+
+<div class="drop" id="drop">Drop photos to add them to the frame</div>
+<div class="lightbox" id="lightbox" role="dialog" aria-label="Photo viewer">
+  <div class="stage" id="stage"><img id="lbImg" alt=""></div>
+  <div class="controls">
+    <div class="info" id="lbInfo"></div>
+    <button class="btn" id="lbPrev" aria-label="Previous">‹</button>
+    <button class="btn" id="lbNext" aria-label="Next">›</button>
+    <button class="btn primary hidden" id="lbKeep">Keep this one</button>
+    <button class="btn danger" id="lbDelete">Delete from frame</button>
+    <button class="btn" id="lbClose">Close</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+const PAGE_SIZE = 60, MAX_SIDE = 1920, BIN_PAGE = 60, TABS = ["photos", "duplicates", "sync", "deleted", "status"];
+const KINDS = { all: "All", synced: "Synced", added: "Added here", phone: "From phone app" };
+const $ = id => document.getElementById(id);
+const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
+const saved = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
+
+// What the page knows. Photos are [path, kind, taken, added].
+let photos = [], filter = "all", page = 0, sortBy = saved.get("frameSort") || "newest", selected = new Set();
+let bin = { names: [], at: [], gone: 0, days: 30, shown: BIN_PAGE };
+let token = saved.get("frameToken"), pinSet = false, unlocked = true;
+let lb = -1, viewer = null, nowRel = null, adding = false, needFull = false, jobWasRunning = false;
+let dupGroups = [], dupTotals = [0, 0], listKey = "", listCache = [];
+
+// --- drawing only what changed --------------------------------------------------------
+// The page polls the frame every few seconds. Redrawing a section whose data is the same
+// makes images reload and the page flicker, so every section remembers what it last drew.
+const drawn = new Map();
+const changed = (section, data) => { const key = JSON.stringify(data); if (drawn.get(section) === key) return false; drawn.set(section, key); return true; };
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+const show = (node, visible) => node.classList.toggle("hidden", !visible);
+function image(src) { const img = el("img"); img.loading = "lazy"; img.decoding = "async"; img.alt = ""; img.onload = () => img.classList.add("ready"); img.src = src; return img; }
+function toast(message) { const t = $("toast"); t.textContent = message; t.classList.add("on"); clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("on"), 5000); }
+
+const fmtBytes = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? Math.round(n / 1e6) + " MB" : Math.round(n / 1e3) + " kB";
+const fmtWhen = secs => new Date(secs * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const monthOf = secs => new Date(secs * 1000).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+const full = rel => `/file?p=${encodeURIComponent(rel)}`, thumb = rel => `/thumb?p=${encodeURIComponent(rel)}`;
+const kindOf = rel => (photos.find(p => p[0] === rel) || [])[1];
+
+// --- talking to the frame ----------------------------------------------------------------
+function authHeaders(extra) { const h = Object.assign({ "X-Frame-App": "1" }, extra); if (token) h["X-Frame-Token"] = token; return h; }
+async function api(path, body, retried) {
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers: authHeaders({ "Content-Type": "application/json" }), body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json();
+  if (r.status === 401 && !retried && await unlock()) return api(path, body, true);
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function setToken(value) { token = value; saved.set("frameToken", value); unlocked = true; show($("lockBtn"), false); }
+// Ask for the PIN and exchange it for a session. Returns whether changes are now allowed.
+async function unlock() {
+  const pin = prompt("Enter the PIN to make changes on the frame:");
+  if (!pin) return false;
+  const r = await fetch("/api/unlock", { method: "POST", headers: { "X-Frame-App": "1", "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+  const j = await r.json();
+  if (!r.ok) { toast(j.error || "Could not unlock"); return false; }
+  setToken(j.token); toast("Unlocked on this browser.");
+  return true;
+}
+
+// --- the photo list ------------------------------------------------------------------------
+// The photos in view, filtered and ordered; recomputed only when something changed.
+function shown() {
+  const key = `${filter}|${sortBy}|${photos.length}|${photos.length ? photos[0][0] : ""}`;
+  if (key !== listKey) {
+    listCache = filter === "all" ? photos.slice() : photos.filter(p => p[1] === filter);
+    if (sortBy === "newest") listCache.sort((a, b) => b[2] - a[2]);
+    else if (sortBy === "oldest") listCache.sort((a, b) => a[2] - b[2]);
+    else listCache.sort((a, b) => b[3] - a[3]);
+    listKey = key;
+  }
+  return listCache;
+}
+function makeTile(rel, kind, taken) {
+  const tile = el("div", "tile" + (selected.has(rel) ? " sel" : ""));
+  tile.title = fmtWhen(taken);
+  tile.append(image(thumb(rel)));
+  if (kind !== "synced") tile.append(el("span", "tag", kind === "phone" ? "Phone app" : "Added here"));
+  return tile;
+}
+function toggle(rel, tile) { selected.has(rel) ? selected.delete(rel) : selected.add(rel); tile.classList.toggle("sel"); renderSelection(); }
+function renderSelection() {
+  const n = selected.size;
+  for (const id of ["selInfo", "selClear", "selDelete"]) show($(id), n > 0);
+  setText($("selCount"), String(n));
+}
+function renderChips() {
+  const counts = { all: photos.length };
+  for (const p of photos) counts[p[1]] = (counts[p[1]] || 0) + 1;
+  if (!changed("chips", [counts, filter])) return;
+  const chips = $("chips"); chips.textContent = "";
+  for (const [kind, label] of Object.entries(KINDS)) {
+    if (kind !== "all" && !counts[kind]) continue;
+    const b = el("button", kind === filter ? "active" : "", `${label} ${(counts[kind] || 0).toLocaleString()}`);
+    b.onclick = () => { filter = kind; page = 0; render(); };
+    chips.append(b);
+  }
+}
+function renderJump(list) {
+  const jump = $("jump");
+  show(jump, sortBy !== "added" && list.length > 0);
+  if (sortBy === "added" || !changed("jump", listKey)) return;
+  jump.textContent = "";
+  jump.append(new Option("Jump to…", ""));
+  let last = null, option = null, count = 0;
+  list.forEach((p, i) => {
+    const month = monthOf(p[2]);
+    if (month !== last) { if (option) option.textContent += ` (${count})`; option = new Option(month, i); jump.append(option); last = month; count = 0; }
+    count++;
+  });
+  if (option) option.textContent += ` (${count})`;
+}
+function render() {
+  renderChips();
+  const list = shown(), pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  page = Math.min(page, pages - 1);
+  renderJump(list);
+  setText($("pageInfo"), `${page + 1} / ${pages}`);
+  $("prev").disabled = page === 0; $("next").disabled = page >= pages - 1;
+  setText($("empty"), photos.length ? "" : "There are no photos on the frame yet. Add some with the button above.");
+  const visible = list.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  if (changed("grid", [visible.map(p => p[0]), sortBy])) {
+    const grid = $("grid"); grid.textContent = "";
+    let month = null;
+    visible.forEach(([rel, kind, taken], i) => {
+      if (sortBy !== "added" && monthOf(taken) !== month) { month = monthOf(taken); grid.append(el("h2", "month", month)); }
+      const tile = makeTile(rel, kind, taken), pick = el("button", "pick", "✓");
+      pick.title = "Select"; pick.onclick = e => { e.stopPropagation(); toggle(rel, tile); };
+      tile.onclick = () => openLightbox(page * PAGE_SIZE + i);
+      tile.append(pick); grid.append(tile);
+    });
+  }
+  renderSelection();
+}
+
+// --- what the frame is showing, the bin, the sync job ------------------------------------------
+function renderNow(now) {
+  show($("now"), !!now);
+  nowRel = now ? now.rel : null;
+  if (!now || !changed("now", now)) return;
+  const fresh = image(thumb(now.rel)); fresh.id = "nowImg"; fresh.alt = "Photo on the frame right now"; fresh.loading = "eager"; fresh.classList.add("ready");
+  $("nowImg").replaceWith(fresh);
+  setText($("nowText"), { synced: "Synced photo", added: "Added by hand", phone: "Sent from the phone app" }[now.kind]);
+}
+function renderBin() {
+  setText($("exCount"), bin.names.length ? `(${bin.names.length.toLocaleString()})` : "");
+  $("restoreAll").disabled = $("emptyBin").disabled = !bin.names.length;
+  setText($("binNote"), `Synced photos you delete are kept off the frame and stay here for ${bin.days} days, in case you change your mind. Restore one to let the next sync put it back. After ${bin.days} days, or when you empty the bin, a photo leaves this list for good and still stays off the frame.`);
+  setText($("goneInfo"), bin.gone ? `${bin.gone.toLocaleString()} deleted for good` : "");
+  show($("forgetGone"), bin.gone > 0);
+  setText($("exEmpty"), bin.names.length ? "" : "The bin is empty.");
+  const visible = bin.names.slice(0, bin.shown);
+  show($("exMore"), bin.names.length > visible.length);
+  setText($("exMore"), `Show ${Math.min(BIN_PAGE, bin.names.length - visible.length)} more of ${bin.names.length.toLocaleString()}`);
+  if (!changed("bin", visible)) return;
+  const list = $("exList"); list.textContent = "";
+  visible.forEach((name, i) => {
+    const left = Math.max(0, Math.ceil(bin.days - (Date.now() / 1000 - bin.at[i]) / 86400));
+    const tile = el("div", "tile gone"); tile.title = `Deleted ${fmtWhen(bin.at[i])} · ${plural(left, "day")} left`;
+    const img = image(thumb("frame-sync/" + name));
+    // Photos deleted before thumbnails were kept have none until a sync fetches one.
+    img.onerror = () => img.replaceWith(el("span", "noimg", "No preview yet. It appears after the next sync."));
+    const restoreBtn = el("button", "swap", "Restore"); restoreBtn.onclick = () => restore([name]);
+    tile.append(img, restoreBtn); list.append(tile);
+  });
+}
+function eta(p) {
+  const left = Math.round((p.total - p.done) / p.rate);
+  if (!left) return "";
+  return " · about " + (left >= 3600 ? `${Math.floor(left / 3600)} h ${Math.round(left % 3600 / 60)} min` : left >= 60 ? `${Math.round(left / 60)} min` : `${left} s`) + " left";
+}
+function renderJob(job) {
+  if (jobWasRunning && !job.running) { load(true); toast(job.result && job.result.error ? "Sync failed" : "Sync finished"); }
+  jobWasRunning = job.running;
+  if (!changed("job", job)) return;
+  $("syncStart").disabled = job.running;
+  setText($("syncStart"), job.running ? "Sync running…" : "Start sync");
+  show($("syncLive"), job.running || job.log.length > 0);
+  const p = job.progress;
+  $("progFill").style.width = p && p.total ? `${Math.round(100 * p.done / p.total)}%` : (job.result && job.result.ok ? "100%" : "0%");
+  let text = p ? `${p.done.toLocaleString()} of ${p.total.toLocaleString()}${p.rate ? ` · ${p.rate}/s${eta(p)}` : ""} · ${p.detail}` : (job.running ? "Preparing…" : "");
+  if (!job.running && job.result) text = job.result.error ? `Failed: ${job.result.error}` : "Finished.";
+  setText($("progText"), text);
+  const log = $("log"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  show(log, job.log.length > 0);
+  setText(log, job.log.join("\n"));
+  if (atEnd) log.scrollTop = log.scrollHeight;
+}
+
+async function load(wantFull) {
+  let s;
+  try { s = await api("/api/state" + (wantFull ? "?full=1" : "")); }
+  catch (e) { $("dot").className = "dot off"; setText($("status"), "The frame is not responding"); needFull = true; return; }
+  $("dot").className = "dot on";
+  bin.names = s.excluded; bin.at = s.deleted_at; bin.gone = s.deleted_for_good; bin.days = s.bin_days;
+  renderBin(); renderJob(s.job); renderNow(s.now);
+  if (document.activeElement !== $("optAuto")) $("optAuto").checked = s.auto;
+  pinSet = s.pin; unlocked = s.unlocked; show($("lockBtn"), pinSet && !unlocked);
+  if (!wantFull) return;
+  needFull = false;
+  photos = s.photos; listKey = "";
+  const have = new Set(photos.map(p => p[0]));
+  selected = new Set([...selected].filter(rel => have.has(rel)));
+  setText($("status"), `${photos.length.toLocaleString()} photos` + (s.disk ? ` · ${fmtBytes(s.disk[1])} free` : ""));
+  if (document.activeElement !== $("sources") && changed("sources", s.sources)) $("sources").value = s.sources.join("\n");
+  render();
+}
+
+// --- changing things -----------------------------------------------------------------------------
+async function del(rels) {
+  const phone = rels.filter(rel => kindOf(rel) === "phone").length;
+  let question = rels.length === 1 ? "Delete this photo from the frame?" : `Delete ${rels.length.toLocaleString()} photos from the frame?`;
+  if (phone) question += `\n\n${phone === rels.length ? "These were" : phone + " of them were"} sent from the phone app. They will be deleted from the frame only, and will still be listed in the phone app.`;
+  if (!confirm(question)) return false;
+  try { await api("/api/delete", { paths: rels }); } catch (e) { toast(e.message); return false; }
+  const gone = new Set(rels);
+  photos = photos.filter(p => !gone.has(p[0])); rels.forEach(rel => selected.delete(rel)); listKey = "";
+  setText($("status"), $("status").textContent.replace(/^[\d,.\s]+ photos/, `${photos.length.toLocaleString()} photos`));
+  render(); load(false);
+  toast(rels.length === 1 ? "Deleted from the frame." : `Deleted ${rels.length.toLocaleString()} photos from the frame.`);
+  return true;
+}
+async function restore(names) {
+  try { await api("/api/restore", { names }); } catch (e) { return toast(e.message); }
+  await load(false); toast("Restored. Run a sync to put them back on the frame.");
+}
+// Resize to what the frame can show before uploading: far less to send, and no work for the frame.
+async function shrink(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = el("canvas");
+    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    return await new Promise((ok, fail) => canvas.toBlob(b => b ? ok(b) : fail(new Error("encode failed")), "image/jpeg", 0.88));
+  } catch (e) { return file; }  // this browser cannot read it; let the frame try
+}
+async function addFiles(files) {
+  files = [...files].filter(f => f.size);
+  if (!files.length) return;
+  if (adding) return toast("Still adding the previous photos.");
+  if (pinSet && !unlocked && !(await unlock())) return;
+  adding = true; show($("adding"), true); showTab("photos");
+  let done = 0; const failed = [];
+  const step = () => { setText($("addText"), `Adding photos to the frame: ${done} of ${files.length}`); $("addFill").style.width = `${Math.round(100 * done / files.length)}%`; };
+  step();
+  const queue = files.slice();
+  const worker = async () => {
+    for (let f; (f = queue.shift()); ) {
+      try {
+        const headers = authHeaders({ "X-Filename": encodeURIComponent(f.name), "X-Taken": Math.floor(f.lastModified / 1000) });
+        const r = await fetch("/api/add", { method: "POST", headers, body: await shrink(f) });
+        if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+      } catch (e) { failed.push(e.message); }
+      done++; step();
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  adding = false; show($("adding"), false);
+  filter = "all"; sortBy = "added"; $("sort").value = sortBy; page = 0; await load(true);
+  const ok = files.length - failed.length;
+  toast(failed.length ? `Added ${ok}, ${failed.length} failed: ${failed[0]}` : `Added ${plural(ok, "photo")} to the frame.`);
+}
+
+// --- the viewer: the photo list, or the photos of one duplicate group -------------------------------
+const lbRels = () => viewer ? viewer.rels : shown().map(p => p[0]);
+function describe(g, i) {
+  const q = g.quality[i], p = g.people[i];
+  let text = q ? `Sharpness ${q[0].toLocaleString()} · ${(q[1] / 10).toFixed(1)}% blown out or black` : "Not measured yet";
+  if (p) text = (p[0] ? `${plural(p[0], "face")} · eyes open ${p[1]}% · smiling ${p[2]}% · ` : "No faces found · ") + text;
+  if (i === g.suggested) text += " · suggested";
+  return text;
+}
+function openLightbox(i) {
+  const rels = lbRels(); lb = i;
+  $("lbImg").src = full(rels[i]);
+  const info = $("lbInfo"); info.textContent = `${i + 1} / ${rels.length}`;
+  show($("lbKeep"), !!viewer); show($("lbDelete"), !viewer);
+  if (viewer) {
+    const keeping = i === viewer.keep;
+    info.textContent += ` · ${describe(viewer, i)}`;
+    if (keeping) info.append(el("b", "", " · Keeping"));
+    $("lbKeep").disabled = keeping; setText($("lbKeep"), keeping ? "Keeping this one" : "Keep this one");
+  }
+  $("lightbox").classList.add("open");
+}
+function closeLightbox() { lb = -1; viewer = null; $("lightbox").classList.remove("open"); $("lbImg").removeAttribute("src"); }
+function stepLightbox(d) { const n = lbRels().length; if (lb < 0 || !n) return; openLightbox((lb + d + n) % n); }
+
+// --- duplicates ----------------------------------------------------------------------------------------
+// A group is drawn once; afterwards its tiles are reordered and relabelled in place, so photos
+// do not reload when the frame learns more about them.
+function groupNote(g) {
+  if (g.checking) return "checking eyes and smiles, a few seconds per photo…";
+  if (g.suggested < 0) return "still being measured";
+  const basis = g.by === "expressions" ? "suggested for open eyes and smiles, then sharpness"
+    : g.people.some(x => !x) ? "suggested for sharpness so far; faces are checked in the background" : "suggested for sharpness and exposure";
+  return basis + (g.keep !== g.suggested ? " · you changed it" : "");
+}
+function renderGroup(g) {
+  const info = new Map(photos.map(p => [p[0], p]));
+  if (!g.tiles) {
+    g.tiles = new Map();
+    g.label = el("span", "note"); g.check = el("button", "btn small"); g.remove = el("button", "btn small danger");
+    const compare = el("button", "btn small", "View and compare");
+    compare.onclick = () => { viewer = g; openLightbox(g.keep); checkPeople(g); };
+    g.check.onclick = () => checkPeople(g);
+    g.remove.onclick = async () => {
+      if (await del(g.rels.filter((_, i) => i !== g.keep))) { g.el.remove(); dupGroups = dupGroups.filter(x => x !== g); renderDupSummary(); }
+    };
+    const bar = el("div", "bar"); bar.append(g.label, el("span", "spacer"), g.check, compare, g.remove);
+    g.grid = el("div", "grid");
+    g.el.append(bar, g.grid);
+  }
+  setText(g.label, `${g.rels.length} photos · ${fmtWhen(info.get(g.rels[0])[2])} · ${groupNote(g)}`);
+  setText(g.check, g.checking ? "Checking…" : "Check eyes and smiles"); g.check.disabled = !!g.checking;
+  show(g.check, g.people.some(x => !x));
+  setText(g.remove, `Delete the other ${g.rels.length - 1}`);
+  g.rels.forEach((rel, i) => {
+    let tile = g.tiles.get(rel);
+    if (!tile) {
+      const [, kind, taken] = info.get(rel);
+      tile = makeTile(rel, kind, taken);
+      tile.state = el("span", "tag state"); tile.also = el("span", "tag also", "Suggested");
+      tile.swap = el("button", "swap", "Keep this one");
+      tile.append(tile.state, tile.also, tile.swap);
+      g.tiles.set(rel, tile);
+    }
+    const keeping = i === g.keep;
+    tile.title = describe(g, i);
+    tile.classList.toggle("keep", keeping);
+    show(tile.state, keeping); setText(tile.state, "Keeping");
+    show(tile.also, !keeping && i === g.suggested);
+    tile.onclick = () => { viewer = g; openLightbox(g.rels.indexOf(rel)); checkPeople(g); };
+    tile.swap.onclick = e => { e.stopPropagation(); g.keep = g.rels.indexOf(rel); renderGroup(g); };
+    if (g.grid.children[i] !== tile) g.grid.insertBefore(tile, g.grid.children[i] || null);  // moving keeps the image loaded
+  });
+}
+// Apply what the frame now knows about a group, keeping your own choice of photo if you made one.
+function applyRanking(g, found) {
+  if (JSON.stringify([found.photos, found.people, found.quality]) === JSON.stringify([g.rels, g.people, g.quality])) return false;
+  const kept = g.rels[g.keep], choseOwn = g.suggested >= 0 && g.keep !== g.suggested, viewing = viewer === g && lb >= 0 ? g.rels[lb] : null;
+  g.rels = found.photos; g.quality = found.quality; g.people = found.people; g.by = found.by;
+  g.suggested = found.ranked ? 0 : -1;
+  g.keep = choseOwn ? Math.max(0, g.rels.indexOf(kept)) : 0;
+  renderGroup(g);
+  if (viewing) openLightbox(Math.max(0, g.rels.indexOf(viewing)));
+  return true;
+}
+// Have the frame look at the faces in one group right away (a few seconds per photo).
+async function checkPeople(g) {
+  if (g.checking || g.people.every(x => x)) return;
+  g.checking = true; renderGroup(g);
+  let r;
+  try { r = await api("/api/analyse", { paths: g.rels }); } catch (e) { g.checking = false; renderGroup(g); return toast(e.message); }
+  g.checking = false;
+  if (!applyRanking(g, r.group)) renderGroup(g);
+  if (r.failed) toast(`${plural(r.failed, "photo")} could not be checked.`);
+}
+function renderDupSummary(found, pending) {
+  if (found !== undefined) dupTotals = [found, pending];
+  const [total, waiting] = dupTotals;
+  const extra = dupGroups.reduce((n, g) => n + g.rels.length - 1, 0);
+  let text = dupGroups.length ? `${plural(dupGroups.length, "group")}, ${plural(extra, "photo")} you could remove` : "No look-alikes found at this setting.";
+  if (total > dupGroups.length && dupGroups.length) text += ` (the largest of ${total.toLocaleString()})`;
+  if (waiting) text += ` · ${plural(waiting, "photo")} still being measured`;
+  setText($("dupInfo"), text);
+  show($("dupDeleteAll"), dupGroups.length > 0);
+}
+// Tell the frame which groups are on screen so it looks at those faces first, and pick up
+// whatever it has worked out since last time.
+const onScreen = new IntersectionObserver(entries => { for (const e of entries) { const g = dupGroups.find(x => x.el === e.target); if (g) g.visible = e.isIntersecting; } }, { rootMargin: "200px" });
+async function reportWatching() {
+  if ($("tab-duplicates").classList.contains("hidden") || document.hidden) return;
+  const waiting = dupGroups.filter(g => (g.visible || g === viewer) && !g.checking && g.people.some(x => !x));
+  waiting.sort((a, b) => (b === viewer) - (a === viewer));
+  const asked = waiting.slice(0, 12);
+  if (!asked.length) return;
+  let r;
+  try { r = await api("/api/watching", { groups: asked.map(g => g.rels) }); } catch (e) { return; }
+  r.groups.forEach((found, i) => { if (!asked[i].checking) applyRanking(asked[i], found); });
+}
+async function findDuplicates() {
+  setText($("dupInfo"), "Looking…");
+  if (!photos.length) await load(true);
+  let r;
+  try { r = await api("/api/duplicates?d=" + $("dupLevel").value); } catch (e) { setText($("dupInfo"), e.message); return; }
+  const box = $("dupGroups"); box.textContent = ""; onScreen.disconnect();
+  const have = new Set(photos.map(p => p[0]));
+  dupGroups = [];
+  for (const found of r.groups) {
+    // The frame lists the best photo first; leave out any photo deleted since.
+    const kept = found.photos.map((rel, i) => [rel, found.quality[i], found.people[i]]).filter(([rel]) => have.has(rel));
+    if (kept.length < 2) continue;
+    const g = { rels: kept.map(x => x[0]), quality: kept.map(x => x[1]), people: kept.map(x => x[2]), by: found.by, suggested: found.ranked ? 0 : -1, keep: 0, el: el("div", "card group") };
+    renderGroup(g); box.append(g.el); dupGroups.push(g); onScreen.observe(g.el);
+  }
+  renderDupSummary(r.found, r.pending);
+}
+
+// --- status -----------------------------------------------------------------------------------------------
+function card(title, rows, above, below) {
+  const c = el("div", "card"); c.append(el("h2", "", title));
+  if (above) c.append(above);
+  const dl = el("dl");
+  for (const [k, v, cls] of rows) dl.append(el("dt", "", k), el("dd", cls || "", v));
+  c.append(dl); if (below) c.append(below);
+  return c;
+}
+async function loadStatus() {
+  let s;
+  try { s = await api("/api/status"); } catch (e) { return toast(e.message); }
+  if (!changed("status", [Object.assign({}, s, { uptime_secs: Math.floor(s.uptime_secs / 600) }), unlocked])) return;
+  const box = $("statusCards"); box.textContent = "";
+  const src = s.photos.by_source, line = k => `${src[k].count.toLocaleString()} · ${fmtBytes(src[k].bytes)}`;
+  const storage = [["Synced from albums", line("synced")], ["Added by hand", line("added")], ["From the phone app", line("phone")], ["All photos", `${s.photos.count.toLocaleString()} · ${fmtBytes(s.photos.bytes)}`]];
+  let meter = null;
+  if (s.disk) {
+    const [total, free] = s.disk, used = total - free;
+    meter = el("div", "meter");
+    const ours = el("span", "ours"); ours.style.width = `${100 * s.photos.bytes / total}%`; ours.title = "Photos";
+    const other = el("span", "other"); other.style.width = `${100 * Math.max(0, used - s.photos.bytes) / total}%`; other.title = "Everything else on the frame";
+    meter.append(ours, other);
+    storage.push(["Free space", `${fmtBytes(free)} of ${fmtBytes(total)}`, free < 1e9 ? "bad" : ""]);
+  }
+  box.append(card("Storage", storage, meter));
+
+  const y = s.sync, sync = [["Albums", y.albums ? String(y.albums) : "none saved"]];
+  sync.push(["Last sync", y.running ? "running now" : y.last ? fmtWhen(y.last) : "never"]);
+  if (y.last && !y.running) sync.push(["Result", y.ok ? "succeeded" : "failed", y.ok ? "good" : "bad"]);
+  if (y.summary) sync.push(["Details", y.summary]);
+  sync.push(["Daily sync", y.auto ? "on" : "off"]);
+  if (y.next) sync.push(["Next daily sync", y.next * 1000 < Date.now() ? "due now" : fmtWhen(y.next)]);
+  if (y.auto && !y.albums) sync.push(["Note", "Daily sync is on but no album is saved", "bad"]);
+  box.append(card("Google Photos sync", sync));
+
+  const n = s.photos.count, pr = s.prepared, done = v => v >= n ? "all done" : `${v.toLocaleString()} of ${n.toLocaleString()}`;
+  const faces = !pr.face_models ? "face models not installed" : pr.with_look_alikes ? `${Math.min(pr.people, pr.with_look_alikes).toLocaleString()} of ${pr.with_look_alikes.toLocaleString()} photos with look-alikes` : `${pr.people.toLocaleString()} photos`;
+  box.append(card("Preparation", [["Thumbnails", done(pr.thumbnails)], ["Analysed for duplicates", done(pr.fingerprints)], ["Measured for sharpness", done(pr.quality)], ["Checked for eyes and smiles", faces], ["In the bin or deleted for good", String(s.excluded)]]));
+
+  const pinBar = el("div", "bar"); pinBar.style.margin = "14px 0 0";
+  const setBtn = el("button", "btn", s.pin ? "Change PIN" : "Set a PIN");
+  setBtn.onclick = async () => {
+    const pin = prompt("New PIN (4 to 8 digits). It will be needed to add, delete or sync; viewing stays open.");
+    if (!pin) return;
+    if (prompt("Type the new PIN again to confirm:") !== pin) return toast("The two PINs did not match.");
+    try { const r = await api("/api/pin", { pin }); setToken(r.token); pinSet = true; toast("PIN set. This browser stays unlocked."); loadStatus(); } catch (e) { toast(e.message); }
+  };
+  pinBar.append(setBtn);
+  if (s.pin) {
+    const off = el("button", "btn danger", "Remove PIN");
+    off.onclick = async () => {
+      if (!confirm("Remove the PIN? Anyone on your Wi-Fi will be able to make changes.")) return;
+      try { await api("/api/pin", { pin: "" }); saved.set("frameToken", null); token = null; pinSet = false; toast("PIN removed."); loadStatus(); } catch (e) { toast(e.message); }
+    };
+    pinBar.append(off);
+  }
+  box.append(card("Protection", [["PIN", s.pin ? "set" : "not set", s.pin ? "good" : ""], ["This browser", !s.pin ? "no PIN needed" : unlocked ? "unlocked" : "locked"]], null, pinBar));
+
+  const up = s.uptime_secs, upText = up >= 86400 ? `${Math.floor(up / 86400)} d ${Math.floor(up % 86400 / 3600)} h` : up >= 3600 ? `${Math.floor(up / 3600)} h ${Math.floor(up % 3600 / 60)} min` : `${Math.max(1, Math.round(up / 60))} min`;
+  const logLink = el("a", "", "Open the log"); logLink.href = "/logs"; logLink.target = "_blank"; logLink.style.cssText = "display:inline-block;margin-top:14px";
+  box.append(card("Server", [["Version", s.version], ["Running for", upText]], null, logLink));
+}
+
+// --- wiring --------------------------------------------------------------------------------------------------
+function showTab(tab) {
+  if (!TABS.includes(tab)) tab = "photos";
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  for (const t of TABS) show($("tab-" + t), t === tab);
+  if (tab === "status") loadStatus();
+  if (tab === "duplicates" && !$("dupGroups").childElementCount) findDuplicates();
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => { location.hash = b.dataset.tab; });
+window.onhashchange = () => { showTab(location.hash.slice(1)); scrollTo(0, 0); };
+// The sticky toolbar sits just under the header, whatever height that wraps to.
+const fitHeader = () => document.documentElement.style.setProperty("--header", $("header").offsetHeight + "px");
+new ResizeObserver(fitHeader).observe($("header")); fitHeader();
+
+$("theme").value = saved.get("frameTheme") || "system";
+$("theme").onchange = e => {
+  const theme = e.target.value;
+  if (theme === "system") { delete document.documentElement.dataset.theme; saved.set("frameTheme", null); }
+  else { document.documentElement.dataset.theme = theme; saved.set("frameTheme", theme); }
+};
+$("sort").value = sortBy;
+$("sort").onchange = e => { sortBy = e.target.value; saved.set("frameSort", sortBy); page = 0; render(); };
+$("jump").onchange = e => { if (e.target.value !== "") { page = Math.floor(e.target.value / PAGE_SIZE); render(); scrollTo(0, 0); e.target.value = ""; } };
+$("prev").onclick = () => { page--; render(); scrollTo(0, 0); };
+$("next").onclick = () => { page++; render(); scrollTo(0, 0); };
+$("selClear").onclick = () => { selected.clear(); drawn.delete("grid"); render(); };
+$("selDelete").onclick = () => del([...selected]);
+$("nowDelete").onclick = () => { if (nowRel) del([nowRel]); };
+$("addBtn").onclick = () => $("addInput").click();
+$("addInput").onchange = e => { addFiles(e.target.files); e.target.value = ""; };
+$("lockBtn").onclick = () => unlock();
+$("reloadShow").onclick = () => api("/api/refresh-slideshow", {}).then(() => toast("The slideshow will restart with the current photos."), e => toast(e.message));
+$("dupFind").onclick = findDuplicates;
+$("dupLevel").onchange = findDuplicates;
+$("dupDeleteAll").onclick = async () => { const others = dupGroups.flatMap(g => g.rels.filter((_, i) => i !== g.keep)); if (others.length && await del(others)) findDuplicates(); };
+$("exMore").onclick = () => { bin.shown += BIN_PAGE; renderBin(); };
+$("emptyBin").onclick = () => { if (confirm(`Empty the bin? ${plural(bin.names.length, "photo")} will stay off the frame for good and can no longer be restored from here.`)) api("/api/empty-bin", {}).then(r => { toast(`Emptied ${plural(r.emptied, "photo")} from the bin.`); load(false); }, e => toast(e.message)); };
+$("forgetGone").onclick = () => { if (confirm(`Allow the ${plural(bin.gone, "photo")} deleted for good to be downloaded again? The next sync will put them back on the frame.`)) api("/api/forget-emptied", {}).then(() => { toast("They will come back at the next sync."); load(false); }, e => toast(e.message)); };
+$("restoreAll").onclick = () => { if (confirm(`Restore all ${plural(bin.names.length, "photo")} in the bin?`)) api("/api/restore", { names: "all" }).then(() => load(false), e => toast(e.message)); };
+$("sources").onchange = () => api("/api/sources", { sources: $("sources").value.split("\n") }).then(() => toast("Album links saved."), e => toast(e.message));
+$("optAuto").onchange = e => api("/api/auto", { enabled: e.target.checked }).then(r => toast(r.auto ? "The frame will sync these albums once a day." : "Daily sync is off."), err => toast(err.message));
+$("syncStart").onclick = async () => {
+  const limit = parseInt($("optLimit").value, 10);
+  const body = { sources: $("sources").value.split("\n"), delete: $("optDelete").checked, refresh: $("optRefresh").checked, limit: Number.isFinite(limit) ? limit : null };
+  if (body.delete && !confirm("Synced photos that are not in these albums will be removed from the frame. Continue?")) return;
+  try { await api("/api/sync", body); jobWasRunning = true; load(false); } catch (e) { toast(e.message); }
+};
+
+$("lbClose").onclick = closeLightbox; $("lbPrev").onclick = () => stepLightbox(-1); $("lbNext").onclick = () => stepLightbox(1);
+$("lbDelete").onclick = async () => { const i = lb; if (await del([lbRels()[i]])) { const n = lbRels().length; n ? openLightbox(Math.min(i, n - 1)) : closeLightbox(); } };
+$("lbKeep").onclick = () => { if (viewer) { viewer.keep = lb; renderGroup(viewer); openLightbox(lb); } };
+$("stage").onclick = e => { if (e.target === $("stage")) closeLightbox(); };
+document.onkeydown = e => { if (lb < 0) return; if (e.key === "Escape") closeLightbox(); if (e.key === "ArrowLeft") stepLightbox(-1); if (e.key === "ArrowRight") stepLightbox(1); };
+// Swipe left and right in the viewer on touch screens.
+let swipeFrom = null;
+$("stage").addEventListener("touchstart", e => { swipeFrom = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+$("stage").addEventListener("touchend", e => { if (swipeFrom === null) return; const dx = e.changedTouches[0].clientX - swipeFrom; swipeFrom = null; if (Math.abs(dx) > 50) stepLightbox(dx < 0 ? 1 : -1); }, { passive: true });
+
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+window.addEventListener("dragenter", e => { if (hasFiles(e)) { dragDepth++; $("drop").classList.add("on"); } });
+window.addEventListener("dragleave", e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; $("drop").classList.remove("on"); } });
+window.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("drop", e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $("drop").classList.remove("on"); addFiles(e.dataTransfer.files); });
+
+showTab(location.hash.slice(1));
+load(true);
+setInterval(() => { if (!document.hidden) load(needFull); }, 4000);
+setInterval(reportWatching, 5000);
+setInterval(() => { if (!$("tab-status").classList.contains("hidden") && !document.hidden) loadStatus(); }, 10000);
+</script>
+</body>
+</html>

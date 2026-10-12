@@ -1,0 +1,38 @@
+[package]
+name = "frameserver"
+version = "0.1.0"
+edition = "2021"
+description = "Photo manager web app that runs on the Dragon Touch frame itself"
+
+[dependencies]
+axum = "0.8"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+tract-onnx = "0.21"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+lto = true
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints that would add noise without making this small binary better.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
