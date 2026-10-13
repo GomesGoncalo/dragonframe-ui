@@ -1,33 +1,33 @@
 /* How a photo's menu and the reminders look. See extras.js. */
 
 /* --- a photo's menu: the photo on one side, what can be done with it on the other --- */
-.menu { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: rgba(8, 9, 10, .97); }
+.menu { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: var(--overlay); }
 .menu.on { display: block; }
 .menu img { position: absolute; top: 5vmin; left: 4vmin; bottom: 5vmin; width: calc(56% - 6vmin); height: calc(100% - 10vmin); object-fit: contain; }
 .menu .panel { position: absolute; top: 8vmin; right: 4vmin; bottom: 5vmin; left: 58%; text-align: center; }
 .menu h2 { margin: 0 0 3vmin; font-size: 4vmin; font-weight: 300; }
 .menu .press { display: block; width: 62vmin; max-width: 100%; box-sizing: border-box; margin: 0 auto 2vmin; padding: 2.4vmin 3vmin; font-size: 3.2vmin; }
-.menu .acts p { max-width: 62vmin; margin: 1vmin auto 3vmin; font-size: 2.4vmin; line-height: 1.4; color: #a9adb5; }
+.menu .acts p { max-width: 62vmin; margin: 1vmin auto 3vmin; font-size: 2.4vmin; line-height: 1.4; color: var(--muted); }
 .menu .dots { height: 5vmin; font-size: 5vmin; letter-spacing: 1.6vmin; line-height: 1; margin: 0 0 1vmin; }
-.menu .ask p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: #ff8f85; }
+.menu .ask p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: var(--red); }
 .menu .ask { display: none; margin-bottom: 3vmin; }
 .menu.asking .ask { display: block; }
 .menu.asking .acts { display: none; }
 
 /* When to leave for an event, under it in the calendar's lists. */
-.item .leave { color: #7ee0a1; }
+.item .leave { color: var(--green); }
 
 /* --- an event looked at closely: what it is, and the way there step by step --- */
-.detail { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: rgba(8, 9, 10, .97); padding: 6vmin 9vmin 0; box-sizing: border-box; }
+.detail { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: var(--overlay); padding: 6vmin 9vmin 0; box-sizing: border-box; }
 .detail.on { display: block; }
 .detail h2 { margin: 0 0 1vmin; font-size: 6vmin; font-weight: 300; }
-.detail .about { font-size: 3vmin; color: #a9adb5; margin-bottom: 3.4vmin; }
+.detail .about { font-size: 3vmin; color: var(--muted); margin-bottom: 3.4vmin; }
 .detail .ways { margin-bottom: 3vmin; }
 .detail .way { text-align: left; padding: 1.6vmin 2.6vmin; margin: 0 1.2vmin 1.2vmin 0; vertical-align: top; }
 .detail .way .by { font-size: 2.4vmin; opacity: .8; }
 .detail .way .short { font-size: 3vmin; font-weight: 500; }
-.detail .leave { font-size: 7vmin; font-weight: 500; color: #7ee0a1; }
-.detail .more { font-size: 3vmin; color: #c9ccd1; margin: 1vmin 0 3vmin; }
+.detail .leave { font-size: 7vmin; font-weight: 500; color: var(--green); }
+.detail .more { font-size: 3vmin; color: var(--soft); margin: 1vmin 0 3vmin; }
 .detail ol { margin: 0; padding: 0; list-style: none; font-size: 3.2vmin; line-height: 1.6; }
 .detail ol li { position: relative; padding-left: 6vmin; }
 /* A short piece of the line the step has on the map, in its colour. */
@@ -36,7 +36,7 @@
 .detail > .press { position: absolute; bottom: 4vmin; left: 50%; transform: translateX(-50%); margin: 0; font-size: 3.2vmin; padding: 2vmin 6vmin; }
 
 /* The way there on a map, beside what is said about it (under it when the screen is tall). */
-.detail .map { position: absolute; top: 6vmin; right: 5vmin; bottom: 14vmin; width: 46%; display: none; overflow: hidden; border-radius: 2vmin; background: #1c1e22; }
+.detail .map { position: absolute; top: 6vmin; right: 5vmin; bottom: 14vmin; width: 46%; display: none; overflow: hidden; border-radius: 2vmin; background: var(--panel); }
 .detail.mapped .map { display: block; }
 .detail.mapped > h2, .detail.mapped > .about, .detail.mapped > .ways, .detail.mapped > .leave, .detail.mapped > .more, .detail.mapped > ol { max-width: 47%; box-sizing: border-box; }
 .detail .map img { position: absolute; width: 256px; height: 256px; }
@@ -52,14 +52,14 @@
 body[data-tab="pictures"] .reminders { display: block; }
 .reminder {
   position: relative; display: block; width: 100%; box-sizing: border-box; margin-bottom: 1.4vmin; padding: 1.8vmin 10vmin 1.8vmin 3vmin;
-  border-radius: 2.4vmin; background: rgba(250, 250, 250, .96); color: #111; text-align: left;
+  border-radius: 2.4vmin; background: var(--card); color: var(--on-ink); text-align: left;
   box-shadow: 0 .8vmin 3vmin rgba(0, 0, 0, .45);
 }
 .reminder .what { font-size: 3.4vmin; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reminder .when { font-size: 2.3vmin; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reminder .tick {
   position: absolute; top: 50%; right: 2.4vmin; width: 5.6vmin; height: 5.6vmin; margin-top: -2.8vmin; border-radius: 50%;
-  background: #111; color: #fff; font-size: 3.2vmin; line-height: 5.6vmin; text-align: center;
+  background: var(--on-ink); color: var(--ink); font-size: 3.2vmin; line-height: 5.6vmin; text-align: center;
 }
 
 @media (orientation: portrait) {

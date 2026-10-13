@@ -88,8 +88,11 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
     network, so the button opens Android's own list of networks. The frame has no back
     button, so the server brings the screen back one minute after the last touch (after
     15 minutes at the latest).
-  - Frame: the place the weather is for, and the way back to the original screen (two
-    taps).
+  - Frame: the colours (dark, light, or light by day and dark by night), the place the
+    weather is for, and the way back to the original screen (two taps). The colours are
+    kept by each browser for itself, so the frame and a computer showing the same
+    screen can differ. "By day" means while the sun is up where the weather is for, or
+    07:00 to 19:00 when no place is set. Pictures are shown on black either way.
 
 When an event with a time is about to start, a note appears at the top of whichever tab
 is showing, with the chime if one is set.
@@ -130,6 +133,11 @@ within half a minute, and a tick made on the frame shows on the page.
   task again takes the tick back. Ticking needs no PIN: it is what the list is for.
   Points can instead be set to be added at once, without approval, on the management
   page.
+- **Calendar events can be tasks.** A rule on the management page (To do, "Tasks from
+  the calendar") names words to look for in the names of events, whose task such an
+  event is, and its points. On the day of a matching event it is in that person's list
+  with its time, marked "calendar", to be ticked and approved like any other task. The
+  first rule that fits an event is the one that counts.
 - A **reward** costs points. Touching one on the frame and choosing who it is for
   spends their points, after the PIN if one is set. People short of points are shown
   how many they still need.
@@ -255,6 +263,9 @@ Open `http://<frame address>:8080` from a phone or computer on the same Wi-Fi.
   a town; the forecast comes from Open-Meteo, which needs no account), and the
   slideshow options.
 - **Status**: storage, sync and the PIN.
+
+The management page has its own choice of colours at the top: the system's, light,
+dark, or light from 07:00 to 19:00 and dark otherwise. It too is kept per browser.
 
 A PIN (Status tab) protects changes made over the network. Viewing needs no PIN.
 Calendar links are treated as secrets: they are never written to the log and are only
@@ -402,7 +413,7 @@ Routes added for the screen and calendar:
 | `GET /api/todo?day=` | Things to do: people, tasks, rewards, and the list for the day it is for whoever asks |
 | `POST /api/todo/done` | Tick a task for today, or take the tick away (no PIN) |
 | `POST /api/todo/approve`, `/approval` | Credit a tick's points or turn it down; choose whether points wait for approval |
-| `POST /api/todo/people`, `/tasks`, `/rewards` | Keep exactly these people, tasks or rewards |
+| `POST /api/todo/people`, `/tasks`, `/rewards`, `/rules` | Keep exactly these people, tasks, rewards, or rules that make tasks of calendar events |
 | `POST /api/todo/redeem`, `/points` | Spend someone's points on a reward; give or take points by hand |
 | `GET /api/map/{z}/{x}/{y}` | A square of the map, fetched from OpenStreetMap once and kept |
 | `GET /api/calendar?from=&to=` | Events in a window (seconds since 1970), feed status, added events |

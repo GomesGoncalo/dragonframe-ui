@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use crate::app::{blocking, Shared};
 use crate::routes::{ApiError, ApiResult, Parsed};
-use crate::todo::{PersonGiven, RewardGiven, TaskGiven, TodoError};
+use crate::todo::{Happening, PersonGiven, RewardGiven, RuleGiven, TaskGiven, TodoError};
 use crate::types::{Day, EventId, Title};
 
 #[derive(Deserialize)]
@@ -55,6 +55,11 @@ pub(crate) struct RewardsRequest {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct RulesRequest {
+    pub(crate) rules: Vec<RuleGiven>,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct RedeemRequest {
     pub(crate) who: EventId,
     pub(crate) reward: EventId,
@@ -93,6 +98,35 @@ fn refused(error: &TodoError) -> ApiError {
     ApiError::new(status, error.to_string())
 }
 
+/// What is on the calendar on a day, for the rules that make tasks of events. Blocking.
+///
+/// A whole-day event is on each of its days and a time on the clock on its own day. An
+/// event at a moment is on whichever day that is on the frame's clock.
+fn happenings(app: &Shared, day: Day) -> Vec<Happening> {
+    const DAY_SECS: i64 = 24 * 60 * 60;
+    let zone = app.device.time_zone().and_then(|name| name.parse::<chrono_tz::Tz>().ok());
+    let midnight = day.0.and_time(chrono::NaiveTime::MIN).and_utc().timestamp();
+    let window = crate::types::Window { from: midnight - DAY_SECS, to: midnight + 2 * DAY_SECS };
+    let on_the_day = |event: &Value| -> Option<Happening> {
+        let title = event["title"].as_str()?.to_string();
+        let clock = |time: chrono::NaiveDateTime| (time.date() == day.0).then(|| time.format("%H:%M").to_string());
+        let time = match &event["start"] {
+            Value::Number(secs) => {
+                let at = chrono::DateTime::from_timestamp(secs.as_i64()?, 0)?;
+                Some(clock(zone.map_or_else(|| at.naive_utc(), |zone| at.with_timezone(&zone).naive_local()))?)
+            }
+            Value::String(text) if text.len() == 10 => {
+                let (first, after) = (Day::parse(text)?, Day::parse(event["end"].as_str()?)?);
+                (first <= day && day < after).then_some(None)?
+            }
+            Value::String(text) => Some(clock(chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S").ok()?)?),
+            _ => return None,
+        };
+        Some(Happening { title, time })
+    };
+    app.calendars.between(window).iter().filter_map(on_the_day).collect()
+}
+
 /// Make a change to the things to do, and tell the screen there is news.
 async fn change(app: Shared, work: impl FnOnce(&Shared) -> Result<(), TodoError> + Send + 'static) -> ApiResult {
     blocking(move || {
@@ -108,7 +142,7 @@ async fn change(app: Shared, work: impl FnOnce(&Shared) -> Result<(), TodoError>
 pub(crate) async fn todo_view(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
     let day = query.get("day").and_then(|text| Day::parse(text));
     let day = day.ok_or_else(|| ApiError::bad_request("which day is it? (?day=YYYY-MM-DD)"))?;
-    Ok(Json(blocking(move || app.todo.view(day)).await))
+    Ok(Json(blocking(move || app.todo.view_with(day, &happenings(&app, day))).await))
 }
 
 /// Approve a tick that is waiting for its points, or turn it down.
@@ -129,7 +163,10 @@ pub(crate) async fn set_approval(State(app): State<Shared>, Parsed(request): Par
 /// and where points wait for approval a tick only asks for them.
 pub(crate) async fn tick_task(State(app): State<Shared>, Parsed(request): Parsed<TickRequest>) -> ApiResult {
     let day = about_now(request.day)?;
-    change(app, move |app| app.todo.tick(&request.task, day, request.done, request.who.as_ref())).await
+    change(app, move |app| {
+        app.todo.tick_with(&request.task, day, request.done, request.who.as_ref(), &happenings(app, day))
+    })
+    .await
 }
 
 pub(crate) async fn save_people(State(app): State<Shared>, Parsed(request): Parsed<PeopleRequest>) -> ApiResult {
@@ -138,6 +175,11 @@ pub(crate) async fn save_people(State(app): State<Shared>, Parsed(request): Pars
 
 pub(crate) async fn save_tasks(State(app): State<Shared>, Parsed(request): Parsed<TasksRequest>) -> ApiResult {
     change(app, move |app| app.todo.set_tasks(request.tasks)).await
+}
+
+/// Keep exactly these rules for making tasks of calendar events.
+pub(crate) async fn save_rules(State(app): State<Shared>, Parsed(request): Parsed<RulesRequest>) -> ApiResult {
+    change(app, move |app| app.todo.set_rules(request.rules)).await
 }
 
 pub(crate) async fn save_rewards(State(app): State<Shared>, Parsed(request): Parsed<RewardsRequest>) -> ApiResult {

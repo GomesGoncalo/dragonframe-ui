@@ -7,6 +7,11 @@
 //! not to wait for approval. Taking a tick away takes its points back. Points are spent
 //! on rewards.
 //!
+//! Calendar events can be tasks too. A rule names the words to look for in the names of
+//! events, whose they are and what they are worth; every event with those words is then a
+//! task on its day, ticked and approved like any other. The calendar itself is not ours to
+//! read here: whoever asks hands over what is on the calendar that day.
+//!
 //! Everything is kept in `todo.json` on the frame, so what is added from a phone or
 //! computer is on the frame's screen, and what is ticked there is seen everywhere.
 //!
@@ -24,11 +29,12 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 use crate::store::{self, Config};
-use crate::types::{Day, EventId, PersonName, Points, Title, Weekdays};
+use crate::types::{Day, EventId, PersonName, Points, Title, Weekdays, Words};
 
 const MOST_PEOPLE: usize = 12;
 const MOST_TASKS: usize = 100;
 const MOST_REWARDS: usize = 40;
+const MOST_RULES: usize = 20;
 /// How much of what has happened is remembered, newest last.
 const MOST_HISTORY: usize = 400;
 /// A task done once stays in the list, ticked, for the day it was done and is then dropped.
@@ -87,6 +93,25 @@ pub struct Task {
     pub repeat: Repeat,
 }
 
+/// A rule that makes tasks of calendar events: those with these words in their names.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventRule {
+    pub id: EventId,
+    pub words: Words,
+    #[serde(default)]
+    pub who: Option<EventId>,
+    #[serde(default)]
+    pub points: Points,
+}
+
+/// Something on the calendar on the day being asked about.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Happening {
+    pub title: String,
+    /// When in the day, as `HH:MM`; none for something that takes the whole day.
+    pub time: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reward {
     pub id: EventId,
@@ -104,6 +129,12 @@ struct Tick {
     /// Whether the points have been credited; until then the tick waits for approval.
     #[serde(default = "yes")]
     paid: bool,
+    /// What the task was called when it was ticked.
+    #[serde(default)]
+    title: Option<String>,
+    /// Whether the task was a calendar event, which is no task of ours to look up later.
+    #[serde(default)]
+    event: bool,
 }
 
 fn yes() -> bool {
@@ -130,6 +161,7 @@ impl Default for Kept {
             ticks: Vec::new(),
             history: Vec::new(),
             approval: true,
+            rules: Vec::new(),
         }
     }
 }
@@ -149,6 +181,9 @@ struct Kept {
     /// Whether a tick's points wait to be approved (the usual way) or are credited at once.
     #[serde(default = "yes")]
     approval: bool,
+    /// The rules that make tasks of calendar events.
+    #[serde(default)]
+    rules: Vec<EventRule>,
 }
 
 /// What the page sends to keep the list of people: those with an id are kept (and may be
@@ -170,6 +205,17 @@ pub struct TaskGiven {
     #[serde(default)]
     pub points: Points,
     pub repeat: Repeat,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RuleGiven {
+    #[serde(default)]
+    pub id: Option<EventId>,
+    pub words: Words,
+    #[serde(default)]
+    pub who: Option<EventId>,
+    #[serde(default)]
+    pub points: Points,
 }
 
 #[derive(Debug, Deserialize)]
@@ -230,6 +276,24 @@ impl Kept {
         }
     }
 
+    /// The tasks that calendar events are, by the rules: each with when in the day it is.
+    /// The first rule that is about an event decides whose it is and what it is worth.
+    fn of_the_calendar(&self, happenings: &[Happening]) -> Vec<(Task, Option<String>)> {
+        let mut tasks: Vec<(Task, Option<String>)> = Vec::new();
+        for happening in happenings {
+            let rule = self.rules.iter().find(|rule| rule.words.found_in(&happening.title));
+            let (Some(rule), Some(title)) = (rule, Title::parse(&happening.title)) else { continue };
+            // The same event is the same task however often it is asked about.
+            let seed = format!("{:?}|{}", rule.id, title.as_str());
+            let id = EventId::from_digest(&store::sha1(seed.as_bytes()));
+            if tasks.iter().all(|(task, _)| task.id != id) {
+                let (who, points) = (rule.who.clone(), rule.points);
+                tasks.push((Task { id, title, who, points, repeat: Repeat::Once(None) }, happening.time.clone()));
+            }
+        }
+        tasks
+    }
+
     /// Forget what no longer matters on `day`: tasks done once on an earlier day, and ticks
     /// too old to be taken back. A tick still waiting for approval is never forgotten.
     fn tidy(&mut self, day: Day) {
@@ -261,13 +325,20 @@ impl Todo {
 
     /// Everything, as the pages show it. `day` is the day it is for whoever asks: `today`
     /// lists that day's tasks with whether each is done, late ones first.
+    #[cfg(test)]
     pub fn view(&self, day: Day) -> Value {
+        self.view_with(day, &[])
+    }
+
+    /// The same, with what is on the calendar that day: events the rules make tasks of are
+    /// in the day's list too.
+    pub fn view_with(&self, day: Day, happenings: &[Happening]) -> Value {
         let kept = self.kept();
-        let today: Vec<Value> = kept
-            .tasks
-            .iter()
-            .filter(|task| kept.listed(task, day))
-            .map(|task| {
+        let ours = kept.tasks.iter().filter(|task| kept.listed(task, day)).map(|task| (task.clone(), None, false));
+        let events = kept.of_the_calendar(happenings).into_iter().map(|(task, time)| (task, time, true));
+        let today: Vec<Value> = ours
+            .chain(events)
+            .map(|(task, time, event)| {
                 let tick = kept.ticks.iter().find(|tick| tick.task == task.id && tick.day == day);
                 let late = matches!(task.repeat, Repeat::Once(Some(due)) if due < day) && tick.is_none();
                 json!({
@@ -275,6 +346,7 @@ impl Todo {
                     "done": tick.is_some(), "by": tick.map(|tick| &tick.who), "late": late,
                     "waiting": tick.is_some_and(|tick| !tick.paid),
                     "once": matches!(task.repeat, Repeat::Once(_)),
+                    "event": event, "time": time,
                 })
             })
             .collect();
@@ -284,10 +356,11 @@ impl Todo {
             .iter()
             .filter(|tick| !tick.paid)
             .filter_map(|tick| {
-                let task = kept.tasks.iter().find(|task| task.id == tick.task)?;
+                let task = kept.tasks.iter().find(|task| task.id == tick.task);
+                let title = tick.title.clone().or_else(|| task.map(|task| task.title.as_str().to_string()))?;
                 let who = kept.people.iter().find(|person| person.id == tick.who)?;
                 Some(json!({
-                    "task": tick.task, "day": tick.day, "title": task.title, "who": tick.who, "name": who.name,
+                    "task": tick.task, "day": tick.day, "title": title, "who": tick.who, "name": who.name,
                     "points": tick.points,
                 }))
             })
@@ -303,15 +376,39 @@ impl Todo {
         json!({
             "day": day, "people": kept.people, "tasks": tasks, "rewards": kept.rewards,
             "today": today, "history": history, "waiting": waiting, "approval": kept.approval,
+            "rules": kept.rules,
         })
     }
 
     /// Tick a task for a day, or take its tick away. `who` says who did it, which a task
     /// that is somebody's own does not need. Blocking: it is saved.
+    #[cfg(test)]
     pub fn tick(&self, task: &EventId, day: Day, done: bool, who: Option<&EventId>) -> Result<(), TodoError> {
+        self.tick_with(task, day, done, who, &[])
+    }
+
+    /// The same, with what is on the calendar that day, so a calendar event that is a task
+    /// can be ticked.
+    pub fn tick_with(
+        &self,
+        task: &EventId,
+        day: Day,
+        done: bool,
+        who: Option<&EventId>,
+        happenings: &[Happening],
+    ) -> Result<(), TodoError> {
         let mut kept = self.kept();
         kept.tidy(day);
-        let found = kept.tasks.iter().find(|t| t.id == *task).ok_or(TodoError::NoSuchTask)?.clone();
+        let ours = kept.tasks.iter().find(|t| t.id == *task).cloned();
+        let event = ours.is_none();
+        let of_the_calendar =
+            || kept.of_the_calendar(happenings).into_iter().map(|(task, _)| task).find(|t| t.id == *task);
+        // A tick can always be taken back, even if its event has since left the calendar.
+        let ticked_title = kept.ticks.iter().find(|tick| tick.task == *task && tick.day == day).and_then(|tick| {
+            let title = Title::parse(tick.title.as_deref()?)?;
+            Some(Task { id: task.clone(), title, who: None, points: Points::default(), repeat: Repeat::Once(None) })
+        });
+        let found = ours.or_else(of_the_calendar).or(ticked_title).ok_or(TodoError::NoSuchTask)?;
         let ticked = kept.ticks.iter().position(|tick| tick.task == *task && tick.day == day);
         match (done, ticked) {
             (true, None) => {
@@ -324,7 +421,8 @@ impl Todo {
                 } else {
                     kept.person(&who)?;
                 }
-                kept.ticks.push(Tick { task: task.clone(), day, who, points, paid });
+                let title = Some(found.title.as_str().to_string());
+                kept.ticks.push(Tick { task: task.clone(), day, who, points, paid, title, event });
             }
             (false, Some(at)) => {
                 let tick = kept.ticks.remove(at);
@@ -353,8 +451,8 @@ impl Todo {
         let at = kept.ticks.iter().position(waiting).ok_or(TodoError::NothingWaiting)?;
         if approve {
             let (who, points) = (kept.ticks[at].who.clone(), i64::from(kept.ticks[at].points));
-            let title =
-                kept.tasks.iter().find(|t| t.id == *task).map_or_else(String::new, |t| t.title.as_str().to_string());
+            let known = kept.tasks.iter().find(|t| t.id == *task).map(|t| t.title.as_str().to_string());
+            let title = kept.ticks[at].title.clone().or(known).unwrap_or_default();
             kept.credit(&who, points, title)?;
             kept.ticks[at].paid = true;
         } else {
@@ -372,10 +470,11 @@ impl Todo {
         if !on {
             let waiting: Vec<Tick> = kept.ticks.iter().filter(|tick| !tick.paid).cloned().collect();
             for tick in waiting {
-                let title =
+                let known =
                     kept.tasks.iter().find(|task| task.id == tick.task).map(|task| task.title.as_str().to_string());
+                let title = tick.title.clone().or(known).unwrap_or_default();
                 // Whoever asked may be gone; then there is nobody to credit.
-                let _ = kept.credit(&tick.who, i64::from(tick.points), title.unwrap_or_default());
+                let _ = kept.credit(&tick.who, i64::from(tick.points), title);
             }
             for tick in &mut kept.ticks {
                 tick.paid = true;
@@ -406,6 +505,11 @@ impl Todo {
                 task.who = None;
             }
         }
+        for rule in &mut kept.rules {
+            if rule.who.as_ref().is_some_and(|who| people.iter().all(|person| person.id != *who)) {
+                rule.who = None;
+            }
+        }
         // And what they asked for and were not yet given goes with them.
         kept.ticks.retain(|tick| tick.paid || people.iter().any(|person| person.id == tick.who));
         info!(people = people.len(), "people for the things to do saved");
@@ -430,7 +534,7 @@ impl Todo {
             let id = known.unwrap_or_else(|| new_id(one.title.as_str(), &taken));
             tasks.push(Task { id, title: one.title, who: one.who, points: one.points, repeat: one.repeat });
         }
-        kept.ticks.retain(|tick| tasks.iter().any(|task| task.id == tick.task));
+        kept.ticks.retain(|tick| tick.event || tasks.iter().any(|task| task.id == tick.task));
         info!(tasks = tasks.len(), "things to do saved");
         kept.tasks = tasks;
         self.save(&kept);
@@ -451,6 +555,27 @@ impl Todo {
             rewards.push(Reward { id, title: one.title, cost: one.cost });
         }
         kept.rewards = rewards;
+        self.save(&kept);
+        Ok(())
+    }
+
+    /// Keep exactly these rules for making tasks of calendar events. Blocking.
+    pub fn set_rules(&self, given: Vec<RuleGiven>) -> Result<(), TodoError> {
+        if given.len() > MOST_RULES {
+            return Err(TodoError::TooMany(MOST_RULES));
+        }
+        let mut kept = self.kept();
+        let mut rules: Vec<EventRule> = Vec::new();
+        for one in given {
+            if one.who.as_ref().is_some_and(|who| kept.people.iter().all(|person| person.id != *who)) {
+                return Err(TodoError::NoSuchPerson);
+            }
+            let known = one.id.filter(|id| kept.rules.iter().any(|rule| rule.id == *id));
+            let taken: Vec<&EventId> = kept.rules.iter().chain(&rules).map(|rule| &rule.id).collect();
+            let id = known.unwrap_or_else(|| new_id(&format!("{:?}", one.words), &taken));
+            rules.push(EventRule { id, words: one.words, who: one.who, points: one.points });
+        }
+        kept.rules = rules;
         self.save(&kept);
         Ok(())
     }
@@ -673,5 +798,57 @@ mod tests {
         // Set not to wait any more, what is waiting is credited.
         again.set_approval(false);
         assert_eq!((points(&again, 0), again.view(later)["waiting"].clone()), (15, json!([])));
+    }
+
+    #[test]
+    fn calendar_events_are_tasks_where_a_rule_says_so() {
+        let (todo, _frame, ana, rui) = household("todo-events");
+        todo.set_approval(true);
+        let rules = json!([
+            { "words": "swimming, football", "who": ana, "points": 6 },
+            { "words": "lesson", "who": rui, "points": 1 },
+            { "words": "dentist", "points": 4 },
+        ]);
+        todo.set_rules(from_value(rules).unwrap()).unwrap();
+        let on = |title: &str, time: Option<&str>| Happening { title: title.into(), time: time.map(str::to_string) };
+        let calendar = [
+            on("Swimming lesson", Some("10:00")),
+            on("Bins out", None),
+            on("Dentist", Some("15:30")),
+            on("Swimming lesson", Some("10:00")),
+        ];
+        let tuesday = day("2026-10-13");
+
+        let view = todo.view_with(tuesday, &calendar);
+        let today = view["today"].as_array().unwrap();
+        assert_eq!(today.len(), 2, "the bins are nobody's task, and the lesson is listed once");
+        assert_eq!(
+            (&today[0]["title"], &today[0]["who"], &today[0]["points"]),
+            (&json!("Swimming lesson"), &json!(ana), &json!(6))
+        );
+        assert_eq!(
+            (&today[0]["event"], &today[0]["time"], &today[1]["who"]),
+            (&json!(true), &json!("10:00"), &Value::Null)
+        );
+        assert_eq!(view["rules"].as_array().unwrap().len(), 3);
+
+        // Ticked, it waits for approval like any task; the request is known by its name
+        // even on a day the event is not on.
+        let swim: EventId = from_value(today[0]["id"].clone()).unwrap();
+        todo.tick_with(&swim, tuesday, true, None, &calendar).unwrap();
+        assert_eq!(todo.tick(&swim, day("2026-10-14"), true, None), Err(TodoError::NoSuchTask), "no lesson that day");
+        let waiting = todo.view(day("2026-10-14"))["waiting"].clone();
+        assert_eq!((&waiting[0]["title"], &waiting[0]["points"]), (&json!("Swimming lesson"), &json!(6)));
+        todo.approve(&swim, tuesday, true).unwrap();
+        assert_eq!(points(&todo, 0), 6);
+        assert_eq!(todo.view(tuesday)["history"][0]["what"], "Swimming lesson");
+        // Other changes to the tasks leave its tick alone, and it can be taken back without the calendar.
+        todo.set_tasks(Vec::new()).unwrap();
+        assert_eq!(todo.view_with(tuesday, &calendar)["today"][0]["done"], true);
+        todo.tick(&swim, tuesday, false, None).unwrap();
+        assert_eq!(points(&todo, 0), 0);
+
+        let stranger = json!([{ "words": "x", "who": swim }]);
+        assert_eq!(todo.set_rules(from_value(stranger).unwrap()), Err(TodoError::NoSuchPerson));
     }
 }

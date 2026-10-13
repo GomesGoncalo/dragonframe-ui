@@ -52,7 +52,9 @@ async function tickTask(task, who) {
 function taskRow(task) {
   const row = element('button', 'task' + (task.done ? ' done' : '') + (task.waiting ? ' waiting' : '') + (task.late ? ' late' : ''), '');
   row.appendChild(element('span', 'box', task.waiting ? '…' : task.done ? '✓' : ''));
-  row.appendChild(element('span', 'what', task.title));
+  // A task that is a calendar event says when in the day it is.
+  row.appendChild(element('span', 'what', (task.time ? task.time + '  ' : '') + task.title));
+  if (task.event) row.appendChild(element('span', 'tag cal', 'calendar'));
   if (task.late) row.appendChild(element('span', 'tag', 'late'));
   if (task.waiting) row.appendChild(element('span', 'tag wait', 'to approve'));
   if (task.points) row.appendChild(element('span', 'worth', '+' + task.points));

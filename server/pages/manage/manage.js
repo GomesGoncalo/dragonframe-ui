@@ -520,9 +520,24 @@ function repeatText(repeat) {
 async function loadTodo() {
   try { todo = await api(`/api/todo?day=${todayText()}`); } catch (e) { return; }
   if (changed("tdWho", todo.people.map(p => [p.id, p.name]))) {
-    const who = $("tdWho"), was = who.value; who.textContent = "";
-    who.append(new Option("Anyone", ""), ...todo.people.map(p => new Option(p.name, p.id)));
-    if ([...who.options].some(o => o.value === was)) who.value = was;
+    for (const who of [$("tdWho"), $("tdRuleWho")]) {
+      const was = who.value; who.textContent = "";
+      who.append(new Option("Anyone", ""), ...todo.people.map(p => new Option(p.name, p.id)));
+      if ([...who.options].some(o => o.value === was)) who.value = was;
+    }
+  }
+  if (changed("tdRules", [todo.rules, todo.today, todo.people])) {
+    const box = $("tdRules"); box.textContent = "";
+    const fromCalendar = todo.today.filter(t => t.event);
+    todo.rules.forEach((rule, i) => {
+      const remove = el("button", "btn small danger", "Delete");
+      remove.onclick = () => saveTodo("/api/todo/rules", { rules: todo.rules.filter(r => r.id !== rule.id) }, "Rule deleted.");
+      // The first rule that fits an event is the one that counts for it.
+      const words = rule.words.toLowerCase().split(", ");
+      const mine = fromCalendar.filter(t => t.who === rule.who && t.points === rule.points && words.some(w => t.title.toLowerCase().includes(w)));
+      const today = mine.length ? `today: ${mine.map(t => t.time ? `${t.title} ${t.time}` : t.title).join(", ")}` : "nothing today";
+      box.append(calRow(`${nameOf(rule.who)} · ${rule.points} pts`, rule.words, today, remove));
+    });
   }
   if (changed("tdPeople", todo.people)) {
     const box = $("tdPeople"); box.textContent = "";
@@ -596,6 +611,12 @@ async function addTask() {
   const repeat = kind === "once" ? { once: null } : kind === "day" ? { once: $("tdDay").value } : { days: kind === "daily" ? [1, 2, 3, 4, 5, 6, 7] : kind === "weekdays" ? [1, 2, 3, 4, 5] : chosen };
   const task = { title, who: $("tdWho").value || null, points: Number($("tdPoints").value) || 0, repeat };
   if (await saveTodo("/api/todo/tasks", { tasks: todo.tasks.concat([task]) }, "Task added. It is on the frame within half a minute.")) $("tdTitle").value = "";
+}
+async function addEventRule() {
+  const words = $("tdWords").value.trim();
+  if (!words) { toast("Say which words to look for in the names of events."); $("tdWords").focus(); return; }
+  const rule = { words, who: $("tdRuleWho").value || null, points: Number($("tdRulePoints").value) || 0 };
+  if (await saveTodo("/api/todo/rules", { rules: todo.rules.concat([rule]) }, "Rule added. Matching events are tasks on their day.")) $("tdWords").value = "";
 }
 async function addReward() {
   const title = $("tdReward").value.trim();
@@ -840,12 +861,15 @@ window.onhashchange = () => { showTab(location.hash.slice(1)); scrollTo(0, 0); }
 const fitHeader = () => document.documentElement.style.setProperty("--header", $("header").offsetHeight + "px");
 new ResizeObserver(fitHeader).observe($("header")); fitHeader();
 
+// The colours: the system's, light, dark, or light by day (07:00 to 19:00) and dark by night. Kept by this browser.
+function applyTheme() {
+  const theme = saved.get("frameTheme") || "system", hour = new Date().getHours();
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme === "time" ? (hour >= 7 && hour < 19 ? "light" : "dark") : theme;
+}
 $("theme").value = saved.get("frameTheme") || "system";
-$("theme").onchange = e => {
-  const theme = e.target.value;
-  if (theme === "system") { delete document.documentElement.dataset.theme; saved.set("frameTheme", null); }
-  else { document.documentElement.dataset.theme = theme; saved.set("frameTheme", theme); }
-};
+$("theme").onchange = e => { saved.set("frameTheme", e.target.value === "system" ? null : e.target.value); applyTheme(); };
+setInterval(applyTheme, 60000);
 $("sort").value = sortBy;
 $("sort").onchange = e => { sortBy = e.target.value; saved.set("frameSort", sortBy); page = 0; render(); };
 $("jump").onchange = e => { if (e.target.value !== "") { page = Math.floor(e.target.value / PAGE_SIZE); render(); scrollTo(0, 0); e.target.value = ""; } };
@@ -871,6 +895,8 @@ $("calLinks").onchange = () => api("/api/calendars", { links: $("calLinks").valu
 $("evAdd").onclick = addEvent;
 $("rmAdd").onclick = addRule;
 $("tdApproval").onchange = e => saveTodo("/api/todo/approval", { on: e.target.checked }, e.target.checked ? "Points now wait for approval." : "Points are now added at once; what was waiting has been added.");
+$("tdAddRule").onclick = addEventRule;
+$("tdWords").onkeydown = e => { if (e.key === "Enter") addEventRule(); };
 $("tdAddPerson").onclick = addPerson; $("tdAddTask").onclick = addTask; $("tdAddReward").onclick = addReward;
 $("tdName").onkeydown = e => { if (e.key === "Enter") addPerson(); };
 $("tdTitle").onkeydown = e => { if (e.key === "Enter") addTask(); };

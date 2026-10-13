@@ -37,7 +37,10 @@
   screen is tall is set at the end of the styles, and the photos are arranged for
   whichever shape the screen has.
 
-  For trying things out, the address may carry ?tab=calendar|settings, ?part=night (and
+  The colours are dark, light, or light by day and dark by night: a choice each browser
+  keeps for itself (Settings, Frame). Pictures are shown on black either way.
+
+  For trying things out, the address may carry ?theme=light|dark|auto, ?tab=calendar|settings, ?part=night (and
   so on, for a part of Settings), ?view=week, ?every=<seconds> and ?order=newest.
 
   While it runs, the page tells the server so every half minute (/api/alive). If
@@ -144,6 +147,7 @@
   </div>
 
   <div class="part" id="part-frame">
+    <div class="row"><span class="label">Colours (kept by this screen only)</span><span id="themes"></span></div>
     <div class="row"><span class="label">Weather for</span><div class="big" id="place">…</div></div>
     <p>The place is chosen on the phone or computer page (the Frame tab), where there is a keyboard.</p>
     <div class="row"><span class="label">Original screen</span>

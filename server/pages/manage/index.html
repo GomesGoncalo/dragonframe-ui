@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <script>
 // Apply the chosen theme before anything is drawn, so the page never flashes the other one.
-try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else if (t === "time") document.documentElement.dataset.theme = h >= 7 && h < 19 ? "light" : "dark"; } catch (e) {}
 </script>
 <title>Photo Frame</title>
 <meta name="theme-color" content="#0f766e">
@@ -23,6 +23,7 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
       <option value="system">System</option>
       <option value="light">Light</option>
       <option value="dark">Dark</option>
+      <option value="time">Light by day, dark by night</option>
     </select>
   </div>
   <nav>
@@ -209,6 +210,17 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
         <button class="btn primary" id="tdAddTask">Add task</button>
       </div>
       <div class="rows" id="tdTasks" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
+      <h2>Tasks from the calendar</h2>
+      <p class="muted">Calendar events can be tasks. A rule applies to every event, on any calendar, whose name has one of its words ("swimming, football" finds "Swimming lesson"): on the day of the event it is in that person's list on the frame, to be ticked like any task, and is worth the rule's points.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="tdWords" maxlength="300" placeholder="Words in the event's name, e.g. swimming, football" aria-label="Words to look for">
+        <select id="tdRuleWho" aria-label="Whose it is"></select>
+        <input type="number" id="tdRulePoints" min="0" max="10000" value="5" title="Points" aria-label="Points"> <span class="muted">points</span>
+        <button class="btn primary" id="tdAddRule">Add rule</button>
+      </div>
+      <div class="rows" id="tdRules" style="margin-top: 14px"></div>
     </div>
     <div class="card narrow">
       <h2>Rewards</h2>

@@ -1,39 +1,39 @@
 /* How the Utilities tab looks: timers, alarms and the pomodoro clock, the notice that
    something is ringing, and the small countdown shown over the pictures. */
 body[data-tab="utilities"] #utilities { display: block; }
-#utilities { background: #101113; }
+#utilities { background: var(--bg); }
 body[data-tool="timers"] #tool-timers, body[data-tool="alarms"] #tool-alarms, body[data-tool="pomodoro"] #tool-pomodoro { display: block; }
 
 /* One running timer or one alarm: what it is on the left, what can be done on the right. */
-.entry { margin-bottom: 1.4vmin; padding: 1.6vmin 2.4vmin; border-radius: 1.8vmin; background: #17191c; white-space: nowrap; }
+.entry { margin-bottom: 1.4vmin; padding: 1.6vmin 2.4vmin; border-radius: 1.8vmin; background: var(--panel); white-space: nowrap; }
 .entry .big { display: inline-block; min-width: 24vmin; margin: 0; font-size: 5.4vmin; font-weight: 300; vertical-align: middle; font-variant-numeric: tabular-nums; }
-.entry .about { display: inline-block; min-width: 42vmin; font-size: 2.5vmin; color: #a9adb5; vertical-align: middle; }
+.entry .about { display: inline-block; min-width: 42vmin; font-size: 2.5vmin; color: var(--muted); vertical-align: middle; }
 .entry .press { margin-bottom: 0; vertical-align: middle; }
 .entry.off .big { opacity: .4; }
 .spaced { margin-left: 3vmin; }
 
 .pomodoro { text-align: center; }
-.pomodoro .phase { font-size: 3.6vmin; color: #a9adb5; }
+.pomodoro .phase { font-size: 3.6vmin; color: var(--muted); }
 .pomodoro .count { font-size: 21vmin; font-weight: 200; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.pomodoro .round { font-size: 2.6vmin; color: #a9adb5; margin-bottom: 2.4vmin; }
-.pomodoro.focus .count { color: #ff8f85; } .pomodoro.short .count, .pomodoro.long .count { color: #6ee7a0; }
+.pomodoro .round { font-size: 2.6vmin; color: var(--muted); margin-bottom: 2.4vmin; }
+.pomodoro.focus .count { color: var(--red); } .pomodoro.short .count, .pomodoro.long .count { color: var(--green); }
 .lengths { margin-top: 2vmin; text-align: center; }
 .lengths > div { text-align: left; }
 
 /* Something is ringing: over everything, until it is stopped. */
 .ring {
   position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; text-align: center;
-  background: rgba(10, 11, 13, .93); padding-top: 26vh;
+  background: var(--overlay); padding-top: 26vh;
 }
 .ring.on { display: block; }
 .ring .what { font-size: 9vmin; font-weight: 300; }
-.ring .more { font-size: 3.6vmin; color: #c9ccd1; margin: 1.6vmin 0 6vmin; }
+.ring .more { font-size: 3.6vmin; color: var(--soft); margin: 1.6vmin 0 6vmin; }
 .ring .press { font-size: 3.6vmin; padding: 2.4vmin 5vmin; margin: 0 1.5vmin; }
 
 /* What is counting down, in the corner of the pictures. */
 .running {
   position: absolute; right: 3vmin; bottom: 4.8vmin; padding: .8vmin 2vmin; border-radius: 2.4vmin;
-  font-size: 3.2vmin; background: rgba(0, 0, 0, .46); color: #fff; font-variant-numeric: tabular-nums;
+  font-size: 3.2vmin; background: rgba(0, 0, 0, .46); color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .running:empty { display: none; }
 

@@ -101,10 +101,50 @@ async fn with_a_pin_a_task_can_still_be_ticked_but_nothing_else_about_them_chang
         ("/api/todo/people", r#"{"people":[]}"#.to_string()),
         ("/api/todo/tasks", r#"{"tasks":[]}"#.to_string()),
         ("/api/todo/rewards", r#"{"rewards":[]}"#.to_string()),
+        ("/api/todo/rules", r#"{"rules":[]}"#.to_string()),
         ("/api/todo/redeem", format!(r#"{{"who":"{ana}","reward":"{film}"}}"#)),
         ("/api/todo/points", format!(r#"{{"who":"{ana}","change":100,"why":"x"}}"#)),
     ] {
         assert_eq!(post(&app, path, &body).await.status, StatusCode::UNAUTHORIZED, "{path}");
     }
     assert_eq!(todo(&app).await["people"][0]["points"], 5, "points are only spent or given with the PIN");
+}
+
+#[tokio::test]
+async fn a_calendar_event_becomes_a_task_on_its_day_by_a_rule() {
+    let (app, _frame) = app("todo-calendar");
+    let today = today();
+    post(&app, "/api/todo/approval", r#"{"on":false}"#).await;
+    post(&app, "/api/todo/people", r#"{"people":[{"name":"Ana"}]}"#).await;
+    let ana = todo(&app).await["people"][0]["id"].as_str().unwrap().to_string();
+    let add = |title: &str, time: &str| format!(r#"{{"title":"{title}","day":"{today}","time":{time}}}"#);
+    post(&app, "/api/events/add", &add("Swimming lesson", r#""10:00""#)).await;
+    post(&app, "/api/events/add", &add("Tidy the garden", "null")).await;
+    post(&app, "/api/events/add", &add("Dentist", r#""15:30""#)).await;
+    assert_eq!(todo(&app).await["today"], json!([]), "without a rule, events are only events");
+
+    let rules = json!({ "rules": [{ "words": "swimming, garden", "who": ana, "points": 6 }] });
+    assert_eq!(post(&app, "/api/todo/rules", &rules.to_string()).await.status, StatusCode::OK);
+    let list = todo(&app).await;
+    let listed = list["today"].as_array().unwrap();
+    assert_eq!(listed.len(), 2, "{listed:?}");
+    let swim = listed.iter().find(|task| task["title"] == "Swimming lesson").unwrap();
+    assert_eq!((&swim["event"], &swim["time"], &swim["points"]), (&json!(true), &json!("10:00"), &json!(6)));
+    let garden = listed.iter().find(|task| task["title"] == "Tidy the garden").unwrap();
+    assert_eq!(garden["time"], Value::Null, "it takes the whole day");
+    assert_eq!(list["rules"][0]["words"], "swimming, garden");
+
+    let tick = format!(r#"{{"task":"{}","day":"{today}","done":true}}"#, swim["id"].as_str().unwrap());
+    assert_eq!(post(&app, "/api/todo/done", &tick).await.status, StatusCode::OK);
+    let list = todo(&app).await;
+    assert_eq!(list["people"][0]["points"], 6);
+    assert!(list["today"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|task| task["title"] == "Swimming lesson" && task["done"] == true));
+
+    for bad in [r#"{"rules":[{"words":""}]}"#, r#"{"rules":[{"words":"x","points":-1}]}"#, "{}"] {
+        assert_eq!(post(&app, "/api/todo/rules", bad).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
 }

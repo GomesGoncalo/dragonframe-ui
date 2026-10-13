@@ -1,51 +1,52 @@
 /* How the To do tab looks: a column of tasks for each person, and the rewards. See todo.js. */
 body[data-tab="todo"] #todo { display: block; }
-#todo { background: #101113; }
+#todo { background: var(--bg); }
 #todo .people { position: absolute; top: 17vmin; left: 7vmin; right: 5vmin; bottom: 30vmin; overflow: hidden; font-size: 0; }
 #todo .person { display: inline-block; vertical-align: top; box-sizing: border-box; padding-right: 2.4vmin; font-size: 2.6vmin; }
 #todo .count1 .person { width: 60%; } #todo .count2 .person { width: 50%; } #todo .count3 .person { width: 33.3%; }
 #todo .count4 .person { width: 25%; } #todo .count5 .person { width: 20%; }
-#todo .head { padding-bottom: 1vmin; margin-bottom: 1.4vmin; border-bottom: .5vmin solid #3a3e46; white-space: nowrap; overflow: hidden; }
+#todo .head { padding-bottom: 1vmin; margin-bottom: 1.4vmin; border-bottom: .5vmin solid var(--line); white-space: nowrap; overflow: hidden; }
 #todo .head .name { font-size: 3.8vmin; font-weight: 500; }
-#todo .head .points { float: right; font-size: 3.4vmin; color: #f2e36b; }
+#todo .head .points { float: right; font-size: 3.4vmin; color: var(--gold); }
 .task {
   display: block; position: relative; width: 100%; box-sizing: border-box; margin-bottom: 1.1vmin; padding: 1.5vmin 1.6vmin 1.5vmin 7vmin;
-  border-radius: 1.6vmin; background: #1c1e22; color: #fff; text-align: left; font-size: 2.8vmin; min-height: 6.6vmin;
+  border-radius: 1.6vmin; background: var(--panel); color: var(--ink); text-align: left; font-size: 2.8vmin; min-height: 6.6vmin;
 }
 .task:active { opacity: .7; }
-.task .box { position: absolute; left: 1.5vmin; top: 50%; width: 3.6vmin; height: 3.6vmin; margin-top: -2.1vmin; border: .35vmin solid #8b9099; border-radius: 1vmin; text-align: center; line-height: 3.6vmin; font-size: 2.8vmin; }
+.task .box { position: absolute; left: 1.5vmin; top: 50%; width: 3.6vmin; height: 3.6vmin; margin-top: -2.1vmin; border: .35vmin solid var(--faint); border-radius: 1vmin; text-align: center; line-height: 3.6vmin; font-size: 2.8vmin; }
 .task .what { display: inline-block; max-width: 100%; vertical-align: middle; }
-.task .worth { float: right; margin-left: 1.2vmin; color: #f2e36b; }
-.task .tag { margin-left: 1.2vmin; padding: .2vmin 1vmin; border-radius: 1vmin; background: #6b2d2a; font-size: 2vmin; vertical-align: middle; }
-.task.done { background: #16181b; color: #7d828b; }
+.task .worth { float: right; margin-left: 1.2vmin; color: var(--gold); }
+.task .tag { margin-left: 1.2vmin; padding: .2vmin 1vmin; border-radius: 1vmin; background: var(--warn); font-size: 2vmin; vertical-align: middle; }
+.task.done { background: var(--panel-off); color: var(--faint); }
 .task.done .what { text-decoration: line-through; }
-.task.done .box { border-color: #7ee0a1; background: #7ee0a1; color: #111; }
-.task.done .worth { color: #7d828b; }
-.task.waiting .box { border-color: #f2e36b; background: none; color: #f2e36b; }
-.task.waiting .what { text-decoration: none; color: #c9ccd1; }
-.task .tag.wait { background: #4a4520; color: #f2e36b; }
-#todo-waiting { position: absolute; top: .4vmin; left: 24vmin; margin: 0; background: #f2e36b; }
+.task.done .box { border-color: var(--green); background: var(--green); color: var(--on-ink); }
+.task.done .worth { color: var(--faint); }
+.task.waiting .box { border-color: var(--gold); background: none; color: var(--gold); }
+.task.waiting .what { text-decoration: none; color: var(--soft); }
+.task .tag.cal { background: var(--press); color: var(--muted); }
+.task .tag.wait { background: var(--gold-bg); color: var(--gold); }
+#todo-waiting { position: absolute; top: .4vmin; left: 24vmin; margin: 0; background: var(--gold); }
 .pick .request { margin: 0 auto 1.6vmin; max-width: 150vmin; text-align: left; font-size: 3vmin; white-space: nowrap; }
 .pick .request .what { display: inline-block; width: 52%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-.pick .request .worth { display: inline-block; width: 12%; color: #f2e36b; vertical-align: middle; }
+.pick .request .worth { display: inline-block; width: 12%; color: var(--gold); vertical-align: middle; }
 .pick .people .request .press { min-width: 0; margin: 0 0 0 1.4vmin; padding: 1.6vmin 2.6vmin; border-bottom: 0; }
 .pick .people .all { margin-top: 2vmin; border-bottom: 0; }
-#todo .none { padding: 1vmin .4vmin; font-size: 2.4vmin; color: #7d828b; }
-#todo .empty { position: absolute; top: 30vmin; left: 7vmin; right: 7vmin; font-size: 3vmin; line-height: 1.5; color: #a9adb5; }
+#todo .none { padding: 1vmin .4vmin; font-size: 2.4vmin; color: var(--faint); }
+#todo .empty { position: absolute; top: 30vmin; left: 7vmin; right: 7vmin; font-size: 3vmin; line-height: 1.5; color: var(--muted); }
 #todo .rewards { position: absolute; left: 7vmin; right: 7vmin; bottom: 13vmin; height: 15vmin; overflow: hidden; }
-#todo .rewards h2 { margin: 0 0 1.2vmin; font-size: 2.6vmin; font-weight: 400; color: #a9adb5; }
-.reward .cost { margin-left: 1.6vmin; color: #f2e36b; }
+#todo .rewards h2 { margin: 0 0 1.2vmin; font-size: 2.6vmin; font-weight: 400; color: var(--muted); }
+.reward .cost { margin-left: 1.6vmin; color: var(--gold); }
 
 /* Choosing a person: who did a task, or who a reward is for. */
-.pick { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: rgba(8, 9, 10, .97); text-align: center; padding-top: 12vmin; }
+.pick { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: var(--overlay); text-align: center; padding-top: 12vmin; }
 .pick.on { display: block; }
 .pick h2 { margin: 0 6vmin 5vmin; font-size: 4.4vmin; font-weight: 300; }
 .pick .people .press { display: inline-block; min-width: 26vmin; margin: 0 1.2vmin 2.4vmin; padding: 3vmin 4vmin; border-bottom: .7vmin solid; }
 .pick .people .press:disabled { opacity: .4; }
 .pick .people .name { font-size: 4.2vmin; font-weight: 500; }
-.pick .people .has { margin-top: .6vmin; font-size: 2.6vmin; color: #f2e36b; }
+.pick .people .has { margin-top: .6vmin; font-size: 2.6vmin; color: var(--gold); }
 .pick .dots { height: 5vmin; font-size: 5vmin; letter-spacing: 1.6vmin; line-height: 1; margin: 0 0 1vmin; }
-.pick .ask p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: #ff8f85; }
+.pick .ask p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: var(--red); }
 .pick .ask { display: none; }
 .pick.asking .ask { display: block; }
 .pick.asking .people { display: none; }

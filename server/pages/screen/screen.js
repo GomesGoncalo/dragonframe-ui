@@ -33,6 +33,10 @@ const PACES = [[10, '10 s'], [15, '15 s'], [30, '30 s'], [60, '1 min'], [300, '5
 const ORDERS = [['shuffled', 'Shuffled'], ['newest', 'Newest first']];
 const ON_OFF = [[true, 'On'], [false, 'Off']];
 const RESTS = [[1, '1 min'], [2, '2 min'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [null, 'Never']];
+// Light colours or dark, kept by each browser: always one, or light by day and dark by night.
+const THEMES = [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Light by day, dark by night']];
+// By day means while the sun is up where the weather is for; without the weather, these hours.
+const DAY_FROM = 7, DAY_UNTIL = 19;
 const CHIMES = [[null, 'Off'], [0, 'At the time'], [5, '5 min before'], [10, '10 min before'], [15, '15 min before'], [30, '30 min before']];
 // A colour for each subscribed calendar, by its place in the list; events added by hand are grey.
 const COLOURS = ['#6cb6ff', '#f2a65a', '#7ee0a1', '#e58ad6', '#f2e36b', '#ff8f85', '#9aa5ff', '#5fd4d0'];
@@ -462,6 +466,7 @@ async function refreshWeather() {
     if (!reply.ok) throw new Error('weather ' + reply.status);
     const found = await reply.json();
     weather = found.now ? found : null;
+    applyTheme();
     drawWeather();
     drawCalendar(new Date(), true);
   } catch (error) {
@@ -791,6 +796,7 @@ function tick() {
   if (dayShown && dayShown !== date) memoriesFirst();  // a new day has its own memories
   dayShown = date;
   drawCalendar(now, now.getMinutes() === 0);
+  applyTheme();
   setTimeout(tick, 1000 * (60 - now.getSeconds()) + 50);
 }
 setInterval(() => { announceEvents(Date.now()); remind(Date.now()); }, 10 * 1000);
@@ -806,7 +812,24 @@ function choices(box, list, chosen, choose) {
   });
 }
 
+let theme = 'dark';
+
+/// Put on the colours that are chosen. Called when they are chosen, every minute, and when
+/// the weather (which knows whether it is day) comes in.
+function applyTheme() {
+  const hour = new Date().getHours();
+  const day = weather && weather.now && typeof weather.now.day === 'boolean' ? weather.now.day : hour >= DAY_FROM && hour < DAY_UNTIL;
+  document.body.classList.toggle('light', theme === 'light' || (theme === 'auto' && day));
+}
+
 function drawSettings() {
+  choices($('themes'), THEMES, theme, (chosen) => {
+    theme = chosen;
+    remember('frameScreenTheme', theme);
+    applyTheme();
+    drawSettings();
+    touched();
+  });
   const show = (change) => {
     const before = slideshow;
     slideshow = Object.assign({}, slideshow, change);
@@ -1170,6 +1193,8 @@ document.addEventListener('keydown', (event) => {
 const withIcons = document.querySelectorAll('[data-icon]');
 for (let i = 0; i < withIcons.length; i++) label(withIcons[i], withIcons[i].dataset.icon, withIcons[i].textContent);
 
+theme = params.get('theme') || remembered('frameScreenTheme') || 'dark';
+if (!THEMES.some((one) => one[0] === theme)) theme = 'dark';
 tick();
 drawSettings();
 $('to-today').style.visibility = 'hidden';

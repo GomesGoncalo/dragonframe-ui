@@ -1,13 +1,32 @@
 /* How the frame's own screen looks. See index.html for what the page is. */
 html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+/* The colours, by what they are for. They are the dark ones unless <body> is `light` (a
+   setting, kept by each browser: always, never, or by day). The Pictures tab is dark
+   either way: photos are shown on black. */
+body, body.light #pictures {
+  --bg: #101113; --ink: #fff; --on-ink: #111; --muted: #a9adb5; --soft: #c9ccd1; --faint: #7d828b;
+  --panel: #1c1e22; --panel-off: #16181b; --press: #30343b; --line: #2b2f35;
+  --overlay: rgba(8, 9, 10, .97); --bar: rgba(28, 29, 32, .94); --card: rgba(250, 250, 250, .96);
+  --gold: #f2e36b; --gold-bg: #4a4520; --green: #7ee0a1; --red: #ff8f85; --blue: #6cb6ff; --orange: #f2a65a; --warn: #6b2d2a;
+}
+body.light {
+  --bg: #f3f4f6; --ink: #15171a; --on-ink: #fff; --muted: #5a6069; --soft: #3c4149; --faint: #8a9099;
+  --panel: #fff; --panel-off: #e9ebee; --press: #dfe2e7; --line: #d3d6db;
+  --overlay: rgba(243, 244, 246, .98); --bar: rgba(255, 255, 255, .95); --card: rgba(24, 26, 29, .95);
+  --gold: #946f00; --gold-bg: #f3ebbd; --green: #17804a; --red: #c0352b; --blue: #1b66c9; --orange: #b3600c; --warn: #f3cdc9;
+}
+#pictures { color: var(--ink); }
+/* Each calendar's own colour is a pale one, chosen for a dark screen; as words on a light
+   one it is deepened. */
+body.light .from { filter: brightness(.55) saturate(1.8); }
 body {
-  font-family: Roboto, "Helvetica Neue", Arial, sans-serif; color: #fff;
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--ink);
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
 button { font: inherit; outline: none; border: 0; }
 .view { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; }
 body[data-tab="pictures"] #pictures, body[data-tab="calendar"] #calendar, body[data-tab="settings"] #settings { display: block; }
-#calendar, #settings { background: #101113; }
+#calendar, #settings { background: var(--bg); }
 
 /* --- pictures --- */
 .slide { position: absolute; top: 0; right: 0; bottom: 0; left: 0; opacity: 0; transition: opacity 1.2s ease; }
@@ -18,7 +37,7 @@ body[data-tab="pictures"] #pictures, body[data-tab="calendar"] #calendar, body[d
 /* On a photo that shares the screen, while the tabs are up: show it alone. */
 .cell .grow {
   position: absolute; top: 1.4vmin; right: 1.4vmin; width: 7.4vmin; height: 7.4vmin; padding: 0; border-radius: 50%;
-  background: rgba(0, 0, 0, .55); color: #fff; font-size: 3.4vmin; opacity: 0; pointer-events: none; transition: opacity .25s ease;
+  background: rgba(0, 0, 0, .55); color: var(--ink); font-size: 3.4vmin; opacity: 0; pointer-events: none; transition: opacity .25s ease;
 }
 body.bar .cell .grow { opacity: 1; pointer-events: auto; }
 /* The photos of one screen, laid out in a box the shape of the arrangement and centred. */
@@ -60,7 +79,7 @@ body.empty .notice { display: block; }
 /* --- an event that is about to start, shown over any tab --- */
 .soon {
   position: absolute; top: 4vmin; left: 50%; transform: translateX(-50%); max-width: 90vmin; box-sizing: border-box;
-  padding: 2vmin 4vmin; border-radius: 3vmin; background: rgba(250, 250, 250, .96); color: #111; text-align: center;
+  padding: 2vmin 4vmin; border-radius: 3vmin; background: var(--card); color: var(--on-ink); text-align: center;
   box-shadow: 0 1vmin 4vmin rgba(0, 0, 0, .5); opacity: 0; transition: opacity .4s ease; pointer-events: none;
 }
 .soon.on { opacity: 1; }
@@ -70,15 +89,15 @@ body.empty .notice { display: block; }
 /* --- the tabs: always there on Calendar and Settings, brought up by a touch on Pictures --- */
 .tabs {
   position: absolute; left: 50%; bottom: 3vmin; transform: translateX(-50%); white-space: nowrap;
-  padding: .8vmin; border-radius: 5vmin; background: rgba(28, 29, 32, .94); box-shadow: 0 .6vmin 3vmin rgba(0, 0, 0, .5);
+  padding: .8vmin; border-radius: 5vmin; background: var(--bar); box-shadow: 0 .6vmin 3vmin rgba(0, 0, 0, .5);
   transition: opacity .25s ease; font-size: 0;
 }
 body[data-tab="pictures"]:not(.bar) .tabs { opacity: 0; pointer-events: none; }
 .tabs button {
-  font-size: 2.7vmin; color: #c9ccd1; background: none; border-radius: 4.2vmin;
+  font-size: 2.7vmin; color: var(--soft); background: none; border-radius: 4.2vmin;
   padding: 1.6vmin 3.4vmin; margin: 0 .3vmin;
 }
-.tabs button.active { background: #fff; color: #111; font-weight: 700; }
+.tabs button.active { background: var(--ink); color: var(--on-ink); font-weight: 700; }
 /* A small drawing before the words of a tab. It takes no touches itself, so the button gets them. */
 button svg {
   width: 1.25em; height: 1.25em; margin-right: .55em; vertical-align: -.25em; pointer-events: none;
@@ -86,7 +105,7 @@ button svg {
 }
 button.active svg { stroke-width: 2.4; }
 button.only svg { margin-right: 0; }
-.tabs .pause { margin-left: 1.5vmin; border-left: .2vmin solid rgba(255, 255, 255, .18); border-radius: 0; padding-left: 3.6vmin; }
+.tabs .pause { margin-left: 1.5vmin; border-left: .2vmin solid var(--line); border-radius: 0; padding-left: 3.6vmin; }
 body:not([data-tab="pictures"]) .tabs .pause { display: none; }
 
 /* --- calendar --- */
@@ -98,27 +117,27 @@ h2 { margin: 0 0 2.2vmin; font-size: 3.4vmin; font-weight: 500; }
 /* Small switches: between month and week, and between the parts of Settings. */
 .switch { position: absolute; top: 13.5vmin; left: 7vmin; right: 7vmin; white-space: nowrap; font-size: 0; }
 .switch button {
-  font-size: 2.5vmin; color: #c9ccd1; background: #1b1d21; border-radius: 3vmin; padding: 1.1vmin 2.8vmin; margin-right: 1vmin;
+  font-size: 2.5vmin; color: var(--soft); background: var(--panel); border-radius: 3vmin; padding: 1.1vmin 2.8vmin; margin-right: 1vmin;
 }
-.switch button.active { background: #fff; color: #111; font-weight: 700; }
+.switch button.active { background: var(--ink); color: var(--on-ink); font-weight: 700; }
 .switch .step { margin-left: 3vmin; }
-.switch .period { margin-left: 2vmin; font-size: 2.8vmin; color: #c9ccd1; vertical-align: middle; }
+.switch .period { margin-left: 2vmin; font-size: 2.8vmin; color: var(--soft); vertical-align: middle; }
 .switch button:active { opacity: .7; }
 body:not([data-view="month"]) #month-view, body:not([data-view="week"]) #week-view { display: none; }
 .month { position: absolute; top: 23vmin; left: 7vmin; width: 74vmin; }
 .grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-gap: .8vmin; text-align: center; font-size: 3.4vmin; }
 .grid span { position: relative; padding: 1.7vmin 0 2.5vmin; border-radius: 1.8vmin; }
 .grid .head { opacity: .5; font-size: 2.4vmin; padding: .6vmin 0 1vmin; }
-.grid .today { background: #fff; color: #111; font-weight: 700; }
+.grid .today { background: var(--ink); color: var(--on-ink); font-weight: 700; }
 /* The day picked to see what is on it. */
-.grid .picked { box-shadow: inset 0 0 0 .4vmin #6cb6ff; }
+.grid .picked { box-shadow: inset 0 0 0 .4vmin var(--blue); }
 /* A dot for each calendar with something on that day. */
 .grid .dots { position: absolute; left: 0; right: 0; bottom: .8vmin; height: 1vmin; padding: 0; font-size: 0; }
 .grid .dots i { display: inline-block; width: 1vmin; height: 1vmin; margin: 0 .25vmin; border-radius: 50%; }
 .grid .today .dots i { box-shadow: 0 0 0 .15vmin rgba(0, 0, 0, .35); }
 .agenda { position: absolute; top: 23vmin; right: 7vmin; bottom: 14vmin; left: 92vmin; overflow: hidden; }
-.item { margin-bottom: 1.8vmin; padding-left: 1.6vmin; border-left: .6vmin solid #6cb6ff; }
-.item .when { font-size: 2.3vmin; color: rgba(255, 255, 255, .6); }
+.item { margin-bottom: 1.8vmin; padding-left: 1.6vmin; border-left: .6vmin solid var(--blue); }
+.item .when { font-size: 2.3vmin; color: var(--muted); }
 .item .what { font-size: 3.2vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item .when { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item .from { opacity: 1; }
@@ -128,8 +147,8 @@ body:not([data-view="month"]) #month-view, body:not([data-view="week"]) #week-vi
 .none { font-size: 2.8vmin; opacity: .6; }
 /* The week: seven days side by side, each with its own events. */
 .week { position: absolute; top: 23vmin; left: 7vmin; right: 7vmin; bottom: 14vmin; display: grid; grid-template-columns: repeat(7, 1fr); grid-gap: 1vmin; }
-.day { background: #17191c; border-radius: 1.8vmin; padding: 1.6vmin 1.4vmin; overflow: hidden; min-width: 0; }
-.day.today { background: #24272c; box-shadow: inset 0 0 0 .3vmin #fff; }
+.day { background: var(--panel); border-radius: 1.8vmin; padding: 1.6vmin 1.4vmin; overflow: hidden; min-width: 0; }
+.day.today { background: var(--line); box-shadow: inset 0 0 0 .3vmin var(--ink); }
 .day .name { font-size: 2.3vmin; opacity: .6; }
 .day .number { font-size: 4.4vmin; font-weight: 300; line-height: 1.15; }
 .day .sky { font-size: 2.2vmin; opacity: .75; margin-bottom: 1.2vmin; min-height: 2.8vmin; white-space: nowrap; overflow: hidden; }
@@ -143,16 +162,16 @@ body:not([data-view="month"]) #month-view, body:not([data-view="week"]) #week-vi
 body[data-part="pictures"] #part-pictures, body[data-part="night"] #part-night, body[data-part="sound"] #part-sound,
 body[data-part="wifi"] #part-wifi, body[data-part="frame"] #part-frame { display: block; }
 .row { margin-bottom: 2.6vmin; }
-.row > .label { display: block; margin-bottom: 1vmin; font-size: 2.5vmin; color: #a9adb5; }
-.part p { margin: 0 0 2vmin; max-width: 110vmin; font-size: 2.5vmin; line-height: 1.4; color: #a9adb5; }
-.part .big { font-size: 3.6vmin; color: #fff; margin-bottom: .8vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.part .good { color: #6ee7a0; } .part .bad { color: #ff8f85; }
+.row > .label { display: block; margin-bottom: 1vmin; font-size: 2.5vmin; color: var(--muted); }
+.part p { margin: 0 0 2vmin; max-width: 110vmin; font-size: 2.5vmin; line-height: 1.4; color: var(--muted); }
+.part .big { font-size: 3.6vmin; color: var(--ink); margin-bottom: .8vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.part .good { color: var(--green); } .part .bad { color: var(--red); }
 .press {
-  font-size: 2.6vmin; color: #fff; background: #30343b; border-radius: 1.6vmin;
+  font-size: 2.6vmin; color: var(--ink); background: var(--press); border-radius: 1.6vmin;
   padding: 1.5vmin 2.6vmin; margin: 0 .9vmin 1vmin 0;
 }
-.press.on { background: #fff; color: #111; font-weight: 700; }
-.press.warn { background: #6b2d2a; }
+.press.on { background: var(--ink); color: var(--on-ink); font-weight: 700; }
+.press.warn { background: var(--warn); }
 .press:active { opacity: .7; }
 .hours { display: inline-block; min-width: 13vmin; text-align: center; font-size: 4vmin; font-weight: 300; vertical-align: middle; }
 .columns > div { display: inline-block; vertical-align: top; margin-right: 7vmin; }
@@ -161,13 +180,13 @@ body[data-part="wifi"] #part-wifi, body[data-part="frame"] #part-frame { display
 body.locked .lock { display: block; }
 body.locked #parts, body.locked #settings .part { display: none; }
 .lock .dots { height: 5vmin; font-size: 5vmin; letter-spacing: 1.6vmin; line-height: 1; margin: 1vmin 0; }
-.lock p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: #ff8f85; }
+.lock p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: var(--red); }
 .keys { display: inline-grid; grid-template-columns: repeat(3, 13vmin); grid-gap: 1.3vmin; }
-.keys button { height: 9.6vmin; font-size: 4vmin; color: #fff; background: #30343b; border-radius: 2vmin; }
+.keys button { height: 9.6vmin; font-size: 4vmin; color: var(--ink); background: var(--press); border-radius: 2vmin; }
 .keys button:active { opacity: .7; }
-.keys .go { background: #fff; color: #111; font-weight: 700; font-size: 3vmin; }
+.keys .go { background: var(--ink); color: var(--on-ink); font-weight: 700; font-size: 3vmin; }
 /* The address as a QR code, on white so a phone's camera reads it. */
-.code { width: 26vmin; height: 26vmin; border-radius: 1.2vmin; background: #fff; display: none; }
+.code { width: 26vmin; height: 26vmin; border-radius: 1.2vmin; background: var(--ink); display: none; }
 
 /* Only seen in the simulator: on the frame the screen itself is off. */
 .asleep {
