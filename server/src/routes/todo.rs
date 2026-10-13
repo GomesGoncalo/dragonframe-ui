@@ -26,6 +26,20 @@ pub(crate) struct TickRequest {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct ApproveRequest {
+    pub(crate) task: EventId,
+    pub(crate) day: Day,
+    /// Credit the points, or turn the request down.
+    pub(crate) approve: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ApprovalRequest {
+    /// Whether points wait to be approved.
+    pub(crate) on: bool,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct PeopleRequest {
     pub(crate) people: Vec<PersonGiven>,
 }
@@ -54,9 +68,25 @@ pub(crate) struct AdjustRequest {
     pub(crate) why: Title,
 }
 
+/// A tick is for a day about now. The server does not know the frame's time zone, so the
+/// day before and the day after its own are as good as its own; anything else is a
+/// mistake, and would clear away tasks as if their days were long over.
+fn about_now(day: Day) -> Result<Day, ApiError> {
+    let today = chrono::DateTime::from_timestamp(i64::try_from(crate::app::now_secs()).unwrap_or(0), 0)
+        .unwrap_or_default()
+        .date_naive();
+    if (day.0 - today).num_days().abs() <= 1 {
+        Ok(day)
+    } else {
+        Err(ApiError::bad_request("that is not today"))
+    }
+}
+
 fn refused(error: &TodoError) -> ApiError {
     let status = match error {
-        TodoError::NoSuchPerson | TodoError::NoSuchTask | TodoError::NoSuchReward => StatusCode::NOT_FOUND,
+        TodoError::NoSuchPerson | TodoError::NoSuchTask | TodoError::NoSuchReward | TodoError::NothingWaiting => {
+            StatusCode::NOT_FOUND
+        }
         TodoError::WhoDidIt => StatusCode::BAD_REQUEST,
         TodoError::NotEnough { .. } | TodoError::TooMany(_) | TodoError::SameName => StatusCode::CONFLICT,
     };
@@ -81,9 +111,25 @@ pub(crate) async fn todo_view(State(app): State<Shared>, Query(query): Query<Has
     Ok(Json(blocking(move || app.todo.view(day)).await))
 }
 
-/// Tick a task, or take its tick away. This needs no PIN: ticking is what the list is for.
+/// Approve a tick that is waiting for its points, or turn it down.
+pub(crate) async fn approve_tick(State(app): State<Shared>, Parsed(request): Parsed<ApproveRequest>) -> ApiResult {
+    change(app, move |app| app.todo.approve(&request.task, request.day, request.approve)).await
+}
+
+/// Choose whether points wait to be approved.
+pub(crate) async fn set_approval(State(app): State<Shared>, Parsed(request): Parsed<ApprovalRequest>) -> ApiResult {
+    change(app, move |app| {
+        app.todo.set_approval(request.on);
+        Ok(())
+    })
+    .await
+}
+
+/// Tick a task, or take its tick away. This needs no PIN: ticking is what the list is for,
+/// and where points wait for approval a tick only asks for them.
 pub(crate) async fn tick_task(State(app): State<Shared>, Parsed(request): Parsed<TickRequest>) -> ApiResult {
-    change(app, move |app| app.todo.tick(&request.task, request.day, request.done, request.who.as_ref())).await
+    let day = about_now(request.day)?;
+    change(app, move |app| app.todo.tick(&request.task, day, request.done, request.who.as_ref())).await
 }
 
 pub(crate) async fn save_people(State(app): State<Shared>, Parsed(request): Parsed<PeopleRequest>) -> ApiResult {

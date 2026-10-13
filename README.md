@@ -30,7 +30,7 @@ data), `android/build/`, `server/target/` and `server/models/`.
 
 ## The frame's screen
 
-Six tabs, each with an icon (Home only once the house is connected). On Pictures the tab bar is hidden until you tap the middle
+Five tabs, each with an icon. On Pictures the tab bar is hidden until you tap the middle
 of the screen; on the other two it stays visible. The frame can stand either way up: the
 screen turns with it and lays itself out for a wide or a tall display. Calendar and
 Settings go back to Pictures when left alone (5 minutes unless set otherwise).
@@ -43,6 +43,9 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   taken on today's date in earlier years come first, marked "On this day" with the year.
   In the morning (06:00 to 10:00) today's events are listed under the clock. Tap the
   left or right quarter to step back or forward. The tab bar has a Pause button.
+  While the tab bar is up, each photo that shares the screen has a button in its corner
+  that shows it alone, as large as the screen allows. It stays for two minutes, or until
+  the button on it (now pointing inwards) puts back the photos it was with.
   Press and hold a photo to make it a favourite (★ beside its date, and it comes round
   twice as often in shuffled order) or to hide it. With a PIN set the keypad comes
   first, so a child cannot hide photos. A hidden photo is not deleted: it stays on the
@@ -53,11 +56,6 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   are grey. The arrows, or a swipe, move to other months and weeks; "Today" comes back.
   A touch on a day lists what is on it, past or future (from the week view this opens
   the month with that day picked).
-- **Home.** The house's alarm state, door and window sensors, motion sensors, and the
-  latest picture from each camera (touch one to see it large). When the doorbell rings,
-  the frame chimes and shows who is there over whatever tab is open, switching the
-  screen on if night mode has it off. The frame only shows these things; it cannot arm
-  or disarm anything. See [The house](#the-house).
 - **To do.** A column for each person with today's tasks and the points they have, a
   column for tasks that are anyone's, and the rewards points buy. See
   [Things to do](#things-to-do).
@@ -69,6 +67,12 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   corner of Pictures, keeps the screen on through night mode, and keeps its tab open.
   An alarm switches the screen on if night mode has it off. These are kept on the frame
   itself and need no PIN.
+  Utilities also holds **Home**, once the house is connected: the house's alarm state,
+  door and window sensors, motion sensors, and the latest picture from each camera
+  (touch one to see it large). When the doorbell rings, the frame chimes and shows who
+  is there over whatever tab is open, switching the screen on if night mode has it off.
+  The frame only shows these things; it cannot arm or disarm anything. See
+  [The house](#the-house).
 - **Settings**, in five parts. If a PIN is set, a keypad asks for it each time Settings
   is opened, and nothing is shown until it is right:
   - Pictures: which photos to show (everything, only the favourites, or one of the
@@ -119,18 +123,22 @@ within half a minute, and a tick made on the frame shows on the page.
   done once (on a day, or whenever) or comes round on chosen days of the week. A task
   for a day that has passed shows as late until it is done. A task done once stays
   ticked for that day and is gone the next.
-- **Ticking** a task on the frame gives its points to its person; a task that is
-  anyone's asks who did it. Touching it again the same day takes the tick and the
-  points back. Ticking needs no PIN: it is what the list is for.
+- **Ticking** a task on the frame asks for its points for its person; a task that is
+  anyone's asks who did it. The tick shows as "to approve" until someone with the PIN
+  says it was done ("N waiting for approval" on the frame, or the management page);
+  then the points are added. Turned down, the task is to do again. Touching a ticked
+  task again takes the tick back. Ticking needs no PIN: it is what the list is for.
+  Points can instead be set to be added at once, without approval, on the management
+  page.
 - A **reward** costs points. Touching one on the frame and choosing who it is for
   spends their points, after the PIN if one is set. People short of points are shown
   how many they still need.
 - Points can also be given or taken by hand on the management page, with a reason.
   Everything that happens to anyone's points is listed there.
 
-With a PIN set, only ticking is open: people, tasks, rewards, spending and giving
-points all need it. Since a child can tick a task that was not done, the list of what
-happened is the check; undo a tick the same day, or take the points back by hand.
+With a PIN set, only ticking is open: approving, people, tasks, rewards, spending and
+giving points all need it. Without a PIN anyone at the frame can approve, so approval
+only means something once a PIN is set.
 
 ### Getting there
 
@@ -212,7 +220,7 @@ Setting it up:
    shows into `relay.env`.
 4. In Home Assistant: your profile, Security, "Long-lived access tokens", create one,
    and put it in `relay.env` as `HA_TOKEN`.
-5. `docker compose up -d relay`. The Home tab appears on the frame within half a minute.
+5. `docker compose up -d relay`. Home appears in the frame's Utilities tab within half a minute.
    `docker compose logs -f relay` shows what the frame is being told.
 
 The relay picks devices by what Home Assistant says they are, so it is not tied to eufy:
@@ -367,7 +375,7 @@ a value it would still have to check.
 
 Each page in `server/pages/` is an ordinary `index.html` with its stylesheets and scripts
 beside it (the screen's Utilities tab has its own pair, `utilities.css` and
-`utilities.js`; the Home tab has `home.*`; a photo's menu and the reminders are in
+`utilities.js`; Home, inside it, has `home.*`; a photo's menu and the reminders are in
 `extras.*`; the To do tab is `todo.*`). The server sends a page as one document with those put inside it, so a
 page arrives in one request and is never half old and half new. Changing a page means
 editing those files and rebuilding.
@@ -392,7 +400,8 @@ Routes added for the screen and calendar:
 | `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list; `&how=` works it out another way |
 | `POST /api/travel`, `/api/travel/key` | Keep home and the trips; keep or forget the driving key |
 | `GET /api/todo?day=` | Things to do: people, tasks, rewards, and the list for the day it is for whoever asks |
-| `POST /api/todo/done` | Tick a task for a day, or take the tick away (no PIN) |
+| `POST /api/todo/done` | Tick a task for today, or take the tick away (no PIN) |
+| `POST /api/todo/approve`, `/approval` | Credit a tick's points or turn it down; choose whether points wait for approval |
 | `POST /api/todo/people`, `/tasks`, `/rewards` | Keep exactly these people, tasks or rewards |
 | `POST /api/todo/redeem`, `/points` | Spend someone's points on a reward; give or take points by hand |
 | `GET /api/map/{z}/{x}/{y}` | A square of the map, fetched from OpenStreetMap once and kept |

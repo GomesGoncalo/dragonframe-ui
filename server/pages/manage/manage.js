@@ -539,11 +539,23 @@ async function loadTodo() {
       box.append(calRow(`★ ${person.points}`, person.name, "", give)); box.lastChild.append(remove);
     }
   }
+  if (document.activeElement !== $("tdApproval")) $("tdApproval").checked = todo.approval;
+  setText($("tdNoWaiting"), todo.waiting.length ? "" : todo.approval ? "Nothing is waiting. Tasks ticked on the frame are listed here to be approved." : "Points are added as soon as a task is ticked.");
+  if (changed("tdWaiting", todo.waiting)) {
+    const box = $("tdWaiting"); box.textContent = "";
+    for (const request of todo.waiting) {
+      const yes = el("button", "btn small primary", "Done: add the points"), no = el("button", "btn small danger", "Not done");
+      yes.onclick = () => saveTodo("/api/todo/approve", { task: request.task, day: request.day, approve: true }, `★ ${request.points} added for ${request.name}.`);
+      no.onclick = () => saveTodo("/api/todo/approve", { task: request.task, day: request.day, approve: false }, "Turned down. The task is to do again.");
+      const day = request.day === todo.day ? "today" : calWhen(request.day).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+      box.append(calRow(`★ ${request.points}`, `${request.name}: ${request.title}`, day, yes)); box.lastChild.append(no);
+    }
+  }
   if (changed("tdTasks", [todo.tasks, todo.today, todo.people])) {
     const box = $("tdTasks"); box.textContent = "";
     for (const task of todo.tasks) {
       const today = todo.today.find(t => t.id === task.id);
-      const state = !today ? "" : today.done ? `done today by ${nameOf(today.by)}` : today.late ? "late" : "to do today";
+      const state = !today ? "" : today.waiting ? `ticked by ${nameOf(today.by)}, waiting for approval` : today.done ? `done today by ${nameOf(today.by)}` : today.late ? "late" : "to do today";
       const remove = el("button", "btn small danger", "Delete");
       remove.onclick = () => { if (confirm(`Delete "${task.title}"?`)) saveTodo("/api/todo/tasks", { tasks: todo.tasks.filter(t => t.id !== task.id) }, "Task deleted."); };
       box.append(calRow(`${nameOf(task.who)} · ${task.points} pts`, task.title, `${repeatText(task.repeat)}${state ? ` · ${state}` : ""}`, remove));
@@ -601,8 +613,9 @@ async function planTrips() {
   for (const { trip, next } of tripRows()) {
     if (trip < 0 || !next) continue;
     const arrive = Math.floor(calWhen(next.start).getTime() / 1000), key = `${JSON.stringify(travel.trips[trip])}|${travel.home}|${arrive}`;
-    if (tripPlans[key]) continue;
-    try { tripPlans[key] = await api(`/api/travel?trip=${trip}&arrive=${arrive}`); } catch (e) { tripPlans[key] = { error: e.message }; }
+    // A plan is asked for once; a failure is asked about again after a minute, as it may pass.
+    if (tripPlans[key] && !(tripPlans[key].error && Date.now() - tripPlans[key].at > 60000)) continue;
+    try { tripPlans[key] = await api(`/api/travel?trip=${trip}&arrive=${arrive}`); } catch (e) { tripPlans[key] = { error: e.message, at: Date.now() }; }
     renderTrips();
   }
 }
@@ -857,6 +870,7 @@ $("optAuto").onchange = e => api("/api/auto", { enabled: e.target.checked }).the
 $("calLinks").onchange = () => api("/api/calendars", { links: $("calLinks").value.split("\n") }).then(() => { toast("Calendars saved. The frame is fetching them."); drawn.delete("calLinks"); loadCalendar(); setTimeout(loadCalendar, 4000); }, e => toast(e.message));
 $("evAdd").onclick = addEvent;
 $("rmAdd").onclick = addRule;
+$("tdApproval").onchange = e => saveTodo("/api/todo/approval", { on: e.target.checked }, e.target.checked ? "Points now wait for approval." : "Points are now added at once; what was waiting has been added.");
 $("tdAddPerson").onclick = addPerson; $("tdAddTask").onclick = addTask; $("tdAddReward").onclick = addReward;
 $("tdName").onkeydown = e => { if (e.key === "Enter") addPerson(); };
 $("tdTitle").onkeydown = e => { if (e.key === "Enter") addTask(); };

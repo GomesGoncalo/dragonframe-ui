@@ -21,6 +21,15 @@ body[data-tab="todo"] #todo { display: block; }
 .task.done .what { text-decoration: line-through; }
 .task.done .box { border-color: #7ee0a1; background: #7ee0a1; color: #111; }
 .task.done .worth { color: #7d828b; }
+.task.waiting .box { border-color: #f2e36b; background: none; color: #f2e36b; }
+.task.waiting .what { text-decoration: none; color: #c9ccd1; }
+.task .tag.wait { background: #4a4520; color: #f2e36b; }
+#todo-waiting { position: absolute; top: .4vmin; left: 24vmin; margin: 0; background: #f2e36b; }
+.pick .request { margin: 0 auto 1.6vmin; max-width: 150vmin; text-align: left; font-size: 3vmin; white-space: nowrap; }
+.pick .request .what { display: inline-block; width: 52%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.pick .request .worth { display: inline-block; width: 12%; color: #f2e36b; vertical-align: middle; }
+.pick .people .request .press { min-width: 0; margin: 0 0 0 1.4vmin; padding: 1.6vmin 2.6vmin; border-bottom: 0; }
+.pick .people .all { margin-top: 2vmin; border-bottom: 0; }
 #todo .none { padding: 1vmin .4vmin; font-size: 2.4vmin; color: #7d828b; }
 #todo .empty { position: absolute; top: 30vmin; left: 7vmin; right: 7vmin; font-size: 3vmin; line-height: 1.5; color: #a9adb5; }
 #todo .rewards { position: absolute; left: 7vmin; right: 7vmin; bottom: 13vmin; height: 15vmin; overflow: hidden; }

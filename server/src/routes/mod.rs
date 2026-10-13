@@ -35,7 +35,9 @@ use crate::routes::photos::{
     add, analyse, delete, duplicates, empty_bin, file, forget_emptied, mark, refresh_slideshow, restore, save_albums,
     set_daily_sync, slides, state, status, sync, thumb, watching,
 };
-use crate::routes::todo::{adjust_points, redeem, save_people, save_rewards, save_tasks, tick_task, todo_view};
+use crate::routes::todo::{
+    adjust_points, approve_tick, redeem, save_people, save_rewards, save_tasks, set_approval, tick_task, todo_view,
+};
 use crate::{auth, store};
 
 pub(crate) mod access;
@@ -183,6 +185,8 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/map/{z}/{x}/{y}", get(map_tile))
         .route("/api/todo", get(todo_view))
         .route("/api/todo/done", post(tick_task))
+        .route("/api/todo/approve", post(approve_tick))
+        .route("/api/todo/approval", post(set_approval))
         .route("/api/todo/people", post(save_people))
         .route("/api/todo/tasks", post(save_tasks))
         .route("/api/todo/rewards", post(save_rewards))

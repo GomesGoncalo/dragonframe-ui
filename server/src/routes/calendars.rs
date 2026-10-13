@@ -17,6 +17,8 @@ use crate::routes::{header, ApiError, ApiResult, Parsed};
 use crate::types::{CalendarLinks, EventId, How, Reminders, RoadsKey, Spot, Trips, Window};
 use crate::{auth, calendar, store, travel};
 
+const DAY_SECS: i64 = 24 * 60 * 60;
+
 #[derive(Deserialize)]
 pub(crate) struct CalendarsRequest {
     pub(crate) links: CalendarLinks,
@@ -181,6 +183,12 @@ pub(crate) async fn travel_plan(State(app): State<Shared>, Query(query): Query<H
     let (Some(which), Some(arrive)) = (number("trip"), number("arrive")) else {
         return Err(ApiError::bad_request("which trip, and arriving when?"));
     };
+    // Events are looked at a few months around today. Refusing the rest keeps anyone on the
+    // network from having the frame ask the planners (one of them metered) about any moment.
+    let now = i64::try_from(now_secs()).unwrap_or(i64::MAX);
+    if !(now - 2 * DAY_SECS..=now + 120 * DAY_SECS).contains(&arrive) {
+        return Err(ApiError::bad_request("that is too far from today to plan for"));
+    }
     let cfg = std::sync::Arc::clone(&app.cfg);
     let settings = blocking(move || store::load_settings(&cfg)).await;
     let set_up =

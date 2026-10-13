@@ -31,6 +31,7 @@ pub const TILES_URL: &str = "https://tile.openstreetmap.org";
 /// The deepest the map zooms, and how many of its squares are kept on the frame.
 const DEEPEST_ZOOM: u32 = 18;
 const MOST_TILES_KEPT: usize = 1500;
+const MOST_TILE_BYTES: usize = 1024 * 1024;
 /// A line on the map is drawn with at most this many points.
 const MOST_POINTS: usize = 250;
 /// What a stretch by car is called, beside the journey planner's own words for the rest.
@@ -449,6 +450,10 @@ impl Travel {
             return Err(TravelError::Refused(response.status().as_u16()));
         }
         let picture = response.bytes().await?.to_vec();
+        // A square is a PNG picture of modest size; anything else is not kept or handed on.
+        if !picture.starts_with(b"\x89PNG") || picture.len() > MOST_TILE_BYTES {
+            return Err(TravelError::Unreadable);
+        }
         let keep = picture.clone();
         crate::app::blocking(move || {
             // Starting again when there are very many is simpler than choosing which to drop.
@@ -507,6 +512,8 @@ pub mod testing {
     use axum::routing::get;
     use axum::Router;
 
+    /// What the stand-in for the map hands out as a square: the start of a PNG file.
+    pub const PICTURE: &[u8] = b"\x89PNG\r\n\x1a\n a picture";
     /// The key the stand-in for the driving service accepts.
     pub const KEY: &str = "0123456789abcdefKEY";
 
@@ -589,10 +596,10 @@ pub mod testing {
             .route(
                 "/tiles/{z}/{x}/{y}",
                 get(|Path((z, _, _)): Path<(u32, u32, String)>| async move {
-                    if z == 9 {
-                        StatusCode::SERVICE_UNAVAILABLE.into_response()
-                    } else {
-                        "a picture".into_response()
+                    match z {
+                        9 => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                        8 => "<html>not a picture</html>".into_response(),
+                        _ => PICTURE.into_response(),
                     }
                 }),
             );
@@ -742,13 +749,15 @@ mod tests {
         });
         let services = testing::services().await;
         let (travel, http) = (Travel::new(services.clone()), reqwest::Client::new());
-        assert_eq!(travel.tile(&http, &cfg, (10, 512, 341)).await.unwrap(), b"a picture");
+        assert_eq!(travel.tile(&http, &cfg, (10, 512, 341)).await.unwrap(), testing::PICTURE);
         assert!(cfg.data_dir.join("tiles/10-512-341.png").is_file());
         // Kept: it is still had when the map's keepers cannot be reached.
         let gone = Travel::new(Services { tiles: "http://127.0.0.1:1".into(), ..services });
-        assert_eq!(gone.tile(&http, &cfg, (10, 512, 341)).await.unwrap(), b"a picture");
+        assert_eq!(gone.tile(&http, &cfg, (10, 512, 341)).await.unwrap(), testing::PICTURE);
         assert!(matches!(gone.tile(&http, &cfg, (10, 0, 0)).await, Err(TravelError::Unreachable(_))));
         assert_eq!(travel.tile(&http, &cfg, (9, 1, 1)).await, Err(TravelError::Refused(503)));
+        assert_eq!(travel.tile(&http, &cfg, (8, 1, 1)).await, Err(TravelError::Unreadable), "not a picture");
+        assert!(!cfg.data_dir.join("tiles/8-1-1.png").exists(), "and so not kept");
         for nowhere in [(19, 0, 0), (2, 4, 0), (2, 0, 4)] {
             assert_eq!(travel.tile(&http, &cfg, nowhere).await, Err(TravelError::NoSuchTile), "{nowhere:?}");
         }

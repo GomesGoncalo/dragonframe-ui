@@ -2,8 +2,10 @@
 //!
 //! A task belongs to a person (or to whoever gets to it first) and is worth some points.
 //! It is done once, on a day or whenever, or comes round on chosen days of the week.
-//! Ticking a task on the frame's screen gives its points to whoever did it; taking the
-//! tick away takes them back. Points are spent on rewards.
+//! Ticking a task on the frame's screen asks for its points for whoever did it. They are
+//! credited when the tick is approved, which takes the PIN; or at once, if points are set
+//! not to wait for approval. Taking a tick away takes its points back. Points are spent
+//! on rewards.
 //!
 //! Everything is kept in `todo.json` on the frame, so what is added from a phone or
 //! computer is on the frame's screen, and what is ticked there is seen everywhere.
@@ -49,6 +51,8 @@ pub enum TodoError {
     TooMany(usize),
     #[error("two people cannot have the same name")]
     SameName,
+    #[error("nothing is waiting for approval there")]
+    NothingWaiting,
 }
 
 /// Someone who does tasks and collects points.
@@ -97,6 +101,13 @@ struct Tick {
     day: Day,
     who: EventId,
     points: u32,
+    /// Whether the points have been credited; until then the tick waits for approval.
+    #[serde(default = "yes")]
+    paid: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Something that happened to someone's points, for looking back on.
@@ -110,7 +121,20 @@ struct Entry {
     change: i64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+impl Default for Kept {
+    fn default() -> Self {
+        Kept {
+            people: Vec::new(),
+            tasks: Vec::new(),
+            rewards: Vec::new(),
+            ticks: Vec::new(),
+            history: Vec::new(),
+            approval: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Kept {
     #[serde(default)]
     people: Vec<Person>,
@@ -122,6 +146,9 @@ struct Kept {
     ticks: Vec<Tick>,
     #[serde(default)]
     history: Vec<Entry>,
+    /// Whether a tick's points wait to be approved (the usual way) or are credited at once.
+    #[serde(default = "yes")]
+    approval: bool,
 }
 
 /// What the page sends to keep the list of people: those with an id are kept (and may be
@@ -204,11 +231,11 @@ impl Kept {
     }
 
     /// Forget what no longer matters on `day`: tasks done once on an earlier day, and ticks
-    /// too old to be taken back.
+    /// too old to be taken back. A tick still waiting for approval is never forgotten.
     fn tidy(&mut self, day: Day) {
-        let old = |tick: &Tick| (day.0 - tick.day.0).num_days() > KEPT_DAYS;
+        let old = |tick: &Tick| tick.paid && (day.0 - tick.day.0).num_days() > KEPT_DAYS;
         let finished: Vec<EventId> =
-            self.ticks.iter().filter(|tick| tick.day < day).map(|tick| tick.task.clone()).collect();
+            self.ticks.iter().filter(|tick| tick.paid && tick.day < day).map(|tick| tick.task.clone()).collect();
         self.tasks.retain(|task| !(matches!(task.repeat, Repeat::Once(_)) && finished.contains(&task.id)));
         self.ticks.retain(|tick| !old(tick));
     }
@@ -246,14 +273,36 @@ impl Todo {
                 json!({
                     "id": task.id, "title": task.title, "who": task.who, "points": task.points,
                     "done": tick.is_some(), "by": tick.map(|tick| &tick.who), "late": late,
+                    "waiting": tick.is_some_and(|tick| !tick.paid),
                     "once": matches!(task.repeat, Repeat::Once(_)),
                 })
             })
             .collect();
+        // Ticks whose points have been asked for and not yet credited, oldest first.
+        let waiting: Vec<Value> = kept
+            .ticks
+            .iter()
+            .filter(|tick| !tick.paid)
+            .filter_map(|tick| {
+                let task = kept.tasks.iter().find(|task| task.id == tick.task)?;
+                let who = kept.people.iter().find(|person| person.id == tick.who)?;
+                Some(json!({
+                    "task": tick.task, "day": tick.day, "title": task.title, "who": tick.who, "name": who.name,
+                    "points": tick.points,
+                }))
+            })
+            .collect();
         let history: Vec<&Entry> = kept.history.iter().rev().take(40).collect();
+        // A task done once, on an earlier day, is finished: it is cleared away at the next
+        // tick, and is not shown as a task meanwhile.
+        let finished = |task: &&Task| {
+            matches!(task.repeat, Repeat::Once(_))
+                && kept.ticks.iter().any(|tick| tick.task == task.id && tick.paid && tick.day < day)
+        };
+        let tasks: Vec<&Task> = kept.tasks.iter().filter(|task| !finished(task)).collect();
         json!({
-            "day": day, "people": kept.people, "tasks": kept.tasks, "rewards": kept.rewards,
-            "today": today, "history": history,
+            "day": day, "people": kept.people, "tasks": tasks, "rewards": kept.rewards,
+            "today": today, "history": history, "waiting": waiting, "approval": kept.approval,
         })
     }
 
@@ -268,11 +317,21 @@ impl Todo {
             (true, None) => {
                 let who = found.who.as_ref().or(who).ok_or(TodoError::WhoDidIt)?.clone();
                 let points = found.points.get();
-                kept.credit(&who, i64::from(points), found.title.as_str().to_string())?;
-                kept.ticks.push(Tick { task: task.clone(), day, who, points });
+                // Points wait to be approved, unless there are none or nothing waits here.
+                let paid = !kept.approval || points == 0;
+                if paid {
+                    kept.credit(&who, i64::from(points), found.title.as_str().to_string())?;
+                } else {
+                    kept.person(&who)?;
+                }
+                kept.ticks.push(Tick { task: task.clone(), day, who, points, paid });
             }
             (false, Some(at)) => {
                 let tick = kept.ticks.remove(at);
+                if !tick.paid {
+                    self.save(&kept);
+                    return Ok(());
+                }
                 // Whoever was given the points may be gone; then there is nothing to take back.
                 let _ = kept.credit(
                     &tick.who,
@@ -284,6 +343,45 @@ impl Todo {
         }
         self.save(&kept);
         Ok(())
+    }
+
+    /// Approve a tick that is waiting, crediting its points; or turn it down, which takes
+    /// the tick away so the task is to do again. Blocking.
+    pub fn approve(&self, task: &EventId, day: Day, approve: bool) -> Result<(), TodoError> {
+        let mut kept = self.kept();
+        let waiting = |tick: &Tick| tick.task == *task && tick.day == day && !tick.paid;
+        let at = kept.ticks.iter().position(waiting).ok_or(TodoError::NothingWaiting)?;
+        if approve {
+            let (who, points) = (kept.ticks[at].who.clone(), i64::from(kept.ticks[at].points));
+            let title =
+                kept.tasks.iter().find(|t| t.id == *task).map_or_else(String::new, |t| t.title.as_str().to_string());
+            kept.credit(&who, points, title)?;
+            kept.ticks[at].paid = true;
+        } else {
+            kept.ticks.remove(at);
+        }
+        self.save(&kept);
+        Ok(())
+    }
+
+    /// Whether points wait to be approved. Turning that off credits whatever is waiting.
+    /// Blocking.
+    pub fn set_approval(&self, on: bool) {
+        let mut kept = self.kept();
+        kept.approval = on;
+        if !on {
+            let waiting: Vec<Tick> = kept.ticks.iter().filter(|tick| !tick.paid).cloned().collect();
+            for tick in waiting {
+                let title =
+                    kept.tasks.iter().find(|task| task.id == tick.task).map(|task| task.title.as_str().to_string());
+                // Whoever asked may be gone; then there is nobody to credit.
+                let _ = kept.credit(&tick.who, i64::from(tick.points), title.unwrap_or_default());
+            }
+            for tick in &mut kept.ticks {
+                tick.paid = true;
+            }
+        }
+        self.save(&kept);
     }
 
     /// Keep exactly these people. Blocking.
@@ -308,6 +406,8 @@ impl Todo {
                 task.who = None;
             }
         }
+        // And what they asked for and were not yet given goes with them.
+        kept.ticks.retain(|tick| tick.paid || people.iter().any(|person| person.id == tick.who));
         info!(people = people.len(), "people for the things to do saved");
         kept.people = people;
         self.save(&kept);
@@ -393,6 +493,7 @@ mod tests {
     fn household(name: &str) -> (Todo, TempFrame, EventId, EventId) {
         let frame = TempFrame::new(name);
         let todo = Todo::load(&frame.0);
+        todo.set_approval(false);
         todo.set_people(from_value(json!([{ "name": "Ana" }, { "name": "Rui" }])).unwrap()).unwrap();
         let people = todo.view(day("2026-10-13"))["people"].clone();
         let id = |at: usize| from_value::<EventId>(people[at]["id"].clone()).unwrap();
@@ -464,6 +565,7 @@ mod tests {
         assert_eq!(points(&todo, 1), 10);
         assert_eq!(titles("2026-10-14"), ["Post the letter", "Sort the shed"], "ticked, for the day it was done");
         assert_eq!(titles("2026-10-15"), ["Sort the shed"]);
+        assert_eq!(todo.view(day("2026-10-15"))["tasks"].as_array().unwrap().len(), 1, "and no longer a task");
         // The next day's first tick clears it away for good; its points stay.
         let shed = task_id(&todo, "Sort the shed");
         todo.tick(&shed, day("2026-10-15"), true, Some(&rui)).unwrap();
@@ -509,11 +611,67 @@ mod tests {
         assert_eq!((&view["people"][1]["name"], &view["people"][1]["points"]), (&json!("Zé"), &json!(0)));
         assert_eq!(view["tasks"][0]["who"], Value::Null, "Rui is gone, so his task is anyone's");
 
+        // What someone asked for goes when they do.
+        todo.set_approval(true);
+        let table = task_id(&todo, "Lay the table");
+        let ze: EventId = from_value(view["people"][1]["id"].clone()).unwrap();
+        todo.tick(&table, day("2026-10-13"), true, Some(&ze)).unwrap();
+        assert_eq!(todo.view(day("2026-10-13"))["waiting"].as_array().unwrap().len(), 1);
+        todo.set_people(from_value(json!([{ "id": ana, "name": "Ana Maria" }])).unwrap()).unwrap();
+        let view = todo.view(day("2026-10-13"));
+        assert_eq!((&view["waiting"], &view["today"][0]["done"]), (&json!([]), &json!(false)));
+
         let twice = from_value(json!([{ "name": "Ana" }, { "name": "ana" }])).unwrap();
         assert_eq!(todo.set_people(twice), Err(TodoError::SameName));
         let crowd: Vec<Value> = (0..13).map(|n| json!({ "name": format!("Person {n}") })).collect();
         assert_eq!(todo.set_people(from_value(json!(crowd)).unwrap()), Err(TodoError::TooMany(12)));
         let stranger = json!([{ "title": "x", "who": rui, "repeat": { "once": null } }]);
         assert_eq!(todo.set_tasks(from_value(stranger).unwrap()), Err(TodoError::NoSuchPerson));
+    }
+
+    #[test]
+    fn points_wait_to_be_approved_unless_set_not_to() {
+        let (todo, frame, ana, _) = household("todo-approval");
+        todo.set_approval(true);
+        let tasks = json!([
+            { "title": "Feed the cat", "who": ana, "points": 5, "repeat": { "days": [1, 2, 3, 4, 5, 6, 7] } },
+            { "title": "Post the letter", "who": ana, "points": 10, "repeat": { "once": null } },
+            { "title": "Smile", "who": ana, "repeat": { "once": null } },
+        ]);
+        todo.set_tasks(from_value(tasks).unwrap()).unwrap();
+        let (cat, letter, smile) =
+            (task_id(&todo, "Feed the cat"), task_id(&todo, "Post the letter"), task_id(&todo, "Smile"));
+        let tuesday = day("2026-10-13");
+
+        todo.tick(&cat, tuesday, true, None).unwrap();
+        todo.tick(&letter, tuesday, true, None).unwrap();
+        todo.tick(&smile, tuesday, true, None).unwrap();
+        let view = todo.view(tuesday);
+        assert_eq!(points(&todo, 0), 0, "asked for, not yet credited");
+        assert_eq!((&view["today"][0]["done"], &view["today"][0]["waiting"]), (&json!(true), &json!(true)));
+        assert_eq!(view["today"][2]["waiting"], false, "nothing to approve where there are no points");
+        assert_eq!(view["waiting"].as_array().unwrap().len(), 2);
+        assert_eq!((&view["waiting"][0]["name"], &view["waiting"][0]["points"]), (&json!("Ana"), &json!(5)));
+
+        // Approved, the points are credited; turned down, the task is to do again.
+        todo.approve(&cat, tuesday, true).unwrap();
+        todo.approve(&letter, tuesday, false).unwrap();
+        assert_eq!(points(&todo, 0), 5);
+        let view = todo.view(tuesday);
+        assert_eq!((&view["today"][0]["waiting"], &view["today"][1]["done"]), (&json!(false), &json!(false)));
+        assert_eq!(todo.approve(&cat, tuesday, true), Err(TodoError::NothingWaiting));
+
+        // A request is not forgotten however long it waits, and the task with it; taking
+        // the tick back oneself withdraws it.
+        todo.tick(&letter, tuesday, true, None).unwrap();
+        let later = day("2026-10-20");
+        todo.tick(&cat, later, true, None).unwrap();
+        let again = Todo::load(&frame.0);
+        assert_eq!(again.view(later)["waiting"].as_array().unwrap().len(), 2);
+        again.tick(&cat, later, false, None).unwrap();
+        assert_eq!(again.view(later)["waiting"].as_array().unwrap().len(), 1);
+        // Set not to wait any more, what is waiting is credited.
+        again.set_approval(false);
+        assert_eq!((points(&again, 0), again.view(later)["waiting"].clone()), (15, json!([])));
     }
 }

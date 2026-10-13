@@ -14,11 +14,11 @@
   Calendar  the month or the week, and what is coming up, each calendar in its own colour.
             Arrows or a swipe move to other months and weeks; a touch on a day shows
             what is on it.
-  Home      the house's alarm, sensors and cameras, and a notice when the doorbell
-            rings (home.js and home.css). Only there once the house is connected.
   To do     today's tasks for each person, their points, and the rewards points buy
             (todo.js and todo.css). Kept by the server, so tasks are added from anywhere.
-  Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css).
+  Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css), and
+            Home: the house's alarm, sensors and cameras (home.js and home.css), there
+            only once the house is connected. A ringing doorbell shows over any tab.
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
             asked for each time Settings is opened, on a keypad on the screen.
 
@@ -152,18 +152,8 @@
   </div>
 </div>
 
-<div class="view" id="home">
-  <div class="top"><h1>Home</h1></div>
-  <div class="house">
-    <p class="stale" id="house-stale"></p>
-    <div id="alarms"></div>
-    <div id="sensors"></div>
-  </div>
-  <div class="cameras" id="cameras"></div>
-</div>
-
 <div class="view" id="todo">
-  <div class="top"><h1>To do</h1><div class="now" id="todo-day"></div></div>
+  <div class="top"><h1>To do</h1><button class="press on" id="todo-waiting" style="display: none"></button><div class="now" id="todo-day"></div></div>
   <p class="empty" id="todo-none"></p>
   <div class="people" id="todo-people"></div>
   <div class="rewards"><h2 id="todo-rewards-title"></h2><div id="todo-rewards"></div></div>
@@ -172,7 +162,7 @@
 <div class="view" id="utilities">
   <div class="top"><h1>Utilities</h1><div class="now" id="now-too"></div></div>
   <div class="switch" id="tools">
-    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button>
+    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="home" data-icon="home">Home</button>
   </div>
 
   <div class="part" id="tool-timers">
@@ -188,6 +178,15 @@
       <div class="row"><span class="label">Rings</span><span id="alarm-repeats"></span><button class="press on spaced" id="alarm-add">Add alarm</button></div>
     </div>
     <div id="alarms"></div>
+  </div>
+
+  <div class="part" id="tool-home">
+    <div class="house">
+      <p class="stale" id="house-stale"></p>
+      <div id="house-alarms"></div>
+      <div id="house-sensors"></div>
+    </div>
+    <div class="cameras" id="cameras"></div>
   </div>
 
   <div class="part" id="tool-pomodoro">
@@ -212,7 +211,6 @@
 <div class="tabs" id="tabs">
   <button data-tab="pictures" data-icon="pictures">Pictures</button>
   <button data-tab="calendar" data-icon="calendar">Calendar</button>
-  <button data-tab="home" data-icon="home">Home</button>
   <button data-tab="todo" data-icon="todo">To do</button>
   <button data-tab="utilities" data-icon="utilities">Utilities</button>
   <button data-tab="settings" data-icon="settings">Settings</button>
@@ -268,6 +266,7 @@
       <button class="press warn" id="menu-hide">Hide it from the frame</button>
       <p>A hidden photo is not deleted. It can be shown again from a phone or computer, under Photos.</p>
     </div>
+    <button class="press" id="menu-alone">Show it alone</button>
     <button class="press" id="menu-close">Cancel</button>
   </div>
 </div>

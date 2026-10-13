@@ -2,8 +2,9 @@
 // and the rewards points buy.
 //
 // Everything is kept by the frame's server, so tasks added from a phone or computer show
-// here and what is ticked here is seen there. Ticking needs no PIN; taking a reward does,
-// if one is set. Loaded after screen.js and extras.js, whose helpers it uses.
+// here and what is ticked here is seen there. Ticking needs no PIN: it asks for the task's
+// points, which are added when someone with the PIN approves (unless set not to wait).
+// Taking a reward takes the PIN too, if one is set. Loaded after screen.js and extras.js, whose helpers it uses.
 
 const TODO_EVERY_MS = 20 * 1000;
 // A colour for each person, by their place in the list.
@@ -38,8 +39,9 @@ async function tickTask(task, who) {
   try {
     await send('/api/todo/done', { task: task.id, day: todo.day, done: !task.done, who: who || null });
     if (!task.done && task.points) {
-      const person = personById(task.who || who);
-      say('+' + task.points + ' for ' + (person ? person.name : ''), task.title);
+      const person = personById(task.who || who), name = person ? person.name : '';
+      if (todo.approval) say('★ ' + task.points + ' asked for ' + name, 'They are added when a grown-up approves');
+      else say('+' + task.points + ' for ' + name, task.title);
     }
   } catch (error) {
     say('That did not work', error.message);
@@ -48,10 +50,11 @@ async function tickTask(task, who) {
 }
 
 function taskRow(task) {
-  const row = element('button', 'task' + (task.done ? ' done' : '') + (task.late ? ' late' : ''), '');
-  row.appendChild(element('span', 'box', task.done ? '✓' : ''));
+  const row = element('button', 'task' + (task.done ? ' done' : '') + (task.waiting ? ' waiting' : '') + (task.late ? ' late' : ''), '');
+  row.appendChild(element('span', 'box', task.waiting ? '…' : task.done ? '✓' : ''));
   row.appendChild(element('span', 'what', task.title));
   if (task.late) row.appendChild(element('span', 'tag', 'late'));
+  if (task.waiting) row.appendChild(element('span', 'tag wait', 'to approve'));
   if (task.points) row.appendChild(element('span', 'worth', '+' + task.points));
   row.onclick = () => {
     // Somebody's own task is ticked at a touch; anyone's asks who did it.
@@ -64,7 +67,7 @@ function taskRow(task) {
 
 function drawTodo() {
   if (!todo) return;
-  const key = JSON.stringify([todo.day, todo.people, todo.today, todo.rewards]);
+  const key = JSON.stringify([todo.day, todo.people, todo.today, todo.rewards, todo.waiting]);
   if (key === todoDrawn) return;
   todoDrawn = key;
   $('todo-day').textContent = new Date().toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -103,7 +106,65 @@ function drawTodo() {
     rewards.appendChild(button);
   });
   $('todo-rewards-title').textContent = todo.rewards.length ? 'Rewards' : '';
+  // Ticks whose points have been asked for: a button for whoever approves them.
+  const waiting = (todo.waiting || []).length;
+  $('todo-waiting').textContent = waiting ? waiting + ' waiting for approval' : '';
+  $('todo-waiting').style.display = waiting ? '' : 'none';
+  if (picking && picking.approve) drawApprovals();
 }
+
+// --- approving: crediting the points that ticks asked for, after the PIN ------------------
+
+async function approve(request, yes) {
+  try {
+    await send('/api/todo/approve', { task: request.task, day: request.day, approve: yes });
+  } catch (error) {
+    if (/PIN/.test(error.message)) {
+      token = null;
+      pinSet = true;
+      return openApprovals();
+    }
+    say('That did not work', error.message);
+  }
+  await refreshTodo();
+}
+
+function drawApprovals() {
+  const box = $('pick-people'), waiting = todo.waiting || [];
+  box.textContent = '';
+  if (!waiting.length) return closePick();
+  waiting.forEach((request) => {
+    const row = element('div', 'request', '');
+    const day = request.day === todo.day ? '' : '  ·  ' + when(request.day).toLocaleDateString(LOCALE, { weekday: 'short', day: 'numeric', month: 'short' });
+    row.appendChild(element('span', 'what', request.name + '  ·  ' + request.title + day));
+    row.appendChild(element('span', 'worth', '★ ' + request.points));
+    const yes = element('button', 'press on', '✓ Done'), no = element('button', 'press', '✗ Not done');
+    yes.onclick = () => approve(request, true);
+    no.onclick = () => approve(request, false);
+    row.appendChild(yes);
+    row.appendChild(no);
+    box.appendChild(row);
+  });
+  if (waiting.length > 1) {
+    const all = element('button', 'press on all', 'Approve all ' + waiting.length);
+    all.onclick = async () => {
+      for (let i = 0; i < waiting.length; i++) await send('/api/todo/approve', { task: waiting[i].task, day: waiting[i].day, approve: true }).catch(() => {});
+      refreshTodo();
+    };
+    box.appendChild(all);
+  }
+}
+
+function openApprovals() {
+  picking = { approve: true };
+  clearPickPin();
+  const locked = pinSet && !token;
+  $('pick-said').textContent = locked ? 'Enter the PIN to approve what was done' : 'Was it done?';
+  $('pick').classList.toggle('asking', locked);
+  $('pick').classList.add('on');
+  if (!locked) drawApprovals();
+}
+$('todo-waiting').onclick = openApprovals;
 
 // --- choosing a person: who did a task, or who a reward is for ---------------------------
 
@@ -128,7 +189,7 @@ function pickPerson(what, said) {
 }
 
 function closePick() {
-  if (picking && picking.who) lockSettings();  // what the PIN bought was for this reward only
+  if (picking && (picking.who || picking.approve)) lockSettings();  // what the PIN bought was for this only
   picking = null;
   $('pick').classList.remove('on');
 }
@@ -169,7 +230,8 @@ function personPicked(person) {
 
 const clearPickPin = keypad($('pick-keys'), $('pick-dots'), $('pick-note'), (bought) => {
   token = bought;
-  takeReward();
+  if (picking && picking.approve) openApprovals();
+  else takeReward();
 });
 $('pick-close').onclick = closePick;
 $('pick').addEventListener('click', (event) => {

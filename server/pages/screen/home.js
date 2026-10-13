@@ -1,9 +1,9 @@
-// The Home tab of the frame's screen: the house's alarm, door and motion sensors, and
+// Home, a part of the Utilities tab of the frame's screen: the house's alarm, door and motion sensors, and
 // cameras, and the notice that someone is at the door.
 //
 // None of it comes from those devices directly. A relay on another machine tells the
 // frame's server what the house is doing, and this asks the server every couple of
-// seconds. The tab only exists once the house is connected (see `body.no-home`).
+// seconds. It is only there once the house is connected (see `body.no-home`).
 //
 // Loaded after screen.js, whose helpers it uses.
 
@@ -55,7 +55,7 @@ function drawHouse() {
   houseDrawn = key;
   $('house-stale').textContent = house.connected ? '' : 'The house is out of touch. This is how things were when it was last heard from.';
 
-  const alarms = $('alarms');
+  const alarms = $('house-alarms');
   alarms.textContent = '';
   house.alarms.forEach((alarm) => {
     const kind = alarm.state === 'triggered' || alarm.state === 'pending' ? 'triggered' : alarm.state.indexOf('arm') === 0 ? 'armed' : '';
@@ -66,7 +66,7 @@ function drawHouse() {
   });
 
   // Whatever is open or moving comes first.
-  const sensors = $('sensors');
+  const sensors = $('house-sensors');
   sensors.textContent = '';
   house.sensors.slice().sort((x, y) => (y.on - x.on) || (x.name < y.name ? -1 : 1)).forEach((sensor) => {
     const row = element('div', 'sensor' + (sensor.on ? ' on' : ''), sensor.name);

@@ -2,8 +2,15 @@
 
 use super::*;
 
-/// 18:30 on 14 October 2026 in London, as a moment.
-const HALF_PAST_SIX: i64 = 1_791_999_000;
+/// Half past six tomorrow evening in London, as a moment: plans are only made for events
+/// about now.
+fn half_past_six() -> i64 {
+    use chrono::TimeZone;
+    let tomorrow =
+        chrono::Utc::now().with_timezone(&chrono_tz::Europe::London).date_naive() + chrono::Duration::days(1);
+    let evening = tomorrow.and_hms_opt(18, 30, 0).unwrap();
+    chrono_tz::Europe::London.from_local_datetime(&evening).earliest().unwrap().timestamp()
+}
 
 /// An app whose journeys come from stand-ins for the planners.
 async fn app_with_planners(name: &str) -> (Shared, TempFrame) {
@@ -17,6 +24,7 @@ async fn app_with_planners(name: &str) -> (Shared, TempFrame) {
 
 #[tokio::test]
 async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
+    let evening = half_past_six();
     let (app, _frame) = app_with_planners("trips").await;
     let calendar = get(&app, "/api/calendar").await.json();
     assert_eq!(calendar["travel"], json!({ "home": null, "trips": [] }));
@@ -39,11 +47,11 @@ async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
     };
     assert_eq!((trip_of("Dentist"), trip_of("Swimming")), (json!(0), Value::Null));
 
-    let plan = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}")).await;
+    let plan = get(&app, &format!("/api/travel?trip=0&arrive={evening}")).await;
     assert_eq!(plan.status, StatusCode::OK);
     let plan = plan.json();
     // The 17:07 journey less ten minutes to spare: 16:57 in London is 15:57 UTC.
-    assert_eq!(plan["leave"], HALF_PAST_SIX - 93 * 60);
+    assert_eq!(plan["leave"], evening - 93 * 60);
     assert_eq!((&plan["catch"], &plan["how"]), (&json!("17:20 Southeastern to London Bridge"), &json!("transit")));
     assert_eq!(plan["steps"].as_array().unwrap().len(), 3);
     assert_eq!(plan["lines"][0]["kind"], "walking");
@@ -51,35 +59,39 @@ async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
 
     // The map the way is drawn on comes through the frame too.
     let square = get(&app, "/api/map/10/512/341").await;
-    assert_eq!(
-        (square.status, square.content_type(), &square.body[..]),
-        (StatusCode::OK, "image/png", &b"a picture"[..])
-    );
+    assert_eq!((square.status, square.content_type()), (StatusCode::OK, "image/png"));
+    assert_eq!(&square.body[..], travel::testing::PICTURE);
     assert_eq!(get(&app, "/api/map/30/0/0").await.status, StatusCode::NOT_FOUND);
     assert_eq!(get(&app, "/api/map/9/1/1").await.status, StatusCode::BAD_GATEWAY);
 
     assert_eq!((&plan["usual"], &plan["ways"]), (&json!("transit"), &json!(["transit", "walk", "cycle"])));
 
     // The same trip another way, to compare: on foot it means leaving at 17:25.
-    let on_foot = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}&how=walk")).await.json();
+    let on_foot = get(&app, &format!("/api/travel?trip=0&arrive={evening}&how=walk")).await.json();
     assert_eq!(
         (&on_foot["leave"], &on_foot["how"], &on_foot["usual"]),
-        (&json!(HALF_PAST_SIX - 65 * 60), &json!("walk"), &json!("transit"))
+        (&json!(evening - 65 * 60), &json!("walk"), &json!("transit"))
     );
-    let by_car = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}&how=car")).await;
+    let by_car = get(&app, &format!("/api/travel?trip=0&arrive={evening}&how=car")).await;
     assert_eq!(by_car.status, StatusCode::CONFLICT, "not without the key");
     for bad in ["park", "teleport"] {
-        let reply = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}&how={bad}")).await;
+        let reply = get(&app, &format!("/api/travel?trip=0&arrive={evening}&how={bad}")).await;
         assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{bad}");
     }
 
-    assert_eq!(get(&app, "/api/travel?trip=1&arrive=1").await.status, StatusCode::NOT_FOUND, "no such trip");
+    let no_such = get(&app, &format!("/api/travel?trip=1&arrive={evening}")).await;
+    assert_eq!(no_such.status, StatusCode::NOT_FOUND, "no such trip");
+    // Not for any moment anyone names: only for events about now.
+    for far in [1, evening + 200 * 24 * 60 * 60] {
+        assert_eq!(get(&app, &format!("/api/travel?trip=0&arrive={far}")).await.status, StatusCode::BAD_REQUEST);
+    }
     assert_eq!(get(&app, "/api/travel?trip=0").await.status, StatusCode::BAD_REQUEST);
     assert_eq!(get(&app, "/api/travel?trip=x&arrive=y").await.status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn trips_by_car_are_only_there_with_a_driving_key_which_is_never_handed_back() {
+    let evening = half_past_six();
     let (app, frame) = app_with_planners("trips-car").await;
     let by_car = json!({ "home": "BR6 0AA", "trips": [
         { "title": "Dentist", "to": "SE1 9SG", "how": "car", "margin": 0 },
@@ -99,32 +111,33 @@ async fn trips_by_car_are_only_there_with_a_driving_key_which_is_never_handed_ba
     assert!(!String::from_utf8_lossy(&calendar.body).contains(travel::testing::KEY));
     assert!(!String::from_utf8_lossy(&get(&app, "/api/device").await.body).contains(travel::testing::KEY));
 
-    let drive = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}")).await.json();
-    assert_eq!((&drive["leave"], &drive["steps"]), (&json!(HALF_PAST_SIX - 43 * 60), &json!(["Drive (43 min)"])));
-    let mixed = get(&app, &format!("/api/travel?trip=1&arrive={HALF_PAST_SIX}")).await.json();
+    let drive = get(&app, &format!("/api/travel?trip=0&arrive={evening}")).await.json();
+    assert_eq!((&drive["leave"], &drive["steps"]), (&json!(evening - 43 * 60), &json!(["Drive (43 min)"])));
+    let mixed = get(&app, &format!("/api/travel?trip=1&arrive={evening}")).await.json();
     assert_eq!(mixed["steps"][0], "Drive to Orpington station (8 min)");
     assert_eq!(mixed["catch"], "16:30 Southeastern to Charing Cross");
 
     // Without the key again, the trips stay but cannot be worked out, and say so.
     assert_eq!(post(&app, "/api/travel/key", r#"{"key":null}"#).await.json()["driving"], false);
     assert!(store::load_settings(&frame.0).roads_key.is_none());
-    let keyless = get(&app, &format!("/api/travel?trip=0&arrive={}", HALF_PAST_SIX + 60)).await;
+    let keyless = get(&app, &format!("/api/travel?trip=0&arrive={}", evening + 60)).await;
     assert_eq!(keyless.status, StatusCode::CONFLICT);
     assert_eq!(post(&app, "/api/travel/key", r#"{"key":"short"}"#).await.status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn a_trip_that_cannot_be_planned_is_answered_with_the_reason() {
+    let evening = half_past_six();
     let (app, _frame) = app_with_planners("trips-bad").await;
     let trips = json!({ "home": null, "trips": [
         { "title": "A", "to": "SE1 9SG", "how": "transit" },
         { "title": "B", "to": "Nan's house", "how": "walk", "from": "BR6 0AA" },
     ] });
     post(&app, "/api/travel", &trips.to_string()).await;
-    let no_home = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}")).await;
+    let no_home = get(&app, &format!("/api/travel?trip=0&arrive={evening}")).await;
     assert_eq!(no_home.status, StatusCode::CONFLICT);
     assert!(no_home.json()["error"].as_str().unwrap().contains("where home is"));
-    let nowhere = get(&app, &format!("/api/travel?trip=1&arrive={HALF_PAST_SIX}")).await;
+    let nowhere = get(&app, &format!("/api/travel?trip=1&arrive={evening}")).await;
     assert_eq!(nowhere.status, StatusCode::NOT_FOUND);
     assert!(nowhere.json()["error"].as_str().unwrap().contains("Nan's house"));
 

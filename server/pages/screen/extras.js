@@ -111,6 +111,11 @@ const clearMenuPin = keypad($('menu-keys'), $('menu-dots'), $('menu-note'), (bou
 });
 $('menu-favourite').onclick = () => markPhoto(menuPhoto[4] ? null : 'favourite');
 $('menu-hide').onclick = () => markPhoto('hidden');
+$('menu-alone').onclick = () => {
+  const photo = menuPhoto, already = shown[at] && shown[at].alone;
+  closeMenu();
+  if (!already) enlarge(photo);
+};
 $('menu-close').onclick = closeMenu;
 // Touches on the menu are the menu's own: they neither step through photos nor bring up the tabs.
 $('menu').addEventListener('click', (event) => {
@@ -188,6 +193,11 @@ const listedPlans = {}; // the plans the calendar's lists want, however far off 
 let planning = false;
 
 const planKey = (event) => event.trip + '|' + event.start.getTime();
+// Plans are kept by a trip's place in the list. When the trips may have changed, so may what
+// each place means: start again.
+forgetPlans = () => {
+  [plans, compared, listedPlans].forEach((kept) => Object.keys(kept).forEach((key) => delete kept[key]));
+};
 
 /// Ask the server when to leave for the events coming up that have a trip, one at a time.
 async function refreshPlans(now) {
@@ -246,7 +256,6 @@ async function compareWays(event, plan) {
   }
 }
 
-// How each kind of stretch is drawn on the map.
 // How each kind of stretch is drawn, on the map and beside its step: [colour, dashes, what it is called].
 const STROKES = {
   walking: ['#ffffff', '2 9', 'on foot'], cycle: ['#7ee0a1', '10 8', 'by bicycle'], drive: ['#7ee0a1', '', 'by car'],

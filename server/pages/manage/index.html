@@ -185,6 +185,12 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
       <div class="rows" id="tdPeople" style="margin-top: 14px"></div>
     </div>
     <div class="card narrow">
+      <h2>Waiting for approval</h2>
+      <p class="muted" id="tdNoWaiting"></p>
+      <div class="rows" id="tdWaiting"></div>
+      <label class="row" style="margin-top: 12px"><input type="checkbox" id="tdApproval"> <span>Points wait for approval: ticking a task on the frame asks for its points, and they are added when approved here or on the frame (with the PIN, if one is set)</span></label>
+    </div>
+    <div class="card narrow">
       <h2>Tasks</h2>
       <p class="muted">A task is somebody's, or anyone's (whoever ticks it on the frame says who they are). It is done once, on a day or whenever, or comes round on the days of the week you choose. Ticking it on the frame gives its points. A task done once leaves the list the day after it is done.</p>
       <div class="bar" style="margin: 14px 0 0">

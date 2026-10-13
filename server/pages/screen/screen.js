@@ -19,6 +19,8 @@ const PER_EXTRA_PHOTO = 0.03;
 const HISTORY = 40;
 // Each photo's date shows for this long when its screen comes up (and whenever the tabs are up).
 const DATES_MS = 5 * 1000;
+// A photo enlarged to be looked at stays this long before the slideshow goes on.
+const ALONE_MS = 2 * 60 * 1000;
 // "Coming up" lists at most this many events, fewer if they do not fit.
 const AGENDA_ITEMS = 12, DAY_ITEMS = 5, CALENDAR_DAYS = 75;
 // A month or week looked at away from today is fetched with this many days from its first.
@@ -51,6 +53,8 @@ const ICONS = {
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   settings: '<path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/>',
   pause: '<path d="M9 6v12M15 6v12"/>',
+  grow: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
+  shrink: '<path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
   on: '<path d="M9 5l7 7-7 7"/>',
   play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
@@ -100,6 +104,8 @@ let remind = () => {};
 let leaving = () => '';
 // And what it shows when an event in a list is touched.
 let showEvent = () => {};
+// And how it forgets the plans it holds, when the trips may have changed.
+let forgetPlans = () => {};
 // What todo.js does when the server says the things to do have changed.
 let todoNews = () => {};
 let todoKnown = null;
@@ -347,6 +353,20 @@ async function draw(screen) {
     div.appendChild(element('div', 'taken', (cell.photo[4] ? '★  ' : '') + (slideshow.memories && isMemory(cell.photo)
       ? 'On this day  ·  ' + taken.getFullYear()
       : taken.toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' }))));
+    // A photo that shares the screen can be given all of it: a button on it while the tabs are up.
+    // One that was given it has a button that puts the others back.
+    if (screen.cells.length > 1 || screen.alone) {
+      const grow = element('button', 'grow only', '');
+      label(grow, screen.alone ? 'shrink' : 'grow', '');
+      grow.setAttribute('aria-label', screen.alone ? 'Back to the photos it was with' : 'Show this photo alone');
+      grow.onclick = (event) => {
+        event.stopPropagation();
+        if (screen.alone) restore();
+        else enlarge(cell.photo);
+        touched();
+      };
+      div.appendChild(grow);
+    }
     box.appendChild(div);
   });
   next.appendChild(box);
@@ -359,10 +379,35 @@ async function draw(screen) {
   datedTimer = setTimeout(() => document.body.classList.remove('dated'), DATES_MS);
 }
 
+/// Show one photo alone, as the next screen. It stays a good while, for looking at, unless
+/// the photos it was with are put back first; then the slideshow goes on.
+function enlarge(photo) {
+  if (busy || !shape(photo)) return;
+  shown.splice(at + 1, 0, { total: shape(photo), alone: true, cells: [{ photo: photo, x: 0, y: 0, w: 1, h: 1 }] });
+  step(1);
+}
+
+/// Put back the screen a photo was enlarged from.
+async function restore() {
+  if (busy || at < 1 || !shown[at].alone) return;
+  busy = true;
+  clearTimeout(timer);
+  shown.splice(at, 1);
+  at--;
+  try {
+    await draw(shown[at]);
+  } catch (error) {
+    // The screen it came from will not load; the next one comes at the usual time.
+  }
+  busy = false;
+  schedule();
+}
+
 /// Show the next screen of photos in a while, if the slideshow is running and in view.
 function schedule() {
   clearTimeout(timer);
-  if (!paused && !asleep && !over && tab === 'pictures') timer = setTimeout(() => step(1), everyMs());
+  const stays = shown[at] && shown[at].alone ? Math.max(everyMs(), ALONE_MS) : everyMs();
+  if (!paused && !asleep && !over && tab === 'pictures') timer = setTimeout(() => step(1), stays);
 }
 
 /// Move one screen on (or back). A screen with a photo that will not load is skipped.
@@ -972,7 +1017,10 @@ async function sayAlive() {
     }
     pinSet = !!reply.pin;
     // An event added, a calendar or a trip changed: shown now, not at the calendar's next turn.
-    if (calendarKnown !== null && reply.calendar !== calendarKnown) refreshCalendar();
+    if (calendarKnown !== null && reply.calendar !== calendarKnown) {
+      forgetPlans();
+      refreshCalendar();
+    }
     calendarKnown = reply.calendar;
     if (todoKnown !== null && reply.todo !== todoKnown) todoNews();
     todoKnown = reply.todo;
@@ -983,9 +1031,9 @@ async function sayAlive() {
     }
     // A place chosen a moment ago, or a fresh forecast, shows without waiting for the next turn.
     if ((reply.weather || null) !== (weather ? weather.fetched : null)) refreshWeather();
-    // The Home tab is there only while the house is connected.
+    // Home, in Utilities, is there only while the house is connected.
     document.body.classList.toggle('no-home', !reply.home);
-    if (!reply.home && tab === 'home') showTab('pictures');
+    if (!reply.home && document.body.dataset.tool === 'home') choose('tools', 'tool', 'timers');
     asleep = !!reply.asleep;
     document.body.classList.toggle('asleep', asleep);
     schedule();
@@ -1113,10 +1161,9 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === ' ') setPaused(!paused);
   else if (event.key === '1') showTab('pictures');
   else if (event.key === '2') showTab('calendar');
-  else if (event.key === '3') showTab('home');
-  else if (event.key === '4') showTab('todo');
-  else if (event.key === '5') showTab('utilities');
-  else if (event.key === '6') showTab('settings');
+  else if (event.key === '3') showTab('todo');
+  else if (event.key === '4') showTab('utilities');
+  else if (event.key === '5') showTab('settings');
 });
 
 // Every tab gets its drawing.

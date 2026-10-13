@@ -1,12 +1,11 @@
-/* How the Home tab looks (the house's alarm, sensors and cameras), and the notice that
-   someone is at the door. */
-body[data-tab="home"] #home { display: block; }
-#home { background: #101113; }
-/* Until the house is connected there is no Home tab to go to. */
-body.no-home [data-tab="home"] { display: none; }
+/* How Home looks, a part of the Utilities tab (the house's alarm, sensors and cameras), and
+   the notice that someone is at the door. */
+body[data-tool="home"] #tool-home { display: block; }
+/* Until the house is connected there is no Home to go to. */
+body.no-home [data-tool="home"] { display: none; }
 
-.house { position: absolute; top: 16vmin; left: 7vmin; bottom: 14vmin; width: 62vmin; overflow: hidden; }
-.cameras { position: absolute; top: 16vmin; left: 76vmin; right: 7vmin; bottom: 14vmin; overflow: hidden; }
+.house { position: absolute; top: 0; left: 0; bottom: 0; width: 62vmin; overflow: hidden; }
+.cameras { position: absolute; top: 0; left: 69vmin; right: 0; bottom: 0; overflow: hidden; }
 .stale { margin: 0 0 2vmin; font-size: 2.4vmin; color: #ff8f85; }
 .stale:empty { display: none; }
 
@@ -40,6 +39,6 @@ body.no-home [data-tab="home"] { display: none; }
 .look .press, .bell .press { position: absolute; bottom: 3.4vmin; left: 50%; transform: translateX(-50%); margin: 0; font-size: 3.2vmin; padding: 2vmin 5vmin; }
 
 @media (orientation: portrait) {
-  .house { width: auto; right: 7vmin; bottom: auto; height: 62vmin; }
-  .cameras { top: 82vmin; left: 7vmin; }
+  .house { width: auto; right: 0; bottom: auto; height: 62vmin; }
+  .cameras { top: 66vmin; left: 0; }
 }

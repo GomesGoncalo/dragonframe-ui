@@ -12,6 +12,15 @@ body[data-tab="pictures"] #pictures, body[data-tab="calendar"] #calendar, body[d
 /* --- pictures --- */
 .slide { position: absolute; top: 0; right: 0; bottom: 0; left: 0; opacity: 0; transition: opacity 1.2s ease; }
 .slide.on { opacity: 1; }
+/* Only the slide in sight takes touches; the other lies over it, unseen. */
+.slide { pointer-events: none; }
+.slide.on { pointer-events: auto; }
+/* On a photo that shares the screen, while the tabs are up: show it alone. */
+.cell .grow {
+  position: absolute; top: 1.4vmin; right: 1.4vmin; width: 7.4vmin; height: 7.4vmin; padding: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 3.4vmin; opacity: 0; pointer-events: none; transition: opacity .25s ease;
+}
+body.bar .cell .grow { opacity: 1; pointer-events: auto; }
 /* The photos of one screen, laid out in a box the shape of the arrangement and centred. */
 .collage { position: absolute; }
 /* Each cell is exactly the shape of its photo, with a thin black line between cells. */
