@@ -259,4 +259,5 @@ pub(crate) async fn start(app: &Shared) {
     tokio::spawn(show_chosen_screen(Arc::clone(app)));
     tokio::spawn(fall_back_if_quiet(Arc::clone(app)));
     tokio::spawn(keep_night(Arc::clone(app)));
+    tokio::spawn(Arc::clone(&app.spotify).run(Arc::clone(&app.cfg)));
 }

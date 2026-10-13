@@ -461,7 +461,7 @@ function remindersAt(now) {
       if (now < due || now >= until || done[key]) return;
       const when = dayText(event, today) + (event.allDay ? '' : '  ·  ' + clockText(event.start));
       up.push({
-        key: key, event: event, due: due, until: until, chime: rule.chime, sounds: [[key, due]],
+        key: key, event: event, due: due, until: until, chime: rule.chime, sounds: [[key, due]], then: rule.then || null,
         what: rule.say || event.title, when: (rule.say ? event.title + '  ·  ' : '') + when,
       });
     });
@@ -490,6 +490,9 @@ remind = (now) => {
       if (chimed[sound[0]] || now < sound[1]) return;
       chimed[sound[0]] = true;
       if (r.chime && !asleep && now - sound[1] < CHIME_LATE_MS) playChime();
+      // What the rule has the frame do when its note comes up (see actions.js), night or not:
+      // a station that starts at seven is an alarm clock.
+      if (r.then && now - sound[1] < CHIME_LATE_MS) act(r.then);
     });
   });
   const key = JSON.stringify(up.map((r) => [r.key, r.what, r.when]));

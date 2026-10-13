@@ -66,6 +66,7 @@ pub(crate) async fn device_view(State(app): State<Shared>) -> Json<Value> {
                 "light": app.device.room_light().map(|light| light.lux),
                 "chime": settings.chime,
                 "place": settings.place.map(|place| place.name),
+                "stations": settings.stations,
             })
         })
         .await,
@@ -121,6 +122,7 @@ pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap
         // Whether changing anything, a photo's mark included, takes the PIN.
         "pin": settings.protection.is_some(),
         "reminders": settings.reminders,
+        "stations": settings.stations,
         // Counts changes to the calendar, so the screen fetches it when there is news.
         "calendar": app.calendar_changes.load(std::sync::atomic::Ordering::Relaxed),
         "todo": crate::routes::todo::changes(&app),

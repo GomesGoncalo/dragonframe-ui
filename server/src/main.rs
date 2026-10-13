@@ -24,6 +24,7 @@
 //! walking the photo folder and running Android commands, lives in plain
 //! functions and is run off the async threads through [`app::blocking`].
 
+mod acts;
 mod app;
 mod auth;
 mod calendar;
@@ -37,7 +38,9 @@ mod index;
 mod marks;
 mod night;
 mod plain;
+mod radio;
 mod routes;
+mod spotify;
 mod store;
 mod tasks;
 mod todo;

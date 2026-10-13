@@ -35,6 +35,7 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 REPO = TOOLS.parent
 HERE = REPO / "server"  # the Rust crate: where cargo runs and where build output goes
+SPOTIFY = REPO / "spotify"  # the crate of Spotify's player (framespot)
 import frame_sync as fs  # noqa: E402  (beside this file)
 
 sys.path.insert(0, str(REPO / "android"))
@@ -132,10 +133,11 @@ CHECKS = [
 
 
 def run_checks():
-    for command in CHECKS:
-        print("==>", " ".join(command))
-        if subprocess.run(command, cwd=HERE).returncode != 0:
-            fs.die(f"`{' '.join(command)}` failed; not deploying")
+    for crate, commands in ((HERE, CHECKS), (SPOTIFY, CHECKS)):
+        for command in commands:
+            print("==>", " ".join(command), f"({crate.name})")
+            if subprocess.run(command, cwd=crate).returncode != 0:
+                fs.die(f"`{' '.join(command)}` failed in {crate.name}/; not deploying")
 
 
 def read_settings(frame):
@@ -287,6 +289,8 @@ def main():
     if not args.skip_checks:
         run_checks()
     subprocess.run(["cargo", "zigbuild", "--release", "--target", TARGET], cwd=HERE, check=True)
+    # Spotify's player: a program of its own that the server runs while Spotify is switched on.
+    subprocess.run(["cargo", "zigbuild", "--release", "--locked", "--target", TARGET], cwd=SPOTIFY, check=True)
     apk = screen_app.build()
     frame.connect()
     stop(frame)
@@ -295,6 +299,10 @@ def main():
     # Keep the server being replaced, so `--previous` can put it back.
     frame.shell(f"cd {INSTALL_DIR} && [ -e frameserver ] && cp -p frameserver frameserver.previous; true", check=False)
     frame.shell(f"cd {INSTALL_DIR} && mv frameserver.new frameserver && chmod 755 frameserver")
+    # The server is stopped, and with it the player it runs, so the file is free to replace.
+    frame.shell("pkill -x framespot; true", check=False)
+    frame.adb("push", str(SPOTIFY / "target" / TARGET / "release" / "framespot"), f"{INSTALL_DIR}/framespot")
+    frame.shell(f"chmod 755 {INSTALL_DIR}/framespot")
     install_models(frame)
     # The app that shows the new screen full screen. The setting cleared after it was only
     # needed while the frame's own browser showed the page.

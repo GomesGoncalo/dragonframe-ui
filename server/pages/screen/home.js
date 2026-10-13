@@ -110,8 +110,10 @@ function closeLook() {
 
 // --- someone is at the door --------------------------------------------------------------
 
-/// The doorbell's own sound: two notes, higher then lower, twice.
+/// The doorbell's own sound: two notes, higher then lower, twice. A little louder than a
+/// chime is set to be, and the music makes way for it.
 function playBell() {
+  quietMusic(3400);
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === 'suspended') audio.resume();
@@ -121,7 +123,7 @@ function playBell() {
       tone.type = 'triangle';
       tone.frequency.value = note[0];
       loudness.gain.setValueAtTime(0.0001, start);
-      loudness.gain.exponentialRampToValueAtTime(0.4, start + 0.02);
+      loudness.gain.exponentialRampToValueAtTime(Math.min(1, chimeLoudness * 4 / 3), start + 0.02);
       loudness.gain.exponentialRampToValueAtTime(0.0001, start + 1.1);
       tone.connect(loudness);
       loudness.connect(audio.destination);

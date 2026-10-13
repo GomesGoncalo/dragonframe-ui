@@ -230,8 +230,8 @@ async fn reminder_rules_are_kept_and_each_event_says_which_rules_are_about_it() 
     post(&app, "/api/events/add", r#"{"title":"Robin's swimming","day":"2026-10-13","time":"16:00"}"#).await;
 
     let rules = json!([
-        { "words": "bin, recycling", "when": { "days": 1, "at": "19:00" }, "say": "Put the bins out", "chime": true },
-        { "words": "Swimming", "when": { "minutes": 45 }, "say": null, "chime": false },
+        { "words": "bin, recycling", "when": { "days": 1, "at": "19:00" }, "say": "Put the bins out", "chime": true, "then": null },
+        { "words": "Swimming", "when": { "minutes": 45 }, "say": null, "chime": false, "then": null },
     ]);
     let saved = post(&app, "/api/reminders", &json!({ "rules": rules }).to_string()).await;
     assert_eq!((saved.status, saved.json()), (StatusCode::OK, json!({ "reminders": 2 })));

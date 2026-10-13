@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 
 use crate::types::{
     hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Reminder, Restore, RoadsKey, Screen,
-    Slideshow, Source, Spot, SyncedName, Trip, SYNC_SUBDIR,
+    Slideshow, Source, Spot, Station, SyncedName, Trip, SYNC_SUBDIR,
 };
 
 const MEDIA_URI: &str = "content://media/external/images/media";
@@ -542,6 +542,10 @@ pub struct Settings {
     pub trips: Vec<Trip>,
     /// The key for the driving service; without one, trips by car cannot be worked out.
     pub roads_key: Option<RoadsKey>,
+    /// The radio stations the frame can play.
+    pub stations: Vec<Station>,
+    /// Whether Spotify's apps may play on the frame.
+    pub spotify: bool,
 }
 
 /// How the most recent sync went.
@@ -606,6 +610,13 @@ impl Settings {
                 .filter_map(|trip| serde_json::from_value(trip.clone()).ok())
                 .collect(),
             roads_key: saved["roads_key"].as_str().and_then(RoadsKey::parse),
+            stations: saved["stations"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|station| serde_json::from_value(station.clone()).ok())
+                .collect(),
+            spotify: saved["spotify"].as_bool().unwrap_or(false),
         }
     }
 
@@ -631,6 +642,8 @@ impl Settings {
             "home": self.home,
             "trips": self.trips,
             "roads_key": self.roads_key,
+            "stations": self.stations,
+            "spotify": self.spotify,
         })
     }
 }
@@ -1014,6 +1027,7 @@ mod tests {
             reminders: serde_json::from_value(json!([
                 { "words": "bin, recycling", "when": { "days": 1, "at": "19:00" }, "say": "Bins out", "chime": true },
                 { "words": "swimming", "when": { "minutes": 45 } },
+                { "words": "wake up", "when": { "minutes": 0 }, "then": { "do": "play", "station": "Radio Four" } },
             ]))
             .unwrap(),
             home: Spot::parse("BR6 0AA"),
@@ -1023,6 +1037,12 @@ mod tests {
             ]))
             .unwrap(),
             roads_key: RoadsKey::parse("0123456789abcdefABCDEF"),
+            stations: serde_json::from_value(json!([
+                { "name": "Radio Four", "stream": "https://stream.example/four.mp3" },
+                { "name": "Jazz", "stream": "http://stream.example:8000/jazz" },
+            ]))
+            .unwrap(),
+            spotify: true,
         };
         save_settings(&frame.0, &settings);
         assert_eq!(load_settings(&frame.0), settings);

@@ -135,7 +135,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
     </div>
     <div class="card narrow">
       <h2>Reminders</h2>
-      <p class="muted">A reminder is a note the frame puts on its screen ahead of an event and keeps there until someone touches it. Each rule applies to every event, on any calendar, whose name has one of the rule's words: "bin, recycling" finds "Black bin", "Bins out" and "Recycling week" but not "Robin". Put the events on a calendar as usual (for the bins, an event that repeats every week or fortnight) and the rule does the rest.</p>
+      <p class="muted">A reminder is a note the frame puts on its screen ahead of an event and keeps there until someone touches it. Each rule applies to every event, on any calendar, whose name has one of the rule's words: "bin, recycling" finds "Black bin", "Bins out" and "Recycling week" but not "Robin". Put the events on a calendar as usual (for the bins, an event that repeats every week or fortnight) and the rule does the rest. A rule can also have the frame do something when its note comes up, such as play a radio station.</p>
       <div class="bar" style="margin: 14px 0 0">
         <input type="text" id="rmWords" maxlength="300" placeholder="Words in the event's name, e.g. bin, recycling" aria-label="Words to look for">
         <select id="rmWhen" aria-label="When to remind">
@@ -152,6 +152,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <input type="time" id="rmAt" value="19:00" aria-label="Time of day">
         <input type="text" id="rmSay" maxlength="120" placeholder="What the note says (optional)" aria-label="What the note says">
         <label class="row" style="margin: 0"><input type="checkbox" id="rmChime" checked> <span>with a chime</span></label>
+        <select id="rmThen" aria-label="What else the frame does then"></select>
         <button class="btn primary" id="rmAdd">Add rule</button>
       </div>
       <div class="rows" id="rmRules" style="margin-top: 14px"></div>
@@ -248,6 +249,61 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <button class="btn" id="frSwap"></button>
         <button class="btn" id="frWifi">Open Wi-Fi settings on the frame</button>
       </div>
+    </div>
+    <div class="card narrow">
+      <h2>Remote control</h2>
+      <p class="muted" id="rcSaid"></p>
+      <div class="bar" style="margin: 14px 0 10px">
+        <button class="btn" data-act='{"do":"previous"}'>‹ Previous photo</button>
+        <button class="btn" id="rcPause">Pause the photos</button>
+        <button class="btn" data-act='{"do":"next"}'>Next photo ›</button>
+      </div>
+      <div class="bar" style="margin-bottom: 10px">
+        <span class="muted">Show</span>
+        <button class="btn" data-act='{"do":"show","tab":"pictures"}'>Pictures</button>
+        <button class="btn" data-act='{"do":"show","tab":"calendar"}'>Calendar</button>
+        <button class="btn" data-act='{"do":"show","tab":"todo"}'>To do</button>
+        <button class="btn" data-act='{"do":"show","tab":"utilities"}'>Utilities</button>
+      </div>
+      <div class="bar" style="margin-bottom: 10px">
+        <span class="muted">Music</span>
+        <span class="bar" id="rcStations" style="margin: 0"></span>
+        <button class="btn" data-act='{"do":"stop"}'>Stop</button>
+        <button class="btn" data-act='{"do":"quieter"}' aria-label="Quieter">−</button>
+        <button class="btn" data-act='{"do":"louder"}' aria-label="Louder">+</button>
+      </div>
+      <div class="bar" style="margin-bottom: 10px">
+        <input type="number" id="rcMinutes" value="10" min="1" max="600" aria-label="Minutes">
+        <button class="btn" id="rcTimer">Start a timer of that many minutes</button>
+      </div>
+      <div class="bar" style="margin: 0">
+        <input type="text" id="rcNote" maxlength="120" placeholder="A note for the frame's screen, e.g. Dinner is ready" aria-label="A note for the frame's screen" style="flex: 1 1 260px">
+        <button class="btn" id="rcSay">Show the note</button>
+      </div>
+    </div>
+    <div class="card narrow">
+      <h2>Radio stations</h2>
+      <p class="muted">The frame plays these itself, from each station's own address: on its screen under Utilities, Music; from the remote control above; or by a reminder rule (Calendar), which makes a station that starts with an event an alarm clock. Find a station by its name, in the directory at radio-browser.info (which is sent only what is typed here).</p>
+      <p class="muted" id="rsNone"></p>
+      <div class="rows" id="rsList"></div>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="rsName" maxlength="100" placeholder="Name of a station, e.g. Radio Paradise" aria-label="Name of a station" style="flex: 1 1 260px">
+        <button class="btn primary" id="rsFind">Find</button>
+      </div>
+      <div class="rows" id="rsFound" style="margin-top: 10px"></div>
+      <details class="hint"><summary>Add a station by the address of its stream</summary>
+        <div class="bar" style="margin: 10px 0 0">
+          <input type="text" id="rsOwnName" maxlength="60" placeholder="What to call it" aria-label="What to call it">
+          <input type="text" id="rsOwnStream" maxlength="500" placeholder="https://… (an MP3 or AAC stream)" aria-label="Address of the stream" style="flex: 1 1 260px">
+          <button class="btn" id="rsOwnAdd">Add</button>
+        </div>
+      </details>
+    </div>
+    <div class="card narrow">
+      <h2>Spotify</h2>
+      <p class="muted" id="spSaid"></p>
+      <label class="row"><input type="checkbox" id="spOn"> <span>Let Spotify's apps play on the frame</span></label>
+      <p class="muted">With this on, the frame appears as a speaker called "Frame" in the Spotify app of anyone on this Wi-Fi (the devices button, beside the play button), as a smart speaker does. It needs Spotify Premium. Nobody signs in on the frame and nothing of anyone's account is kept there: the app hands over what is needed when the frame is chosen, and after the frame restarts it has to be chosen again. Starting a radio station hands the music back to the app.</p>
     </div>
     <div class="card narrow">
       <h2>House</h2>

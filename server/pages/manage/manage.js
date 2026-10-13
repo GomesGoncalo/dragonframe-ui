@@ -457,6 +457,7 @@ async function loadCalendar() {
   }
   rules = c.reminders || [];
   renderRules(c.events);
+  loadRemote();  // for the stations a rule can play
   travel = c.travel || null; ways = c.ways || []; tripEvents = c.events;
   renderTrips(); if (travel) { planTrips(); findPlaces(); }
   const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -490,7 +491,7 @@ function renderRules(events) {
     const remove = el("button", "btn small danger", "Delete");
     remove.onclick = () => saveRules(rules.filter((_, k) => k !== i), "Rule deleted.");
     const coming = !next[i] ? "no event in the next five weeks has these words" : next[i][0] <= now ? `on the frame now, for “${next[i][1].title}”` : `next: ${calDay(next[i][0])} ${calTime(next[i][0])}, for “${next[i][1].title}”`;
-    const row = calRow(aheadText(rule.when) + (rule.chime ? " · chime" : ""), rule.say ? `${rule.words} → “${rule.say}”` : rule.words, coming, remove);
+    const row = calRow(aheadText(rule.when) + (rule.chime ? " · chime" : ""), (rule.say ? `${rule.words} → “${rule.say}”` : rule.words) + (rule.then ? `, ${thenText(rule.then)}` : ""), coming, remove);
     box.append(row);
   });
 }
@@ -502,7 +503,7 @@ async function saveRules(wanted, done) {
 async function addRule() {
   const kind = $("rmWhen").value, amount = Number(kind.slice(1));
   const when = kind[0] === "m" ? { minutes: amount } : { days: amount, at: $("rmAt").value || "19:00" };
-  const rule = { words: $("rmWords").value, when, say: $("rmSay").value.trim() || null, chime: $("rmChime").checked };
+  const rule = { words: $("rmWords").value, when, say: $("rmSay").value.trim() || null, chime: $("rmChime").checked, then: $("rmThen").value ? JSON.parse($("rmThen").value) : null };
   if (!rule.words.trim()) { toast("Say which words to look for in the names of events."); $("rmWords").focus(); return; }
   if (await saveRules(rules.concat([rule]), "Rule added. The frame picks it up within half a minute.")) { $("rmWords").value = ""; $("rmSay").value = ""; }
 }
@@ -740,13 +741,102 @@ async function addEvent() {
   toast("Added to the frame's calendar."); loadCalendar();
 }
 
+// --- the remote control, and the radio stations ----------------------------------------------------------
+// Whatever the frame's screen can be told to do is told the same way: an action such as
+// { do: "next" } or { do: "play", station: "Jazz" }, sent to /api/act.
+let stations = [], acting = null;
+const TAB_NAMES = { pictures: "Pictures", calendar: "the Calendar", todo: "To do", utilities: "Utilities", settings: "Settings" };
+/// What a reminder rule has the frame do, in words.
+const thenText = act => act.do === "play" ? (act.station ? `then plays ${act.station}` : "then plays the radio") : act.do === "stop" ? "then stops the music" : act.do === "show" ? `then shows ${TAB_NAMES[act.tab] || act.tab}` : `then does “${act.do}”`;
+async function loadRemote() {
+  let a;
+  try { a = await api("/api/acting"); } catch (e) { return; }
+  acting = a; stations = a.stations || [];
+  const said = a.said || {};
+  setText($("rcSaid"), !a.listening ? "The frame's new screen is not running just now (the frame may be showing its original screen), so it would not hear these."
+    : `The frame is on ${TAB_NAMES[said.tab] || "its screen"}${said.paused ? ", with the photos paused" : ""}. ${said.playing ? `Playing ${said.playing}, at volume ${said.volume}.` : "No music is playing."}`);
+  setText($("rcPause"), said.paused ? "Resume the photos" : "Pause the photos");
+  const sp = a.spotify || {}, track = sp.track;
+  setText($("spSaid"), !sp.installed ? "Spotify's player is not installed on the frame (tools/deploy.py puts it there)."
+    : !sp.on ? "Spotify cannot play on the frame at the moment."
+    : sp.stage === "off" ? "Starting…"
+    : sp.stage === "waiting" ? `Ready: choose “${sp.name}” as the speaker in the Spotify app.`
+    : sp.stage === "idle" || !track ? "Someone has chosen the frame in Spotify; nothing is playing."
+    : `${sp.stage === "playing" ? "Playing" : "Paused"}: ${track.title}${track.by ? `, ${track.by}` : ""}.`);
+  $("spOn").disabled = !sp.installed;
+  if (document.activeElement !== $("spOn")) $("spOn").checked = !!sp.on;
+  if (changed("rcStations", [stations, said.playing])) {
+    const box = $("rcStations"); box.textContent = "";
+    for (const s of stations) {
+      const play = el("button", s.name === said.playing ? "btn primary" : "btn", s.name);
+      play.onclick = () => tell({ do: "play", station: s.name });
+      box.append(play);
+    }
+    if (!stations.length) box.append(el("span", "muted", "no stations yet (add some below)"));
+  }
+  setText($("rsNone"), stations.length ? "" : "No stations yet.");
+  if (changed("rsList", stations)) {
+    const box = $("rsList"); box.textContent = "";
+    stations.forEach((s, i) => {
+      const remove = el("button", "btn small danger", "Delete");
+      remove.onclick = () => saveStations(stations.filter((_, k) => k !== i), `${s.name} removed.`);
+      const row = el("div"); row.append(el("span", "what", s.name), el("span", "from", s.stream), remove);
+      box.append(row);
+    });
+  }
+  // What a reminder rule can have the frame do.
+  if (changed("rmThen", stations)) {
+    const pick = $("rmThen"), was = pick.value; pick.textContent = "";
+    const choices = [["", "and nothing else"]].concat(stations.map(s => [{ do: "play", station: s.name }, `and play ${s.name}`]),
+      [[{ do: "stop" }, "and stop the music"], [{ do: "show", tab: "calendar" }, "and show the Calendar"], [{ do: "show", tab: "todo" }, "and show To do"]]);
+    for (const [act, words] of choices) pick.append(new Option(words, act ? JSON.stringify(act) : ""));
+    if ([...pick.options].some(o => o.value === was)) pick.value = was;
+  }
+}
+/// Have the frame's screen do something, and say whether it was there to hear.
+async function tell(action) {
+  try {
+    const r = await api("/api/act", action);
+    if (!r.listening) toast("Sent, but the frame's new screen is not running to hear it.");
+  } catch (e) { toast(e.message); }
+  // The screen says how it stands a moment after doing it.
+  setTimeout(loadRemote, 600); setTimeout(loadRemote, 2500);
+}
+async function saveStations(wanted, done) {
+  try { await api("/api/stations", { stations: wanted }); toast(done); } catch (e) { toast(e.message); return false; }
+  await loadRemote();
+  return true;
+}
+const addStation = (name, stream) => saveStations(stations.concat([{ name, stream }]), `${name} added. The frame picks it up within half a minute.`);
+async function findStations() {
+  const name = $("rsName").value.trim();
+  if (!name) return toast("Type the name of a station.");
+  $("rsFind").disabled = true;
+  const box = $("rsFound"); box.textContent = "";
+  try {
+    const found = (await api(`/api/stations/find?name=${encodeURIComponent(name)}`)).stations;
+    if (!found.length) box.append(el("div", "muted", "No station by that name that the frame can play."));
+    for (const s of found) {
+      const add = el("button", "btn small", "Add");
+      add.onclick = async () => { if (await addStation(s.name, s.stream)) add.closest("div").remove(); };
+      const hear = el("button", "btn small", "Listen here");
+      // On this phone or computer, to tell whether it is the right one before the frame plays it.
+      hear.onclick = () => { const on = hear.textContent !== "Listen here"; preview.pause(); for (const b of box.querySelectorAll("button")) if (b.textContent === "Stop listening") b.textContent = "Listen here"; if (!on) { preview.src = s.stream; preview.play().catch(() => toast("This browser could not play it.")); hear.textContent = "Stop listening"; } };
+      const row = el("div"); row.append(el("span", "what", s.name), el("span", "from", s.about), hear, add);
+      box.append(row);
+    }
+  } catch (e) { toast(e.message); }
+  $("rsFind").disabled = false;
+}
+const preview = new Audio(); preview.preload = "none";
+
 // --- the frame: its screen, night, sound, weather and pictures ----------------------------------------------
 let frame = null;
 const inFrameTab = () => $("tab-frame").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
 async function loadFrame() {
   let d, w;
   try { d = await api("/api/device"); w = await api("/api/weather"); } catch (e) { return; }
-  frame = d;
+  frame = d; loadRemote();
   const wifi = d.wifi, strength = !wifi || wifi.signal === null ? "" : wifi.signal >= -60 ? ", strong signal" : wifi.signal >= -72 ? ", good signal" : ", weak signal";
   let screen = `The frame is showing ${d.screen === "new" && !d.fell_back ? "the new screen" : "its original screen"}`;
   if (d.asleep) screen += ", switched off for the night";
@@ -936,6 +1026,15 @@ $("frConnect").onclick = async () => {
   loadFrame();
 };
 $("frDisconnect").onclick = () => { if (confirm("Disconnect the house? The frame forgets what it knew and stops listening to the relay.")) { show($("frKey"), false); saveFrame("/api/home/forget", {}, "The house is disconnected."); } };
+for (const button of document.querySelectorAll("[data-act]")) button.onclick = () => tell(JSON.parse(button.dataset.act));
+$("rcPause").onclick = () => tell({ do: acting && acting.said && acting.said.paused ? "resume" : "pause" });
+$("rcTimer").onclick = () => tell({ do: "timer", minutes: Number($("rcMinutes").value) });
+$("rcSay").onclick = () => { const say = $("rcNote").value.trim(); if (!say) return toast("Type the note first."); tell({ do: "note", say }); $("rcNote").value = ""; };
+$("rcNote").onkeydown = e => { if (e.key === "Enter") $("rcSay").onclick(); };
+$("spOn").onchange = async e => { try { await api("/api/spotify", { on: e.target.checked }); toast(e.target.checked ? "Spotify can now play on the frame." : "Spotify is switched off on the frame."); } catch (err) { toast(err.message); } e.target.blur(); setTimeout(loadRemote, 1500); loadRemote(); };
+$("rsFind").onclick = findStations;
+$("rsName").onkeydown = e => { if (e.key === "Enter") findStations(); };
+$("rsOwnAdd").onclick = async () => { const name = $("rsOwnName").value.trim(), stream = $("rsOwnStream").value.trim(); if (!name || !stream) return toast("Give the station a name and the address of its stream."); if (await addStation(name, stream)) { $("rsOwnName").value = ""; $("rsOwnStream").value = ""; } };
 $("frFind").onclick = findPlace;
 $("frTown").onkeydown = e => { if (e.key === "Enter") findPlace(); };
 $("frForget").onclick = () => saveFrame("/api/weather/forget", {}, "The weather is no longer shown.");

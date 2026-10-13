@@ -16,6 +16,7 @@ server/                  the server that runs on the frame (Rust)
     screen/              the frame's own screen: pictures, calendar, settings
     manage/              the page for a phone or computer
     simulator.html       the screen in a frame-sized box
+spotify/                 the program that makes the frame a speaker for Spotify's apps (Rust)
 android/                 the small app that shows the screen full screen on the frame
 homeassistant/           Home Assistant, the eufy bridge and the relay, for another machine
 tools/
@@ -26,7 +27,7 @@ tools/
 ```
 
 Not in git: `.tools/` (downloaded build tools), `.sim/` (the simulator's photos and
-data), `android/build/`, `server/target/` and `server/models/`.
+data), `android/build/`, `server/target/`, `spotify/target/` and `server/models/`.
 
 ## The frame's screen
 
@@ -67,6 +68,10 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   corner of Pictures, keeps the screen on through night mode, and keeps its tab open.
   An alarm switches the screen on if night mode has it off. These are kept on the frame
   itself and need no PIN.
+  Utilities also holds **Music**: the radio stations, a touch on one to play it, what
+  Spotify is playing (with its cover, and buttons for pause and the next and previous
+  track), and the volume. What is playing shows in the corner of Pictures, with Stop
+  and Next beside it while the tab bar is up. See [Telling the frame what to do](#telling-the-frame-what-to-do).
   Utilities also holds **Home**, once the house is connected: the house's alarm state,
   door and window sensors, motion sensors, and the latest picture from each camera
   (touch one to see it large). When the doorbell rings, the frame chimes and shows who
@@ -81,8 +86,11 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
     the morning list. A choice no photo answers to shows everything.
   - Night: switch the screen off between two times, and optionally whenever the room
     has been dark for two minutes. See [Night mode](#night-mode).
-  - Sound: a chime for calendar events, at the time or 5 to 30 minutes before, with a
-    button to hear it.
+  - Sound: a chime for calendar events, at the time or 5 to 30 minutes before, how loud
+    chimes are (soft, normal or loud), and a button to hear it. Chimes of every kind
+    (events, reminders, timers, alarms, the doorbell, notes) have this loudness of
+    their own: the music's volume does not touch it, and while one sounds the music is
+    turned down to a quarter so that it is heard.
   - Wi-Fi: the network and signal, a "Choose a network" button, and the address of the
     management page with a QR code. Android 10 offers no way for the server to join a
     network, so the button opens Android's own list of networks. The frame has no back
@@ -115,6 +123,77 @@ bins (a repeating event, "the day before at 19:00", "Put the bins out"), a swimm
 (45 minutes before "Swimming"), a card to buy (a week before anything named
 "birthday"). The note stays until someone touches it or the event is over. It does not
 chime while the screen is off for the night, but it is there in the morning.
+
+A rule can also have the frame do something when its note comes up: play a radio
+station, stop the music, or open the Calendar or To do. A repeating event called "Wake
+up" at 07:00 with a rule that plays a station is a radio alarm. Unlike the chime, this
+happens at night too.
+
+### Telling the frame what to do
+
+Whatever can be done by touching the screen can be asked of it from elsewhere, always in
+the same form, an *action*:
+
+| Action | What the screen does |
+| --- | --- |
+| `{"do": "next"}`, `{"do": "previous"}` | The next screen of photos, or the one before |
+| `{"do": "pause"}`, `{"do": "resume"}` | Hold the slideshow, or let it run |
+| `{"do": "show", "tab": "calendar"}` | Open a tab: `pictures`, `calendar`, `todo`, `utilities`, `settings` |
+| `{"do": "timer", "minutes": 10}` | Start a timer |
+| `{"do": "play", "station": "Jazz"}` | Play a station by name (capitals do not matter); without a name, the last one |
+| `{"do": "stop"}`, `{"do": "skip"}` | Stop the music; play the next station |
+| `{"do": "louder"}`, `{"do": "quieter"}`, `{"do": "volume", "to": 40}` | The music's volume, 0 to 100 |
+| `{"do": "note", "say": "Dinner is ready"}` | A note on the screen for a minute, with a chime |
+
+Three things give actions so far:
+
+- the **remote control** on the management page (Frame tab), which also says which tab
+  the frame is on and what is playing;
+- **keys**, from a keyboard or a media remote control (the table `KEYS` in
+  `server/pages/screen/actions.js`); the frame has an infrared receiver, but no remote
+  has been tried with it yet;
+- **reminder rules** (above).
+
+Anything else on the network can give one with `POST /api/act` (the PIN applies, as for
+every change). The screen page asks the server what to do with a request that is held
+open until there is something (`GET /api/acts`), so an action is on the screen within a
+moment. An action the screen did not collect within a minute is dropped.
+
+**Radio.** The frame's screen plays a station itself, straight from the station's own
+address, so nothing but the frame is involved. Stations are kept on the management
+page (Frame, "Radio stations"): type a name to look it up in the community directory at
+radio-browser.info, listen to a result on the phone or computer to check it is the
+right one, and add it; or give the address of an MP3 or AAC stream directly. Up to 24.
+A stream that stops is started again by itself; after two minutes of trying, the screen
+says the station could not be played. The volume here is the music's own, within
+whatever the frame's volume is set to.
+
+**Spotify.** With "Let Spotify's apps play on the frame" switched on (management page,
+Frame tab), the frame appears as a speaker called "Frame" in the Spotify app of anyone
+on the same Wi-Fi, the way a smart speaker does: choose it under the devices button and
+what the app plays comes out of the frame. It needs Spotify Premium. The screen shows
+the track and its cover under Utilities, Music, and in the corner of Pictures; the
+buttons there pause it and skip, and so do the actions `stop`, `skip` and `play`.
+Starting a radio station hands the music back to the app; Spotify starting stops the
+station.
+
+The volume in the Spotify app and the volume on the frame are one and the same while
+the frame is the speaker: the phone's volume buttons move the number under Utilities,
+Music, and the − and + there (or the remote control's) move the slider in the app. When
+the frame is first chosen, the app takes the frame's volume.
+
+Nobody signs in on the frame, and nothing of anyone's account is kept on it: the app
+hands over what is needed when the frame is chosen, and after the frame restarts it has
+to be chosen again. (The frame's adb is open to the network, so anything kept on it
+could be read by whoever is on the Wi-Fi.)
+
+How it works: `spotify/` is a small program, `framespot`, built on the open-source
+[librespot](https://github.com/librespot-org/librespot). The server runs it while the
+setting is on. It writes the sound to the server as plain samples, at the speed they
+are to be heard; the server offers that as a sound file without an end
+(`/api/spotify/stream`), and the screen page plays it exactly as it plays a radio
+station. So Spotify's sound takes the same road to the speaker as the radio does, and a
+second or two passes between a touch in the app and the frame following.
 
 ### Things to do
 
@@ -263,7 +342,9 @@ Open `http://<frame address>:8080` from a phone or computer on the same Wi-Fi.
     These are stored on the frame.
   - Reminders: the rules described under [Reminders](#reminders). Each rule shows the
     next event it will fire for, which is the quick way to check its words.
-- **Frame**: everything the frame's own Settings tab has, plus what needs a keyboard:
+- **Frame**: a remote control for the screen and the radio stations (see
+  [Telling the frame what to do](#telling-the-frame-what-to-do)), and
+  everything the frame's own Settings tab has, plus what needs a keyboard:
   which screen the frame shows, night mode, the chime, the place for the weather (type
   a town; the forecast comes from Open-Meteo, which needs no account), and the
   slideshow options.
@@ -384,6 +465,9 @@ a value it would still have to check.
 | `todo.rs`, `routes/todo.rs` | Things to do: people, tasks that come round or are done once, points and rewards |
 | `travel.rs` | When to leave for an event: journeys from TfL, walks from an OpenStreetMap router, driving times from TomTom, places looked up by name |
 | `home.rs`, `routes/home.rs` | What the house's relay reports (alarm, sensors, cameras, doorbell), kept in memory |
+| `acts.rs`, `routes/acts.rs` | Actions on their way to the screen, what the screen says of itself, the radio stations, and the routes for Spotify |
+| `spotify.rs` | Running Spotify's player (`framespot`), passing on its sound and its news, giving it orders |
+| `radio.rs` | Looking radio stations up by name at radio-browser.info |
 | `plain.rs` | Listening for plain http, and resetting https attempts |
 | `auth.rs`, `dns.rs` | The PIN and sessions; name lookups that work in a static binary on Android |
 | `types.rs` | Values checked once, where they enter |
@@ -392,7 +476,8 @@ a value it would still have to check.
 Each page in `server/pages/` is an ordinary `index.html` with its stylesheets and scripts
 beside it (the screen's Utilities tab has its own pair, `utilities.css` and
 `utilities.js`; Home, inside it, has `home.*`; a photo's menu and the reminders are in
-`extras.*`; the To do tab is `todo.*`). The server sends a page as one document with those put inside it, so a
+`extras.*`; the To do tab is `todo.*`; music is `music.*`, and `actions.js` is where
+anything the screen is told to do is carried out). The server sends a page as one document with those put inside it, so a
 page arrives in one request and is never half old and half new. Changing a page means
 editing those files and rebuilding.
 
@@ -402,7 +487,9 @@ table, then the two pages. A new background job is a function in `tasks.rs` and 
 in `tasks::start`.
 
 Checks, run from `server/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D
-warnings`, `cargo test`. `tools/deploy.py` refuses to deploy unless all three pass.
+warnings`, `cargo test`. `tools/deploy.py` refuses to deploy unless all three pass, there
+and in `spotify/` (which has little to test: nearly all it does is talk to Spotify). `spotify/Cargo.lock` began as librespot's own, whose versions are known to
+build together; a fresh one does not build.
 
 Routes added for the screen and calendar:
 
@@ -413,6 +500,13 @@ Routes added for the screen and calendar:
 | `GET /api/slides` | Photos the screen shows (hidden ones left out) as `[path, taken, width, height, favourite]` |
 | `POST /api/mark` | Make a photo a `favourite`, `hidden`, or neither (`null`) |
 | `POST /api/reminders` | Keep exactly these reminder rules |
+| `POST /api/act` | Have the screen do something (an action, as above) |
+| `GET /api/acts?after=` | For the screen page: the actions since that number, waiting up to 25 s for one; it says how it stands in `tab`, `paused`, `playing`, `volume` |
+| `GET /api/acting` | How the screen stands, and the stations, for the remote control |
+| `POST /api/stations`, `GET /api/stations/find?name=` | Keep exactly these radio stations; look stations up by name |
+| `POST /api/spotify` | Switch Spotify on the frame on or off (`{"on": true}`) |
+| `POST /api/spotify/do` | An order for Spotify's player: `play`, `pause`, `next`, `previous`, `stop`, or `{"do": "volume", "to": 40}` (no PIN) |
+| `GET /api/spotify/stream` | What Spotify is playing, as a WAV file without an end |
 | `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list; `&how=` works it out another way |
 | `POST /api/travel`, `/api/travel/key` | Keep home and the trips; keep or forget the driving key |
 | `GET /api/travel/find?place=` | Where a typed place was found: its name there and its position |
@@ -441,7 +535,8 @@ On the frame, data lives in `/data/local/frameserver`: `settings.json` (the remi
 
 Environment variables: `FRAME_CLOUD_DIR` (photo folder), `FRAME_DATA_DIR`,
 `FRAME_PORT`, `FRAME_BIND` (listen address), `FRAME_DEVICE=simulated`, `FRAME_TZ` (the
-simulated frame's time zone), `FRAME_LOG` (log level).
+simulated frame's time zone), `FRAME_LOG` (log level), `FRAME_SPOTIFY` (where Spotify's
+player is; on the frame it is `framespot` beside the data).
 
 ## Things worth knowing about the frame
 
@@ -450,8 +545,11 @@ simulated frame's time zone), `FRAME_LOG` (log level).
 - The display is 1920x1080 at Android density 180, which is 1706.67x960 CSS pixels.
 - There is no on-screen back or home button, and no shell command to join a Wi-Fi
   network.
-- It has a light sensor, an accelerometer, a speaker, a microphone, an infrared
-  receiver and Bluetooth; no camera and no battery.
+- It has a light sensor, an accelerometer, a speaker, an infrared receiver and
+  Bluetooth; no camera and no battery. Android lists a microphone, but a recording made
+  over adb while a tone was sent to the speaker held only silence, so there appears to
+  be none fitted (nobody was by the frame to confirm the tone could be heard). Voice
+  control would most likely need a USB microphone.
 - Its language is set to US English, so the screen page picks the date format from the
   time zone instead (day first outside the Americas).
 - iOS Safari tries https first on links opened from the Camera, and does not always
@@ -471,7 +569,15 @@ These work in the tests and the simulator but have not been exercised on the dev
 opening the Wi-Fi list and coming back from it, switching to the original screen from
 the Settings tab, the automatic fallback, the new screen coming up by itself after a
 reboot, a whole night of night mode (including waking when a dark room is lit), the
-chime through the frame's speaker, and an alarm ringing while the screen is off.
+chime through the frame's speaker, an alarm ringing while the screen is off, and the
+remote control's keys. The radio has been heard on the frame.
+
+Spotify has not been played anywhere yet. What has been seen: the player builds for
+the frame, and on this computer the server starts it and the frame is announced on
+the network as a speaker. Not yet seen: a track chosen in the Spotify app coming out
+as sound, on this computer or on the frame; and on the frame, the player finding
+Spotify's servers by name (it answers its own name lookups there, see
+`spotify/src/dns.rs`) and being found by phones.
 
 Driving times have only been tried against a stand-in for TomTom's service, never the
 real one: that needs a key.

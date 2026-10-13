@@ -16,9 +16,12 @@
             what is on it.
   To do     today's tasks for each person, their points, and the rewards points buy
             (todo.js and todo.css). Kept by the server, so tasks are added from anywhere.
-  Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css), and
-            Home: the house's alarm, sensors and cameras (home.js and home.css), there
-            only once the house is connected. A ringing doorbell shows over any tab.
+  Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css), Music:
+            radio stations, and Spotify when someone chooses the frame as the speaker
+            in their Spotify app (music.js and music.css; what is playing shows over
+            the pictures), and Home: the house's alarm, sensors and cameras (home.js and
+            home.css), there only once the house is connected. A ringing doorbell shows
+            over any tab.
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
             asked for each time Settings is opened, on a keypad on the screen.
 
@@ -26,6 +29,9 @@
   happen, by rules made on the phone or computer page. A note stays until it is touched.
 
   Calendar and Settings go back to Pictures when left alone for a while (a setting).
+
+  Whatever can be done by touching the screen can also be asked of it from elsewhere:
+  the phone or computer page's remote control, a key, a reminder rule (actions.js).
 
   Touch: on Pictures the left and right quarters step through photos and the middle
   brings up the tabs. The frame's WebView is Chromium 74, so this file stays within
@@ -54,6 +60,7 @@
 <link rel="stylesheet" href="screen.css">
 <link rel="stylesheet" href="utilities.css">
 <link rel="stylesheet" href="home.css">
+<link rel="stylesheet" href="music.css">
 <link rel="stylesheet" href="extras.css">
 <link rel="stylesheet" href="todo.css">
 </head>
@@ -70,6 +77,7 @@
     <div class="morning" id="morning"></div>
   </div>
   <div class="running" id="running"></div>
+  <div class="playing" id="playing" style="display: none"><span id="playing-name"></span><button class="only" id="playing-skip" data-icon="skip" aria-label="Next station"></button><button class="only" id="playing-stop" data-icon="stop" aria-label="Stop the music"></button></div>
   <div class="notice" id="notice">Looking for photos…</div>
 </div>
 
@@ -126,8 +134,9 @@
 
   <div class="part" id="part-sound">
     <div class="row"><span class="label">Sound a chime for calendar events</span><span id="chimes"></span></div>
-    <div class="row"><button class="press" id="chime-test">Play the chime</button></div>
+    <div class="row"><span class="label">How loud chimes are (kept by this screen only)</span><span id="chime-loudness"></span><button class="press spaced" id="chime-test">Play the chime</button></div>
     <p>The chime is for events with a time; a note appears on the screen as well. Nothing sounds while the screen is off for the night.</p>
+    <p>Chimes, reminders, timers, alarms and the doorbell are as loud as is chosen here, however quietly music is playing, and the music is turned down for the moment they sound.</p>
   </div>
 
   <div class="part" id="part-wifi">
@@ -166,7 +175,7 @@
 <div class="view" id="utilities">
   <div class="top"><h1>Utilities</h1><div class="now" id="now-too"></div></div>
   <div class="switch" id="tools">
-    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="home" data-icon="home">Home</button>
+    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button>
   </div>
 
   <div class="part" id="tool-timers">
@@ -182,6 +191,15 @@
       <div class="row"><span class="label">Rings</span><span id="alarm-repeats"></span><button class="press on spaced" id="alarm-add">Add alarm</button></div>
     </div>
     <div id="alarms"></div>
+  </div>
+
+  <div class="part" id="tool-music">
+    <div class="row"><span class="label" id="music-said">Radio</span><span id="stations"></span></div>
+    <p id="music-note"></p>
+    <div class="row" id="spotify-row" style="display: none"><span class="label" id="spotify-said">Spotify</span>
+      <div class="spotify" id="spotify-track"><img id="spotify-cover" alt=""><div class="about"><div class="big" id="spotify-title"></div><div class="by" id="spotify-by"></div></div><button class="press only" id="spotify-previous" data-icon="rewind" aria-label="Previous track"></button><button class="press only on" id="spotify-toggle" aria-label="Play or pause"></button><button class="press only" id="spotify-next" data-icon="skip" aria-label="Next track"></button></div>
+    </div>
+    <div class="row"><span class="label">Volume</span><button class="press" id="quieter">−</button><span class="hours" id="volume"></span><button class="press" id="louder">+</button><button class="press spaced" id="music-stop">Stop the music</button></div>
   </div>
 
   <div class="part" id="tool-home">
@@ -286,6 +304,8 @@
 <script src="screen.js"></script>
 <script src="utilities.js"></script>
 <script src="home.js"></script>
+<script src="music.js"></script>
+<script src="actions.js"></script>
 <script src="extras.js"></script>
 <script src="todo.js"></script>
 </body>

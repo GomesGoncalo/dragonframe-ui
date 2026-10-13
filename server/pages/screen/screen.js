@@ -37,6 +37,11 @@ const RESTS = [[1, '1 min'], [2, '2 min'], [5, '5 min'], [15, '15 min'], [30, '3
 const THEMES = [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Light by day, dark by night']];
 // By day means while the sun is up where the weather is for; without the weather, these hours.
 const DAY_FROM = 7, DAY_UNTIL = 19;
+// How loud a chime is, as a share of the loudest the frame is set to. It does not go up and
+// down with the music's volume: a note has to be heard however quietly the music plays.
+const CHIME_LOUDNESS = [[0.12, 'Soft'], [0.3, 'Normal'], [0.75, 'Loud']];
+// While a chime sounds, and this long after it starts, the music is turned down to make room.
+const CHIME_MS = 2300;
 const CHIMES = [[null, 'Off'], [0, 'At the time'], [5, '5 min before'], [10, '10 min before'], [15, '15 min before'], [30, '30 min before']];
 // A colour for each subscribed calendar, by its place in the list; events added by hand are grey.
 const COLOURS = ['#6cb6ff', '#f2a65a', '#7ee0a1', '#e58ad6', '#f2e36b', '#ff8f85', '#9aa5ff', '#5fd4d0'];
@@ -73,6 +78,10 @@ const ICONS = {
   utilities: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2.5M9.5 2.5h5"/>',
   alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.3 2.3M5.5 3.5L2.5 6.5M18.5 3.5l3 3"/>',
   pomodoro: '<circle cx="12" cy="14" r="7"/><path d="M12 7c0-2 1-3.5 3-3.5M8.5 6.5l3.5 1.2 3.5-1.2"/>',
+  music: '<path d="M9 17.5V5.5l10-2v12"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>',
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
+  skip: '<path d="M6 5.5l9 6.5-9 6.5zM18 5.5v13"/>',
+  rewind: '<path d="M18 5.5l-9 6.5 9 6.5zM6 5.5v13"/>',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -118,6 +127,13 @@ let calendarKnown = null;  // the server's count of changes to the calendar, as 
 // time the page reports in, and whether its tab may be left for Pictures by itself.
 let aliveNeeds = () => '';
 let staysOpen = () => false;
+// What music.js does with the radio stations the server says there are.
+let stationsNews = () => {};
+// And how it turns the music down for a moment, so that a chime is heard over it.
+let quietMusic = () => {};
+// What actions.js does when how the screen stands has changed (a tab opened, the slideshow
+// paused): it tells the server, for whoever is holding the remote control.
+let standingChanged = () => {};
 
 const url = (kind, path) => '/' + kind + '?p=' + encodeURIComponent(path);
 const shape = (photo) => (photo[2] && photo[3] ? photo[2] / photo[3] : 0);
@@ -447,6 +463,7 @@ function setPaused(now) {
   document.body.classList.toggle('paused', paused);
   label($('pause'), paused ? 'play' : 'pause', paused ? 'Play' : 'Pause');
   schedule();
+  standingChanged();
 }
 
 // --- the weather ----------------------------------------------------------------------
@@ -515,6 +532,7 @@ async function fetchEvents(first, days) {
     from: e.added ? 'Added here' : e.calendar || '',
     // The reminder rules that are about it (see reminders.js).
     rules: (e.remind || []).map((rule) => (found.reminders || [])[rule]).filter(Boolean),
+    // (A rule may also say what the frame is to do when its note comes up: `then`.)
     // Which trip says how it is reached, if one does.
     trip: typeof e.trip === 'number' ? e.trip : null,
   }));
@@ -744,8 +762,11 @@ function drawCalendar(now, again) {
 // --- events about to start: a note on the screen, and a chime ---------------------------
 
 let audio = null;
-/// Two soft notes, the second lower. Made here rather than played from a file.
+let chimeLoudness = 0.3;
+/// Two soft notes, the second lower. Made here rather than played from a file. They are as
+/// loud as the chime is set to be, whatever the music's volume, and the music makes way.
 function playChime() {
+  quietMusic(CHIME_MS);
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === 'suspended') audio.resume();
@@ -755,7 +776,7 @@ function playChime() {
       tone.type = 'sine';
       tone.frequency.value = note[0];
       loudness.gain.setValueAtTime(0.0001, start);
-      loudness.gain.exponentialRampToValueAtTime(0.3, start + 0.03);
+      loudness.gain.exponentialRampToValueAtTime(chimeLoudness, start + 0.03);
       loudness.gain.exponentialRampToValueAtTime(0.0001, start + 1.6);
       tone.connect(loudness);
       loudness.connect(audio.destination);
@@ -881,6 +902,12 @@ function drawSettings() {
     };
   }
 
+  choices($('chime-loudness'), CHIME_LOUDNESS, chimeLoudness, (loud) => {
+    chimeLoudness = loud;
+    remember('frameChimeLoudness', loud);
+    drawSettings();
+    playChime();
+  });
   choices($('chimes'), CHIMES, chime, (before) => {
     chime = before;
     drawSettings();
@@ -1052,6 +1079,7 @@ async function sayAlive() {
       rulesKnown = reply.reminders || [];
       refreshCalendar();
     }
+    stationsNews(reply.stations || []);
     // A place chosen a moment ago, or a fresh forecast, shows without waiting for the next turn.
     if ((reply.weather || null) !== (weather ? weather.fetched : null)) refreshWeather();
     // Home, in Utilities, is there only while the house is connected.
@@ -1100,6 +1128,7 @@ function showTab(name) {
   if (name === 'todo') todoNews();
   touched();
   schedule();
+  standingChanged();
 }
 
 /// Something was touched: keep the tabs up a little longer, and do not leave Settings yet.
@@ -1178,21 +1207,14 @@ document.addEventListener('click', (event) => {
   else document.body.classList.toggle('bar');
   touched();
 });
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowLeft') step(-1);
-  else if (event.key === 'ArrowRight') step(1);
-  else if (event.key === ' ') setPaused(!paused);
-  else if (event.key === '1') showTab('pictures');
-  else if (event.key === '2') showTab('calendar');
-  else if (event.key === '3') showTab('todo');
-  else if (event.key === '4') showTab('utilities');
-  else if (event.key === '5') showTab('settings');
-});
+// (Keys, from a keyboard or a remote control, are in actions.js.)
 
 // Every tab gets its drawing.
 const withIcons = document.querySelectorAll('[data-icon]');
 for (let i = 0; i < withIcons.length; i++) label(withIcons[i], withIcons[i].dataset.icon, withIcons[i].textContent);
 
+chimeLoudness = Number(remembered('frameChimeLoudness')) || 0.3;
+if (!CHIME_LOUDNESS.some((one) => one[0] === chimeLoudness)) chimeLoudness = 0.3;
 theme = params.get('theme') || remembered('frameScreenTheme') || 'dark';
 if (!THEMES.some((one) => one[0] === theme)) theme = 'dark';
 tick();

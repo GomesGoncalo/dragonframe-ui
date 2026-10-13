@@ -5,17 +5,20 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use crate::acts::Acts;
 use crate::calendar::Calendars;
 use crate::device::Device;
 use crate::home::Home;
 use crate::index::Index;
 use crate::marks::Marks;
+use crate::radio::Radio;
+use crate::spotify::Spotify;
 use crate::store::{Config, Settings};
 use crate::todo::Todo;
 use crate::travel::Travel;
 use crate::types::Screen;
 use crate::weather::Weather;
-use crate::{auth, faces, gphotos, store, weather};
+use crate::{auth, faces, gphotos, radio, spotify, store, weather};
 
 pub(crate) const DAY: u64 = 24 * 60 * 60;
 
@@ -52,6 +55,12 @@ pub(crate) struct App {
     pub(crate) travel: Travel,
     /// Things to do, who does them, and the points they earn.
     pub(crate) todo: Todo,
+    /// What the screen has been told to do, and what it says of itself.
+    pub(crate) acts: Acts,
+    /// Looking radio stations up by name.
+    pub(crate) radio: Radio,
+    /// The frame as a speaker for Spotify's apps.
+    pub(crate) spotify: Arc<Spotify>,
     /// How many times the calendar has been changed from the page (an event, a calendar, a
     /// rule, a trip), so the screen can tell there is something new to fetch.
     pub(crate) calendar_changes: AtomicU64,
@@ -88,6 +97,7 @@ impl App {
         let index = Index::load(&cfg);
         let marks = Marks::load(&cfg);
         let todo = Todo::load(&cfg);
+        let spotify = Arc::new(Spotify::new(spotify::installed(&cfg)));
         let calendars =
             Calendars::load(&cfg, &store::load_settings(&cfg).calendars).falling_back_to(gphotos::tolerant_client());
         Arc::new(App {
@@ -111,6 +121,9 @@ impl App {
             home: Home::default(),
             travel: Travel::default(),
             todo,
+            acts: Acts::default(),
+            radio: Radio::new(radio::STATIONS_URL),
+            spotify,
             calendar_changes: AtomicU64::new(0),
             todo_changes: AtomicU64::new(0),
         })

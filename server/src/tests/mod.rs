@@ -24,7 +24,7 @@ use crate::store::{Config, LastSync, Settings};
 use crate::tasks::*;
 use crate::types::*;
 use crate::weather::Weather;
-use crate::{calendar, device, faces, gphotos, index, night, store, travel, types, weather};
+use crate::{calendar, device, faces, gphotos, index, night, radio, spotify, store, travel, types, weather};
 
 const SYNCED: &str = "frame-sync/fs_0123456789abcdef.jpg";
 const HOST_NAME: &str = "192.168.4.23:8080";
@@ -79,6 +79,7 @@ async fn post_as(app: &Shared, token: &str, path: &str, body: &str) -> Reply {
     send(app, page_post(path).header("X-Frame-Token", token).body(Body::from(body.to_string())).unwrap()).await
 }
 
+mod acting;
 mod calendars;
 mod changing;
 mod duplicates;

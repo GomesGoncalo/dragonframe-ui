@@ -68,6 +68,12 @@ impl reqwest::dns::Resolve for FrameResolver {
     }
 }
 
+/// The servers a program beside this one should be told to ask, if it too would find none
+/// by itself (see `system_lookup_works`); None where the ordinary lookup works.
+pub fn servers_to_hand_on() -> Option<Vec<String>> {
+    (!system_lookup_works()).then(|| servers().iter().map(|server| server.ip().to_string()).collect())
+}
+
 /// The DNS servers Android is using, then public ones as a fallback.
 fn servers() -> Vec<SocketAddr> {
     let android = ["net.dns1", "net.dns2"].into_iter().filter_map(|prop| {

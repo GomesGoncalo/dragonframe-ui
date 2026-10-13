@@ -78,6 +78,9 @@ def main():
     print("Building frameserver for this computer...")
     if subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=HERE).returncode != 0:
         sys.exit("The build failed.")
+    # Spotify's player, for this computer. Without it the simulator simply has no Spotify.
+    if subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=REPO / "spotify").returncode != 0:
+        print("Spotify's player did not build; carrying on without it.")
     env = dict(
         os.environ,
         FRAME_CLOUD_DIR=str(SIM / "photos"),
@@ -87,6 +90,7 @@ def main():
         # The stand-in frame keeps its clock where this computer does.
         FRAME_TZ=os.environ.get("TZ") or os.path.realpath("/etc/localtime").split("zoneinfo/")[-1],
         FRAME_BIND="127.0.0.1" if args.local else "0.0.0.0",
+        FRAME_SPOTIFY=str(REPO / "spotify" / "target" / "release" / "framespot"),
     )
     print(f"\nThe frame's screen:        http://127.0.0.1:{args.port}/simulator")
     print(f"Photos and the calendar:   http://127.0.0.1:{args.port}/\n")

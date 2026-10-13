@@ -21,6 +21,9 @@ use tracing::{debug, warn};
 
 use crate::app::{blocking, Shared};
 use crate::routes::access::{change_pin, lock, unlock};
+use crate::routes::acts::{
+    act, acts_to_do, acts_view, find_stations, save_stations, set_spotify, spotify_order, spotify_stream,
+};
 use crate::routes::calendars::{
     add_event, calendar_view, delete_event, find_place, map_tile, save_calendars, save_reminders, save_roads_key,
     save_travel, travel_plan,
@@ -42,6 +45,7 @@ use crate::routes::todo::{
 use crate::{auth, store};
 
 pub(crate) mod access;
+pub(crate) mod acts;
 pub(crate) mod calendars;
 pub(crate) mod frame;
 pub(crate) mod home;
@@ -136,8 +140,10 @@ pub(crate) async fn protect(State(app): State<Shared>, request: Request, next: N
         }
         // Unlocking is how a session starts, and analysing photos changes nothing on the frame.
         // Ticking a task off is what the list of things to do is there for, whoever does it.
+        // Nor does pausing Spotify or skipping a track, from the buttons on the frame's screen.
         // Everything else needs the PIN, from the frame's own screen as much as from a phone.
-        if !matches!(request.uri().path(), "/api/unlock" | "/api/analyse" | "/api/watching" | "/api/todo/done") {
+        let open = ["/api/unlock", "/api/analyse", "/api/watching", "/api/todo/done", "/api/spotify/do"];
+        if !open.contains(&request.uri().path()) {
             let token = header(request.headers(), "x-frame-token").map(str::to_string);
             let cfg = Arc::clone(&app.cfg);
             let allowed = blocking(move || auth::allowed(&store::load_settings(&cfg), token.as_deref())).await;
@@ -206,6 +212,14 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/weather", get(weather_view))
         .route("/api/weather/place", post(set_place))
         .route("/api/weather/forget", post(forget_place))
+        .route("/api/act", post(act))
+        .route("/api/acts", get(acts_to_do))
+        .route("/api/acting", get(acts_view))
+        .route("/api/stations", post(save_stations))
+        .route("/api/stations/find", get(find_stations))
+        .route("/api/spotify", post(set_spotify))
+        .route("/api/spotify/do", post(spotify_order))
+        .route("/api/spotify/stream", get(spotify_stream))
         .route("/api/home", get(home_view))
         .route("/api/home/picture", get(home_picture).post(keep_home_picture))
         .route("/api/home/report", post(home_report))

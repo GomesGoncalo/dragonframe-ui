@@ -884,6 +884,9 @@ pub struct Reminder {
     /// Whether the note comes with a chime.
     #[serde(default)]
     pub chime: bool,
+    /// Something for the frame to do when the note comes up, such as playing a station.
+    #[serde(default, rename = "then")]
+    pub act: Option<Action>,
 }
 
 /// The words a reminder looks for in the names of events: one to eight words or phrases,
@@ -974,6 +977,201 @@ impl<'de> Deserialize<'de> for Ahead {
 
 /// The reminder rules: at most twenty.
 pub type Reminders = Bounded<Reminder, 0, 20>;
+
+// --- things the frame can be told to do ------------------------------------------------------------
+
+/// One of the tabs of the frame's screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tab {
+    Pictures,
+    Calendar,
+    Todo,
+    Utilities,
+    Settings,
+}
+
+impl Tab {
+    pub fn parse(text: &str) -> Option<Tab> {
+        serde_json::from_value(serde_json::Value::String(text.to_string())).ok()
+    }
+}
+
+/// How long a timer runs: 1 to 600 minutes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Minutes(u16);
+
+impl<'de> Deserialize<'de> for Minutes {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let minutes = u64::deserialize(deserializer)?;
+        u16::try_from(minutes)
+            .ok()
+            .filter(|minutes| (1..=600).contains(minutes))
+            .map(Minutes)
+            .ok_or_else(|| de::Error::custom("a timer runs for 1 to 600 minutes"))
+    }
+}
+
+/// How loud the music is, from 0 (silent) to 100.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Loudness(u8);
+
+impl Loudness {
+    pub fn new(percent: u64) -> Option<Loudness> {
+        u8::try_from(percent).ok().filter(|percent| *percent <= 100).map(Loudness)
+    }
+
+    pub fn percent(self) -> u8 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Loudness {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let percent = u64::deserialize(deserializer)?;
+        Loudness::new(percent).ok_or_else(|| de::Error::custom("the volume goes from 0 to 100"))
+    }
+}
+
+/// Something the frame's screen can be told to do, whoever does the telling: a button on
+/// the phone page, a key on a remote control, a reminder rule, and in time a spoken word.
+/// Written `{"do": "next"}`, `{"do": "show", "tab": "calendar"}` and so on.
+///
+/// Everything here is done by the screen page itself, so whatever can be done by touching
+/// the frame can be done from elsewhere in the same way.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(tag = "do", rename_all = "snake_case")]
+pub enum Action {
+    /// The next screen of photos.
+    Next,
+    /// The screen of photos before this one.
+    Previous,
+    /// Hold the slideshow where it is.
+    Pause,
+    /// Let the slideshow run again.
+    Resume,
+    /// Open a tab.
+    Show {
+        tab: Tab,
+    },
+    /// Start a timer.
+    Timer {
+        minutes: Minutes,
+    },
+    /// Play a radio station, by its name; without a name, the one that played last.
+    Play {
+        #[serde(default)]
+        station: Option<Label>,
+    },
+    /// Stop the music.
+    Stop,
+    /// Play the station after the one that is playing.
+    Skip,
+    Louder,
+    Quieter,
+    Volume {
+        to: Loudness,
+    },
+    /// Put a note on the screen for a minute, with a chime.
+    Note {
+        say: Title,
+    },
+}
+
+impl Action {
+    /// The station it asks for by name, if it does.
+    pub fn station(&self) -> Option<&Label> {
+        match self {
+            Action::Play { station } => station.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+/// Where a radio station is listened to: an http or https address of at most 500 characters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct StreamLink(String);
+
+impl StreamLink {
+    pub fn parse(text: &str) -> Option<StreamLink> {
+        let text = text.trim();
+        let rest = text.strip_prefix("https://").or_else(|| text.strip_prefix("http://"))?;
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let usable = !host.is_empty()
+            && text.len() <= 500
+            && !text.contains(|c: char| c.is_control() || c.is_whitespace() || matches!(c, '"' | '<' | '>'));
+        usable.then(|| StreamLink(text.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for StreamLink {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(
+            deserializer,
+            StreamLink::parse,
+            "not the address of a radio stream (it starts with http:// or https://)",
+        )
+    }
+}
+
+/// A radio station the frame can play.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Station {
+    pub name: Label,
+    pub stream: StreamLink,
+}
+
+/// The radio stations: at most twenty-four, no two with the same name (capitals aside),
+/// since a station is asked for by its name.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Stations(Vec<Station>);
+
+impl Stations {
+    const MOST: usize = 24;
+
+    pub fn new(stations: Vec<Station>) -> Option<Stations> {
+        let names: std::collections::HashSet<String> =
+            stations.iter().map(|station| station.name.as_str().to_lowercase()).collect();
+        (stations.len() <= Self::MOST && names.len() == stations.len()).then_some(Stations(stations))
+    }
+
+    pub fn into_inner(self) -> Vec<Station> {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Stations {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Stations::new(Vec::<Station>::deserialize(deserializer)?)
+            .ok_or_else(|| de::Error::custom("at most 24 stations, each with a name of its own"))
+    }
+}
+
+/// What the screen page says about itself each time it asks what to do: which tab is open,
+/// whether the slideshow is paused, and what is playing how loudly. Kept for the phone page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Said {
+    pub tab: Option<Tab>,
+    pub paused: bool,
+    /// The station that is playing.
+    pub playing: Option<Label>,
+    pub volume: Option<Loudness>,
+}
+
+impl Said {
+    /// From query parameters; anything unreadable is left unsaid.
+    pub fn from_query(asked: impl Fn(&str) -> Option<String>) -> Said {
+        Said {
+            tab: asked("tab").and_then(|tab| Tab::parse(&tab)),
+            paused: asked("paused").as_deref() == Some("1"),
+            playing: asked("playing").and_then(|name| Label::parse(&name)),
+            volume: asked("volume").and_then(|volume| volume.parse().ok()).and_then(Loudness::new),
+        }
+    }
+}
 
 // --- things to do --------------------------------------------------------------------------------
 
@@ -1263,11 +1461,18 @@ impl<'de> Deserialize<'de> for Place {
     }
 }
 
-/// What someone typed to say where the frame is: 1 to 100 characters.
+/// What someone typed to be looked up, such as the town the frame is in or the name of a
+/// radio station: 1 to 100 characters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlaceQuery(String);
 
 impl PlaceQuery {
+    pub fn parse(text: &str) -> Option<PlaceQuery> {
+        let text = text.trim();
+        let usable = (1..=100).contains(&text.chars().count()) && !text.contains(char::is_control);
+        usable.then(|| PlaceQuery(text.to_string()))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -1276,9 +1481,7 @@ impl PlaceQuery {
 impl<'de> Deserialize<'de> for PlaceQuery {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        let text = text.trim();
-        let usable = (1..=100).contains(&text.chars().count()) && !text.contains(char::is_control);
-        usable.then(|| PlaceQuery(text.to_string())).ok_or_else(|| de::Error::custom("type the name of a town or city"))
+        PlaceQuery::parse(&text).ok_or_else(|| de::Error::custom("type the name of a town or city"))
     }
 }
 
@@ -1293,6 +1496,10 @@ impl Label {
     pub fn parse(text: &str) -> Option<Label> {
         let text = text.trim();
         ((1..=60).contains(&text.chars().count()) && !text.contains(char::is_control)).then(|| Label(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -1923,6 +2130,81 @@ mod tests {
         assert!(from_value::<Reminder>(json!({ "words": "bin", "when": { "minutes": 0 }, "say": "" })).is_err());
         let many: Vec<_> = (0..21).map(|_| json!({ "words": "bin", "when": { "minutes": 0 } })).collect();
         assert!(from_value::<Reminders>(json!(many)).is_err());
+    }
+
+    #[test]
+    fn an_action_is_written_by_what_it_does() {
+        let action = |value: serde_json::Value| from_value::<Action>(value);
+        assert_eq!(action(json!({ "do": "next" })).unwrap(), Action::Next);
+        assert_eq!(action(json!({ "do": "show", "tab": "todo" })).unwrap(), Action::Show { tab: Tab::Todo });
+        assert_eq!(action(json!({ "do": "play" })).unwrap(), Action::Play { station: None });
+        let play = action(json!({ "do": "play", "station": " Radio Four " })).unwrap();
+        assert_eq!(play.station().map(Label::as_str), Some("Radio Four"));
+        assert_eq!(serde_json::to_value(&play).unwrap(), json!({ "do": "play", "station": "Radio Four" }));
+        assert_eq!(serde_json::to_value(Action::Quieter).unwrap(), json!({ "do": "quieter" }));
+        assert_eq!(action(json!({ "do": "volume", "to": 100 })).unwrap(), Action::Volume { to: Loudness(100) });
+        assert_eq!(action(json!({ "do": "timer", "minutes": 10 })).unwrap(), Action::Timer { minutes: Minutes(10) });
+        assert!(action(json!({ "do": "note", "say": "Dinner is ready" })).is_ok());
+        for bad in [
+            json!({}),
+            json!({ "do": "explode" }),
+            json!({ "do": "show" }),
+            json!({ "do": "show", "tab": "attic" }),
+            json!({ "do": "volume", "to": 101 }),
+            json!({ "do": "timer", "minutes": 0 }),
+            json!({ "do": "timer", "minutes": 601 }),
+            json!({ "do": "play", "station": "" }),
+            json!({ "do": "note", "say": "" }),
+        ] {
+            assert!(action(bad.clone()).is_err(), "{bad}");
+        }
+        // A reminder rule can carry one, to be done when its note comes up.
+        let rule = json!({ "words": "wake", "when": { "minutes": 0 }, "then": { "do": "play", "station": "Jazz" } });
+        assert!(from_value::<Reminder>(rule).unwrap().act.is_some());
+        let rule = json!({ "words": "wake", "when": { "minutes": 0 }, "then": { "do": "explode" } });
+        assert!(from_value::<Reminder>(rule).is_err());
+    }
+
+    #[test]
+    fn stations_have_a_name_each_and_a_web_address() {
+        let link = |text: &str| StreamLink::parse(text);
+        assert!(link(" https://stream.example/four.mp3 ").is_some());
+        assert!(link("http://stream.example:8000/jazz?x=1").is_some());
+        let long = format!("https://a/{}", "x".repeat(500));
+        for bad in [
+            "",
+            "stream.example/four",
+            "ftp://stream.example/x",
+            "https://",
+            "https:///x",
+            "https://a b/x",
+            "https://a/\"x",
+            &long,
+        ] {
+            assert_eq!(link(bad), None, "{bad:?}");
+        }
+        let station = |name: &str| json!({ "name": name, "stream": "https://stream.example/x" });
+        assert_eq!(from_value::<Stations>(json!([station("Jazz"), station("News")])).unwrap().into_inner().len(), 2);
+        assert!(from_value::<Stations>(json!([station("Jazz"), station("jazz")])).is_err(), "asked for by name");
+        let many: Vec<_> = (0..25).map(|n| station(&format!("Station {n}"))).collect();
+        assert!(from_value::<Stations>(json!(many)).is_err());
+    }
+
+    #[test]
+    fn what_the_screen_says_of_itself_is_read_leniently() {
+        let said = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<(String, String)> =
+                pairs.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect();
+            Said::from_query(|name| pairs.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone()))
+        };
+        assert_eq!(said(&[]), Said::default());
+        let full = said(&[("tab", "calendar"), ("paused", "1"), ("playing", "Jazz"), ("volume", "40")]);
+        assert_eq!(
+            serde_json::to_value(&full).unwrap(),
+            json!({ "tab": "calendar", "paused": true, "playing": "Jazz", "volume": 40 })
+        );
+        assert_eq!(said(&[("tab", "attic"), ("paused", "yes"), ("playing", ""), ("volume", "loud")]), Said::default());
+        assert_eq!(said(&[("volume", "101")]).volume, None);
     }
 
     #[test]

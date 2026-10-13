@@ -1,0 +1,32 @@
+/* How music looks on the frame's screen: the Music part of Utilities, and the strip over the
+   pictures that says what is playing. See music.js. */
+body[data-tool="music"] #tool-music { display: block; }
+#stations .press { font-size: 3vmin; padding: 2vmin 3.2vmin; }
+
+/* What is playing, in the corner of the pictures above whatever is counting down. Its
+   buttons are there while the tabs are up, when it also moves clear of them. */
+.playing {
+  position: absolute; right: 3vmin; bottom: 4.8vmin; max-width: 70vmin; padding: .8vmin 2vmin; border-radius: 2.4vmin;
+  font-size: 2.8vmin; background: rgba(0, 0, 0, .46); color: var(--ink); white-space: nowrap; transition: bottom .25s ease;
+}
+.running:not(:empty) + .playing { bottom: 11vmin; }
+body.bar .playing { bottom: 15vmin; }
+.playing span { display: inline-block; max-width: 48vmin; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.playing button {
+  display: none; width: 6.4vmin; height: 6.4vmin; padding: 0; margin-left: 1.4vmin; border-radius: 50%;
+  font-size: 3vmin; color: var(--ink); background: rgba(255, 255, 255, .16); vertical-align: middle;
+}
+body.bar .playing button { display: inline-block; }
+
+/* Spotify's track: its cover, what it is, and the buttons. */
+.spotify { white-space: nowrap; }
+.spotify img { width: 15vmin; height: 15vmin; border-radius: 1.4vmin; background: var(--panel); vertical-align: middle; }
+.spotify .about { display: inline-block; width: 70vmin; margin: 0 3vmin; vertical-align: middle; }
+.spotify .about div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spotify .by { font-size: 2.6vmin; color: var(--muted); }
+.spotify .press { width: 9vmin; height: 9vmin; padding: 0; border-radius: 50%; font-size: 3.6vmin; margin: 0 1vmin 0 0; vertical-align: middle; }
+#music-note:empty { display: none; }
+
+@media (orientation: portrait) {
+  .spotify .about { width: 40vmin; margin: 0 2vmin; }
+}
