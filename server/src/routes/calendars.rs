@@ -175,6 +175,19 @@ pub(crate) async fn save_roads_key(State(app): State<Shared>, Parsed(request): P
     Json(json!({ "driving": driving, "ways": How::available(driving) }))
 }
 
+/// Where a place typed for a trip was found (`?place=`), so whoever typed it can see it is
+/// the one they meant.
+pub(crate) async fn find_place(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
+    let spot = query.get("place").and_then(|text| Spot::parse(text));
+    let spot = spot.ok_or_else(|| ApiError::bad_request("which place? (?place=)"))?;
+    let found = app.travel.find(&app.http, &spot).await.map_err(|e| {
+        let status =
+            if matches!(e, travel::TravelError::NotFound(_)) { StatusCode::NOT_FOUND } else { StatusCode::BAD_GATEWAY };
+        ApiError::new(status, e.to_string())
+    })?;
+    Ok(Json(found))
+}
+
 /// When to leave for an event: `?trip=` is the trip's place in the list and `?arrive=` when
 /// the event starts, in seconds since 1970. With `?how=`, the same trip made another way,
 /// for comparing; the answer says which ways there are.

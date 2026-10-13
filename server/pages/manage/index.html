@@ -160,6 +160,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
       <h2>Getting there</h2>
       <p class="muted">For events you travel to, the frame works out when to leave and says so on its screen from half an hour before. Say where home is, then set up each kind of event once: where it is and how you get there. Every later event with the same name and location is reached the same way. Postcodes are the surest thing to type; addresses and station names usually work.</p>
       <label class="row"><span>Home</span> <input type="text" id="trHome" maxlength="120" placeholder="Postcode or address" style="flex: 1"></label>
+      <p class="muted" id="trHomeFound"></p>
       <p class="muted" id="trWays"></p>
       <div class="bar" style="margin: 10px 0 0">
         <input type="password" id="trKey" maxlength="128" placeholder="TomTom routing key" autocomplete="off" aria-label="Key for the driving service">

@@ -458,7 +458,7 @@ async function loadCalendar() {
   rules = c.reminders || [];
   renderRules(c.events);
   travel = c.travel || null; ways = c.ways || []; tripEvents = c.events;
-  renderTrips(); if (travel) planTrips();
+  renderTrips(); if (travel) { planTrips(); findPlaces(); }
   const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const coming = c.events.filter(e => e.all_day ? calWhen(e.end) > today : calWhen(e.end) >= now).slice(0, 40);
   setText($("calNone"), coming.length ? "" : "Nothing in the next five weeks.");
@@ -626,7 +626,17 @@ async function addReward() {
 
 // --- getting there: how the events that are travelled to are reached ------------------------------
 const WAYS = { transit: "public transport", walk: "on foot", cycle: "by bicycle", car: "by car", park: "by car to a station, then public transport" };
-let travel = null, ways = [], tripPlans = {}, editing = null, tripEvents = [];
+let travel = null, ways = [], tripPlans = {}, editing = null, tripEvents = [], placesFound = {};
+/// Where a typed place was found, asked once for each; an address can be found somewhere other than was meant.
+async function findPlaces() {
+  const typed = [travel.home].concat(travel.trips.flatMap(t => [t.to, t.from, t.via])).filter(Boolean);
+  for (const place of new Set(typed)) {
+    if (placesFound[place]) continue;
+    try { placesFound[place] = (await api(`/api/travel/find?place=${encodeURIComponent(place)}`)).name || "found"; } catch (e) { placesFound[place] = `not found (${e.message})`; }
+    renderTrips();
+  }
+}
+const foundAs = place => placesFound[place] ? ` (found: ${placesFound[place]})` : "";
 const tripKey = t => `${t.title}\n${t.place || ""}`;
 const inTrips = () => $("trTrips").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
 /// Ask when to leave for the next time each trip's event happens.
@@ -683,7 +693,8 @@ function renderTrips() {
   setText($("trWays"), locked ? "Unlock (top of the page) to see or change where home is and the trips." : ways.includes("car") ? "A key for the driving service is set, so trips can also be by car, or by car to a station and on by public transport. Car times allow for usual traffic." : "Public transport, walking and cycling are worked out by Transport for London's journey planner. Trips by car need a key for TomTom's routing service (free for this much use, from developer.tomtom.com); with one typed here, car and car-then-train are offered too. The key is kept on the frame and never shown again.");
   show($("trKeyForget"), !locked && ways.includes("car")); $("trHome").disabled = locked; $("trKey").disabled = locked; $("trKeySave").disabled = locked;
   if (!locked && document.activeElement !== $("trHome") && changed("trHome", travel.home)) $("trHome").value = travel.home || "";
-  if (inTrips() || !changed("trips", [travel, ways, rows.map(r => [r.key, r.trip, r.next && r.next.start]), editing, tripPlans])) return;
+  setText($("trHomeFound"), !locked && travel.home && placesFound[travel.home] ? `Home was found as: ${placesFound[travel.home]}. If that is not your home, type its postcode instead.` : "");
+  if (inTrips() || !changed("trips", [travel, ways, rows.map(r => [r.key, r.trip, r.next && r.next.start]), editing, tripPlans, placesFound])) return;
   const box = $("trTrips"); box.textContent = "";
   if (locked) return;
   for (const row of rows) {
@@ -692,7 +703,9 @@ function renderTrips() {
     const line = calRow(when, row.place ? `${row.title} (${row.place})` : row.title, "", null);
     if (trip) {
       const arrive = row.next ? Math.floor(calWhen(row.next.start).getTime() / 1000) : 0, plan = tripPlans[`${JSON.stringify(trip)}|${travel.home}|${arrive}`];
-      let said = `${WAYS[trip.how] || "by car (needs the key)"} to ${trip.to}`;
+      let said = `${WAYS[trip.how] || "by car (needs the key)"} to ${trip.to}${foundAs(trip.to)}`;
+      if (trip.from) said += `, from ${trip.from}${foundAs(trip.from)}`;
+      if (trip.via) said += `, by ${trip.via}${foundAs(trip.via)}`;
       if (plan && plan.error) said += ` · ${plan.error}`;
       else if (plan) said += ` · leave ${calTime(new Date(plan.leave * 1000))}${plan.catch ? `, ${plan.catch}` : ""}`;
       line.append(el("span", plan && plan.error ? "from bad" : "from", said));

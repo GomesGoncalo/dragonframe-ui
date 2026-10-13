@@ -172,9 +172,12 @@ marks its step). The map is OpenStreetMap's; its squares are fetched through the
 frame's server and kept in `tiles/`, so each is asked for once. An event, calendar or trip changed from the management page reaches
 the frame's screen within half a minute.
 
-- **Public transport, on foot, by bicycle**: from Transport for London's journey
-  planner, which needs no account. It plans to arrive by the event's start and takes
-  the journey that leaves latest. It only knows London and the railways around it.
+- **Public transport, by bicycle**: from Transport for London's journey planner, which
+  needs no account. It plans to arrive by the event's start and takes the journey that
+  leaves latest. It only knows London and the railways around it.
+- **On foot**: TfL's planner will not plan a journey that is all walking, so walks come
+  from the walking router OpenStreetMap's German chapter runs (routing.openstreetmap.de),
+  which needs no account and works anywhere. Its times assume a steady walking pace.
 - **By car, and by car to a station then public transport**: driving times come from
   TomTom's routing service, which needs a key (free for this much use). These two ways
   are offered only once a key has been typed on the page. The key is kept in the
@@ -183,7 +186,9 @@ the frame's screen within half a minute.
   key nothing is ever sent to TomTom.
 - Places are postcodes (looked up at postcodes.io), or addresses and station names
   (looked up at OpenStreetMap's search). A postcode is the surest. Each place is looked
-  up once.
+  up once. An address can be found somewhere other than was meant (a street of the same
+  name in another town), which makes every journey from or to it wrong; so the page
+  says where home and each trip's places were found.
 
 Home and the trips are addresses, so with a PIN set they are only shown to a browser
 that has entered it.
@@ -377,7 +382,7 @@ a value it would still have to check.
 | `night.rs` | Deciding when the screen should be off |
 | `weather.rs` | Finding a place by name and fetching its forecast from Open-Meteo |
 | `todo.rs`, `routes/todo.rs` | Things to do: people, tasks that come round or are done once, points and rewards |
-| `travel.rs` | When to leave for an event: journeys from TfL, driving times from TomTom, places looked up by name |
+| `travel.rs` | When to leave for an event: journeys from TfL, walks from an OpenStreetMap router, driving times from TomTom, places looked up by name |
 | `home.rs`, `routes/home.rs` | What the house's relay reports (alarm, sensors, cameras, doorbell), kept in memory |
 | `plain.rs` | Listening for plain http, and resetting https attempts |
 | `auth.rs`, `dns.rs` | The PIN and sessions; name lookups that work in a static binary on Android |
@@ -410,6 +415,7 @@ Routes added for the screen and calendar:
 | `POST /api/reminders` | Keep exactly these reminder rules |
 | `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list; `&how=` works it out another way |
 | `POST /api/travel`, `/api/travel/key` | Keep home and the trips; keep or forget the driving key |
+| `GET /api/travel/find?place=` | Where a typed place was found: its name there and its position |
 | `GET /api/todo?day=` | Things to do: people, tasks, rewards, and the list for the day it is for whoever asks |
 | `POST /api/todo/done` | Tick a task for today, or take the tick away (no PIN) |
 | `POST /api/todo/approve`, `/approval` | Credit a tick's points or turn it down; choose whether points wait for approval |

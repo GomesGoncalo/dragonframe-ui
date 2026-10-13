@@ -1,8 +1,10 @@
 //! Getting to events: when to leave, and how the journey goes.
 //!
-//! A trip (see `types::Trip`) says how an event is reached. Public transport, walking
-//! and cycling are worked out by Transport for London's journey planner, which needs no
-//! account and knows timetables and disruptions. Driving is worked out by the `TomTom`
+//! A trip (see `types::Trip`) says how an event is reached. Public transport and cycling
+//! are worked out by Transport for London's journey planner, which needs no account and
+//! knows timetables and disruptions. It will not plan a journey that is all on foot, so
+//! walks come from the walking router that OpenStreetMap's German chapter runs, which
+//! needs no account either. Driving is worked out by the `TomTom`
 //! routing service, which needs a key: without one, trips with a car in them are not
 //! offered. A trip by car to a station and on by train uses both, one after the other.
 //!
@@ -28,6 +30,7 @@ pub const ROADS_URL: &str = "https://api.tomtom.com/routing/1/calculateRoute";
 pub const POSTCODES_URL: &str = "https://api.postcodes.io/postcodes";
 pub const ADDRESSES_URL: &str = "https://nominatim.openstreetmap.org/search";
 pub const TILES_URL: &str = "https://tile.openstreetmap.org";
+pub const WALKS_URL: &str = "https://routing.openstreetmap.de/routed-foot/route/v1/foot";
 /// The deepest the map zooms, and how many of its squares are kept on the frame.
 const DEEPEST_ZOOM: u32 = 18;
 const MOST_TILES_KEPT: usize = 1500;
@@ -36,6 +39,8 @@ const MOST_TILE_BYTES: usize = 1024 * 1024;
 const MOST_POINTS: usize = 250;
 /// What a stretch by car is called, beside the journey planner's own words for the rest.
 const DRIVE: &str = "drive";
+/// And a stretch on foot, in the journey planner's own word for it.
+const WALK: &str = "walking";
 /// OpenStreetMap's search asks every program that uses it to say what it is.
 const WHO_ASKS: &str = "frameserver (a photo frame at home)";
 /// What public transport's planner may use between two places.
@@ -197,7 +202,19 @@ struct Named {
 
 #[derive(Deserialize)]
 struct Postcode {
-    result: Coordinates,
+    result: PostcodePlace,
+}
+
+#[derive(Deserialize)]
+struct PostcodePlace {
+    latitude: f64,
+    longitude: f64,
+    #[serde(default)]
+    postcode: Option<String>,
+    #[serde(default)]
+    admin_ward: Option<String>,
+    #[serde(default)]
+    admin_district: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -211,6 +228,30 @@ struct Coordinates {
 struct Address {
     lat: String,
     lon: String,
+    /// The place in full: "Carlton Road, Sidcup, London Borough of Bexley, …".
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+/// What the walking router answers with.
+#[derive(Deserialize)]
+struct Walked {
+    #[serde(default)]
+    routes: Vec<WalkedRoute>,
+}
+
+#[derive(Deserialize)]
+struct WalkedRoute {
+    /// Seconds.
+    duration: f64,
+    geometry: WalkedLine,
+}
+
+#[derive(Deserialize)]
+struct WalkedLine {
+    /// Longitude first, then latitude.
+    #[serde(default)]
+    coordinates: Vec<[f64; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -246,6 +287,7 @@ pub struct Services {
     pub postcodes: String,
     pub addresses: String,
     pub tiles: String,
+    pub walks: String,
 }
 
 impl Default for Services {
@@ -256,6 +298,7 @@ impl Default for Services {
             postcodes: POSTCODES_URL.into(),
             addresses: ADDRESSES_URL.into(),
             tiles: TILES_URL.into(),
+            walks: WALKS_URL.into(),
         }
     }
 }
@@ -268,6 +311,8 @@ pub struct Travel {
     services: Services,
     /// Places already looked up, by what was typed.
     found: Mutex<HashMap<Spot, Point>>,
+    /// What each of those places turned out to be called, for whoever typed it to check.
+    names: Mutex<HashMap<Spot, String>>,
     /// Plans already made.
     plans: Mutex<Plans>,
 }
@@ -309,21 +354,33 @@ impl Travel {
             return Ok(*known);
         }
         let nowhere = || TravelError::NotFound(spot.as_str().to_string());
-        let point = if let Some(code) = spot.postcode() {
+        let (point, name) = if let Some(code) = spot.postcode() {
             let found: Result<Postcode, _> = fetch(http.get(format!("{}/{code}", self.services.postcodes))).await;
             let at = found.map_err(|e| if e == TravelError::NoRoute { nowhere() } else { e })?.result;
-            Point { latitude: at.latitude, longitude: at.longitude }
+            let parts = [at.postcode, at.admin_ward, at.admin_district];
+            let name = parts.into_iter().flatten().collect::<Vec<_>>().join(", ");
+            (Point { latitude: at.latitude, longitude: at.longitude }, name)
         } else {
             let asked = [("q", spot.as_str()), ("format", "jsonv2"), ("limit", "1")];
             let request = http.get(&self.services.addresses).query(&asked).header("User-Agent", WHO_ASKS);
             let found: Vec<Address> = fetch(request).await?;
             let first = found.first().ok_or_else(nowhere)?;
             let number = |text: &str| text.parse::<f64>().map_err(|_| TravelError::Unreadable);
-            Point { latitude: number(&first.lat)?, longitude: number(&first.lon)? }
+            let name = first.display_name.clone().unwrap_or_default();
+            (Point { latitude: number(&first.lat)?, longitude: number(&first.lon)? }, name)
         };
         debug!(spot = spot.as_str(), "place looked up");
         self.found.lock().unwrap_or_else(PoisonError::into_inner).insert(spot.clone(), point);
+        self.names.lock().unwrap_or_else(PoisonError::into_inner).insert(spot.clone(), name);
         Ok(point)
+    }
+
+    /// Where a typed place was found: what it is called there and where it is on the map.
+    /// An address can be found somewhere other than was meant; this is how that shows.
+    pub async fn find(&self, http: &reqwest::Client, spot: &Spot) -> Result<Value, TravelError> {
+        let point = self.locate(http, spot).await?;
+        let name = self.names.lock().unwrap_or_else(PoisonError::into_inner).get(spot).cloned();
+        Ok(json!({ "name": name.unwrap_or_default(), "latitude": point.latitude, "longitude": point.longitude }))
     }
 
     /// The journey between two places that gets there by `arrive` and leaves latest.
@@ -359,6 +416,23 @@ impl Travel {
             steps: steps.collect(),
             catch: catch.map(|leg| format!("{} {}", leg.departure.format("%H:%M"), leg.instruction.summary)),
         })
+    }
+
+    /// How many seconds the walk between two places takes, and the way it goes.
+    async fn walk(
+        &self,
+        http: &reqwest::Client,
+        (from, to): (Point, Point),
+    ) -> Result<(i64, Option<Line>), TravelError> {
+        let url =
+            format!("{}/{},{};{},{}", self.services.walks, from.longitude, from.latitude, to.longitude, to.latitude);
+        let asked = [("overview", "full"), ("geometries", "geojson")];
+        let walked: Walked = fetch(http.get(url).query(&asked).header("User-Agent", WHO_ASKS)).await?;
+        let route = walked.routes.first().ok_or(TravelError::NoRoute)?;
+        let points: Vec<[f64; 2]> = route.geometry.coordinates.iter().map(|at| [at[1], at[0]]).collect();
+        // The router answers in seconds and fractions; a walk is not timed that finely.
+        let seconds = format!("{:.0}", route.duration.max(0.0)).parse::<i64>().map_err(|_| TravelError::Unreadable)?;
+        Ok((seconds, Line::through(WALK, &points)))
     }
 
     /// How many seconds the drive between two places takes when arriving at `arrive`, and the way it goes.
@@ -413,12 +487,14 @@ impl Travel {
                 let (leave, arrive) = (parked - seconds - spare, onward.arrival);
                 Ok(Plan { leave, arrive, steps, modes, catch: onward.catch, lines })
             }
+            (How::Walk, _, _) => {
+                let (seconds, line) = self.walk(http, (from, to)).await?;
+                let steps = vec![format!("Walk ({} min)", minutes(seconds))];
+                let (lines, modes) = (line.into_iter().collect(), vec![WALK.to_string()]);
+                Ok(Plan { leave: arrive - seconds - spare, arrive, steps, modes, catch: None, lines })
+            }
             (how, _, _) => {
-                let modes = match how {
-                    How::Walk => "walking",
-                    How::Cycle => "cycle",
-                    _ => PUBLIC_TRANSPORT,
-                };
+                let modes = if how == How::Cycle { "cycle" } else { PUBLIC_TRANSPORT };
                 let found = self.journey(http, (from, to), modes, arrive).await?;
                 let Journey { start, arrival, steps, modes, catch, lines } = found;
                 Ok(Plan { leave: start - spare, arrive: arrival, steps, modes, catch, lines })
@@ -521,9 +597,10 @@ pub mod testing {
     ///
     /// Postcodes: BR6 0AA (home, latitude 51.37) and SE1 9SG (51.50). Addresses: "Orpington
     /// station" (51.373) and "Wembley Stadium" (51.556). Public transport to SE1 9SG takes
-    /// 37 minutes on the 17:20 train, with a slower journey that arrives late; walking takes
-    /// 50. Nothing goes to Wembley except from the station. Driving takes 43 minutes, or 8
+    /// 37 minutes on the 17:20 train, with a slower journey that arrives late; the planner
+    /// plans no walks, and the walking router takes 50 minutes there. Nothing goes to Wembley except from the station. Driving takes 43 minutes, or 8
     /// to the station.
+    #[expect(clippy::too_many_lines, reason = "one stand-in for all five services, told in one place")]
     pub async fn services() -> Services {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -533,11 +610,17 @@ pub mod testing {
                 "SE19SG" => (51.50, -0.09),
                 _ => return StatusCode::NOT_FOUND.into_response(),
             };
-            axum::Json(json!({ "status": 200, "result": { "latitude": at.0, "longitude": at.1 } })).into_response()
+            let result = json!({
+                "latitude": at.0, "longitude": at.1, "postcode": format!("{} {}", &code[..3], &code[3..]),
+                "admin_ward": "Orpington", "admin_district": "Bromley",
+            });
+            axum::Json(json!({ "status": 200, "result": result })).into_response()
         };
         let addresses = |Query(asked): Query<HashMap<String, String>>| async move {
             let found = match asked["q"].as_str() {
-                "Orpington station" => json!([{ "lat": "51.373", "lon": "0.089", "name": "Orpington" }]),
+                "Orpington station" => {
+                    json!([{ "lat": "51.373", "lon": "0.089", "display_name": "Orpington, Station Approach, Bromley" }])
+                }
                 "Wembley Stadium" => json!([{ "lat": "51.556", "lon": "-0.2796" }]),
                 "Garbled" => json!([{ "lat": "north", "lon": "west" }]),
                 _ => json!([]),
@@ -548,12 +631,11 @@ pub mod testing {
             let leg = |mode: &str, minutes: u32, leaves: &str, summary: &str| json!({ "duration": minutes, "departureTime": leaves, "instruction": { "summary": summary }, "mode": { "id": mode } });
             let day = format!("{}-{}-{}", &asked["date"][..4], &asked["date"][4..6], &asked["date"][6..]);
             let at = |time: &str| format!("{day}T{time}:00");
+            // Like the real planner, this one will not plan a journey that is all on foot.
+            if asked["mode"] == "walking" {
+                return StatusCode::NOT_FOUND.into_response();
+            }
             let reply: Response = match (from.as_str(), to.as_str(), asked["mode"].as_str()) {
-                (_, "51.5,-0.09", "walking") => axum::Json(json!({ "journeys": [{
-                    "startDateTime": at("17:35"), "arrivalDateTime": at("18:25"),
-                    "legs": [leg("walking", 50, &at("17:35"), "Walk to SE1 9SG")],
-                }] }))
-                .into_response(),
                 ("51.37,0.09", "51.5,-0.09", _) => axum::Json(json!({ "journeys": [
                     { "startDateTime": at("16:50"), "arrivalDateTime": at("17:27"), "legs": [] },
                     { "startDateTime": at("17:07"), "arrivalDateTime": at("17:44"), "legs": [
@@ -588,7 +670,19 @@ pub mod testing {
             }] }))
             .into_response()
         };
+        // Fifty minutes to SE1 9SG on foot; nowhere else can be walked to.
+        let walks = |Path(ends): Path<String>| async move {
+            if !ends.ends_with(";-0.09,51.5") {
+                return axum::Json(json!({ "code": "NoRoute", "routes": [] })).into_response();
+            }
+            axum::Json(json!({ "code": "Ok", "routes": [{
+                "duration": 2999.6,
+                "geometry": { "coordinates": [[0.09, 51.37], [0.0, 51.45], [-0.09, 51.5]] },
+            }] }))
+            .into_response()
+        };
         let app = Router::new()
+            .route("/walks/{ends}", get(walks))
             .route("/postcodes/{code}", get(postcodes))
             .route("/addresses", get(addresses))
             .route("/journeys/{from}/to/{to}", get(journeys))
@@ -610,6 +704,7 @@ pub mod testing {
             postcodes: format!("{base}/postcodes"),
             addresses: format!("{base}/addresses"),
             tiles: format!("{base}/tiles"),
+            walks: format!("{base}/walks"),
         }
     }
 }
@@ -653,7 +748,17 @@ mod tests {
         let on_foot =
             travel.plan(&http, None, home.as_ref(), &trip("walk", "SE1 9SG", &json!({})), HALF_PAST_SIX).await;
         let on_foot = on_foot.unwrap();
-        assert_eq!((london(on_foot.leave), on_foot.catch), ("17:25".into(), None));
+        // Fifty minutes on foot (the walking router's 2999.6 seconds) and ten to spare.
+        assert_eq!((london(on_foot.leave), &on_foot.catch), ("17:30".into(), &None));
+        assert_eq!((on_foot.steps, on_foot.modes), (vec!["Walk (50 min)".to_string()], vec!["walking".to_string()]));
+        assert_eq!(
+            on_foot.lines[0].points,
+            [[51.37, 0.09], [51.45, 0.0], [51.5, -0.09]],
+            "latitude first, as elsewhere"
+        );
+        let far = trip("walk", "Wembley Stadium", &json!({}));
+        let too_far = travel.plan(&http, None, home.as_ref(), &far, HALF_PAST_SIX).await;
+        assert_eq!(too_far, Err(TravelError::NoRoute));
     }
 
     #[tokio::test]
@@ -691,6 +796,13 @@ mod tests {
             async move { travel.plan(http, None, home.as_ref(), &trip, HALF_PAST_SIX).await }
         };
         assert_eq!(plan(trip("transit", "SE1 9SG", &json!({})), None).await, Err(TravelError::NoStart));
+        // Where a typed place was found is told, so a wrong match can be seen.
+        let found = travel.find(&http, &Spot::parse("br6 0aa").unwrap()).await.unwrap();
+        assert_eq!(found, json!({ "name": "BR6 0AA, Orpington, Bromley", "latitude": 51.37, "longitude": 0.09 }));
+        let station = travel.find(&http, &Spot::parse("Orpington station").unwrap()).await.unwrap();
+        assert_eq!(station["name"], "Orpington, Station Approach, Bromley");
+        let nowhere = travel.find(&http, &Spot::parse("Nan's house").unwrap()).await;
+        assert_eq!(nowhere, Err(TravelError::NotFound("Nan's house".into())));
         assert_eq!(
             plan(trip("transit", "ZZ9 9ZZ", &json!({})), home.clone()).await,
             Err(TravelError::NotFound("ZZ9 9ZZ".into()))

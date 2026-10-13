@@ -55,6 +55,11 @@ async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
     assert_eq!((&plan["catch"], &plan["how"]), (&json!("17:20 Southeastern to London Bridge"), &json!("transit")));
     assert_eq!(plan["steps"].as_array().unwrap().len(), 3);
     assert_eq!(plan["lines"][0]["kind"], "walking");
+    // Where a typed place was found can be asked, to see it is the one that was meant.
+    let found = get(&app, "/api/travel/find?place=BR6%200AA").await.json();
+    assert_eq!(found["name"], "BR6 0AA, Orpington, Bromley");
+    assert_eq!(get(&app, "/api/travel/find?place=Atlantis").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(get(&app, "/api/travel/find").await.status, StatusCode::BAD_REQUEST);
     assert_eq!(plan["modes"], json!(["walking", "national-rail", "walking"]));
 
     // The map the way is drawn on comes through the frame too.
@@ -66,11 +71,11 @@ async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
 
     assert_eq!((&plan["usual"], &plan["ways"]), (&json!("transit"), &json!(["transit", "walk", "cycle"])));
 
-    // The same trip another way, to compare: on foot it means leaving at 17:25.
+    // The same trip another way, to compare: on foot it means leaving at 17:30.
     let on_foot = get(&app, &format!("/api/travel?trip=0&arrive={evening}&how=walk")).await.json();
     assert_eq!(
         (&on_foot["leave"], &on_foot["how"], &on_foot["usual"]),
-        (&json!(evening - 65 * 60), &json!("walk"), &json!("transit"))
+        (&json!(evening - 60 * 60), &json!("walk"), &json!("transit"))
     );
     let by_car = get(&app, &format!("/api/travel?trip=0&arrive={evening}&how=car")).await;
     assert_eq!(by_car.status, StatusCode::CONFLICT, "not without the key");
