@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
 use serde::{Deserialize, Serialize};
@@ -98,6 +98,24 @@ pub struct Track {
     pub album: String,
     /// The address of a picture of the cover.
     pub cover: Option<String>,
+    /// How long it is, in milliseconds.
+    pub length_ms: Option<u64>,
+}
+
+/// How far into the track things were at a moment, for showing how far they are now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct Position {
+    /// Milliseconds into the track.
+    pub ms: u64,
+    /// When that was so, in milliseconds since 1970 by this machine's clock.
+    pub at: u64,
+}
+
+impl Position {
+    fn now(ms: u64) -> Option<Position> {
+        let at = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_millis();
+        Some(Position { ms, at: u64::try_from(at).ok()? })
+    }
 }
 
 /// What the program says. Anything else it may come to say is ignored.
@@ -115,9 +133,21 @@ enum News {
         album: String,
         #[serde(default)]
         cover: Option<String>,
+        #[serde(default)]
+        length_ms: Option<u64>,
     },
-    Playing,
-    Paused,
+    Playing {
+        #[serde(default)]
+        position_ms: u64,
+    },
+    Paused {
+        #[serde(default)]
+        position_ms: u64,
+    },
+    /// Where in the track things are, when that changed other than by playing on.
+    Position {
+        position_ms: u64,
+    },
     Stopped,
     /// The volume was set, in the app or from here.
     Volume {
@@ -133,6 +163,8 @@ struct Known {
     track: Option<Track>,
     /// The volume the Spotify app shows, once it has said.
     volume: Option<Loudness>,
+    /// Where in the track things were when that was last said.
+    position: Option<Position>,
 }
 
 pub struct Spotify {
@@ -222,15 +254,23 @@ impl Spotify {
         self.learn(|known| match news {
             News::Ready | News::LetGo => *known = Known { stage: Stage::Waiting, ..Known::default() },
             News::Chosen | News::Stopped => known.stage = Stage::Idle,
-            News::Track { title, by, album, cover } => {
+            News::Track { title, by, album, cover, length_ms } => {
                 // The picture comes from Spotify's own servers; anything else is not shown.
                 let cover =
                     cover.filter(|at| at.starts_with("https://") && at.len() <= 300 && !at.contains(['"', ' ']));
-                known.track =
-                    Some(Track { title: line(&title, 120), by: line(&by, 120), album: line(&album, 120), cover });
+                let (title, by, album) = (line(&title, 120), line(&by, 120), line(&album, 120));
+                known.track = Some(Track { title, by, album, cover, length_ms });
+                known.position = None;
             }
-            News::Playing => known.stage = Stage::Playing,
-            News::Paused => known.stage = Stage::Paused,
+            News::Playing { position_ms } => {
+                known.stage = Stage::Playing;
+                known.position = Position::now(position_ms);
+            }
+            News::Paused { position_ms } => {
+                known.stage = Stage::Paused;
+                known.position = Position::now(position_ms);
+            }
+            News::Position { position_ms } => known.position = Position::now(position_ms),
             News::Volume { percent } => known.volume = Loudness::new(percent).or(known.volume),
             News::Other => {}
         });
@@ -246,6 +286,7 @@ impl Spotify {
             "stage": known.stage,
             "track": known.track,
             "volume": known.volume,
+            "position": known.position,
             "version": *self.version.borrow(),
         })
     }
@@ -441,7 +482,7 @@ mod tests {
         let spotify = Arc::new(Spotify::new(None));
         assert_eq!(
             spotify.view(),
-            json!({ "installed": false, "name": "Frame", "stage": "off", "track": null, "volume": null, "version": 0 })
+            json!({ "installed": false, "name": "Frame", "stage": "off", "track": null, "volume": null, "position": null, "version": 0 })
         );
         assert!(!spotify.order(Order::Play));
         // Nothing to keep running: this ends at once.
@@ -468,8 +509,9 @@ mod tests {
         until(&spotify, "playing").await;
         assert_eq!(
             spotify.view()["track"],
-            json!({ "title": "Blue in Green", "by": "Miles Davis", "album": "Kind of Blue", "cover": "https://i.scdn.co/image/abc" })
+            json!({ "title": "Blue in Green", "by": "Miles Davis", "album": "Kind of Blue", "cover": "https://i.scdn.co/image/abc", "length_ms": 337_000 })
         );
+        assert_eq!(spotify.view()["position"]["ms"], 0);
         // Ten bytes were sent: two whole frames are passed on, and half a frame is held back.
         let heard = tokio::time::timeout(Duration::from_secs(4), sound.recv()).await.unwrap().unwrap();
         assert_eq!(&heard[..], b"01234567");
@@ -480,6 +522,9 @@ mod tests {
         spotify.order(Order::Pause);
         until(&spotify, "paused").await;
         assert_eq!(spotify.view()["volume"], 40);
+        let paused = spotify.view()["position"].clone();
+        assert_eq!(paused["ms"], 1000, "where in the track it was paused");
+        assert!(paused["at"].as_u64().unwrap() > 1_700_000_000_000, "and when, in milliseconds");
         spotify.order(Order::Next);
         spotify.order(Order::Previous); // answered with news we do not know: ignored
         for _ in 0..400 {

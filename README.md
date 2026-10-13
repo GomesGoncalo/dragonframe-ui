@@ -70,8 +70,14 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   itself and need no PIN.
   Utilities also holds **Music**: the radio stations, a touch on one to play it, what
   Spotify is playing (with its cover, and buttons for pause and the next and previous
-  track), and the volume. What is playing shows in the corner of Pictures, with Stop
-  and Next beside it while the tab bar is up. See [Telling the frame what to do](#telling-the-frame-what-to-do).
+  track), and the volume. What is playing shows in the corner of Pictures: the cover,
+  the track and the artist (or the station), with Stop and Next beside them while the
+  tab bar is up. A touch on that corner gives what is playing the whole screen: the
+  cover large, the track, artist and album, how far into the track it is, and buttons
+  for previous, pause, next and the volume. "Back to the photos" leaves it, a touch
+  anywhere else on it brings up the tabs, and it leaves by itself when the music stops
+  or has been paused for two minutes. A choice under Utilities, Music ("While music
+  plays, Pictures shows") makes it come up by itself whenever Spotify starts playing. See [Telling the frame what to do](#telling-the-frame-what-to-do).
   Utilities also holds **Home**, once the house is connected: the house's alarm state,
   door and window sensors, motion sensors, and the latest picture from each camera
   (touch one to see it large). When the doorbell rings, the frame chimes and shows who

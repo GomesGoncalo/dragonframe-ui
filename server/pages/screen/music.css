@@ -3,20 +3,58 @@
 body[data-tool="music"] #tool-music { display: block; }
 #stations .press { font-size: 3vmin; padding: 2vmin 3.2vmin; }
 
-/* What is playing, in the corner of the pictures above whatever is counting down. Its
-   buttons are there while the tabs are up, when it also moves clear of them. */
+/* What is playing, in the corner of the pictures above whatever is counting down: the cover
+   (Spotify has one), the track or station, and by whom. Its buttons are there while the tabs
+   are up, when it also moves clear of them. A touch on it gives it the whole screen. */
 .playing {
-  position: absolute; right: 3vmin; bottom: 4.8vmin; max-width: 70vmin; padding: .8vmin 2vmin; border-radius: 2.4vmin;
-  font-size: 2.8vmin; background: rgba(0, 0, 0, .46); color: var(--ink); white-space: nowrap; transition: bottom .25s ease;
+  position: absolute; right: 3vmin; bottom: 4.8vmin; max-width: 86vmin; padding: 1vmin 2vmin 1vmin 1vmin; border-radius: 2.4vmin;
+  font-size: 2.8vmin; background: rgba(0, 0, 0, .55); color: var(--ink); white-space: nowrap; transition: bottom .25s ease;
 }
 .running:not(:empty) + .playing { bottom: 11vmin; }
 body.bar .playing { bottom: 15vmin; }
-.playing span { display: inline-block; max-width: 48vmin; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.playing img { width: 9vmin; height: 9vmin; border-radius: 1.4vmin; margin-right: 1.6vmin; vertical-align: middle; }
+.playing .words { display: inline-block; max-width: 50vmin; margin-left: 1vmin; vertical-align: middle; }
+.playing .words b, .playing .words i { display: block; overflow: hidden; text-overflow: ellipsis; }
+.playing .words b { font-weight: 500; }
+.playing .words i { font-style: normal; font-size: 2.3vmin; opacity: .8; }
+.playing .words i:empty { display: none; }
 .playing button {
   display: none; width: 6.4vmin; height: 6.4vmin; padding: 0; margin-left: 1.4vmin; border-radius: 50%;
   font-size: 3vmin; color: var(--ink); background: rgba(255, 255, 255, .16); vertical-align: middle;
 }
 body.bar .playing button { display: inline-block; }
+
+/* What is playing, with the whole screen to itself: over the pictures, dark whatever the
+   colours, with the cover out of focus behind everything. A touch on it brings up the tabs. */
+.np {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; overflow: hidden; background: #000;
+  --ink: #fff; --on-ink: #111; --press: rgba(255, 255, 255, .16); color: #fff;
+}
+body[data-tab="pictures"] .np.on { display: block; }
+.np .back {
+  position: absolute; top: -12%; left: -12%; width: 124%; height: 124%; background: #15171a center / cover no-repeat;
+  -webkit-filter: blur(7vmin) brightness(.4); filter: blur(7vmin) brightness(.4);
+}
+.np .clock { position: absolute; top: 4vmin; right: 6vmin; left: auto; bottom: auto; font-size: 5vmin; font-weight: 300; opacity: .85; }
+.np .art { position: absolute; left: 9vmin; top: 50%; width: 64vmin; height: 64vmin; margin-top: -32vmin; }
+.np .art img, .np .art .none { width: 100%; height: 100%; border-radius: 2.4vmin; box-shadow: 0 2vmin 8vmin rgba(0, 0, 0, .6); }
+.np .art .none { background: rgba(255, 255, 255, .1); text-align: center; font-size: 30vmin; line-height: 64vmin; opacity: .8; }
+.np .about { position: absolute; left: 82vmin; right: 7vmin; top: 50%; transform: translateY(-50%); }
+.np .about > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np .from { font-size: 2.5vmin; letter-spacing: .3vmin; text-transform: uppercase; opacity: .65; margin-bottom: 1.6vmin; }
+.np .title { font-size: 7.4vmin; font-weight: 300; line-height: 1.15; }
+.np .by { font-size: 4.2vmin; margin-top: 1vmin; opacity: .92; }
+.np .album { font-size: 2.9vmin; margin-top: 1vmin; opacity: .65; }
+.np .progress { margin-top: 4.4vmin; font-size: 2.3vmin; opacity: .8; font-variant-numeric: tabular-nums; }
+.np .progress .line { height: .8vmin; border-radius: .4vmin; background: rgba(255, 255, 255, .22); margin-bottom: 1vmin; overflow: hidden; }
+.np .progress .line div { height: 100%; width: 0; border-radius: .4vmin; background: #fff; }
+.np .progress .length { float: right; }
+.np .about > .buttons { margin: 4vmin 0 3vmin; overflow: visible; }
+.np .buttons .only { width: 11vmin; height: 11vmin; padding: 0; border-radius: 50%; font-size: 4.4vmin; margin: 0 1.6vmin 0 0; vertical-align: middle; }
+.np .buttons .loud { margin-left: 3vmin; white-space: nowrap; vertical-align: middle; }
+.np .buttons .loud .press { margin-bottom: 0; vertical-align: middle; }
+.np .buttons .loud .hours { min-width: 9vmin; font-size: 3.4vmin; }
+.np #np-close { margin: 0; background: rgba(255, 255, 255, .1); }
 
 /* Spotify's track: its cover, what it is, and the buttons. */
 .spotify { white-space: nowrap; }
@@ -29,4 +67,9 @@ body.bar .playing button { display: inline-block; }
 
 @media (orientation: portrait) {
   .spotify .about { width: 40vmin; margin: 0 2vmin; }
+  .np .art { left: 50%; top: 16vmin; margin: 0 0 0 -35vmin; width: 70vmin; height: 70vmin; }
+  .np .art .none { line-height: 70vmin; }
+  .np .about { left: 8vmin; right: 8vmin; top: 94vmin; transform: none; }
+  .np .title { font-size: 6vmin; }
+  .np .buttons .loud { display: block; margin: 3vmin 0 0; }
 }

@@ -18,8 +18,9 @@
             (todo.js and todo.css). Kept by the server, so tasks are added from anywhere.
   Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css), Music:
             radio stations, and Spotify when someone chooses the frame as the speaker
-            in their Spotify app (music.js and music.css; what is playing shows over
-            the pictures), and Home: the house's alarm, sensors and cameras (home.js and
+            in their Spotify app (music.js and music.css; what is playing shows in a
+            corner of the pictures, and a touch on it, or a setting, gives it the
+            whole screen), and Home: the house's alarm, sensors and cameras (home.js and
             home.css), there only once the house is connected. A ringing doorbell shows
             over any tab.
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
@@ -77,7 +78,7 @@
     <div class="morning" id="morning"></div>
   </div>
   <div class="running" id="running"></div>
-  <div class="playing" id="playing" style="display: none"><span id="playing-name"></span><button class="only" id="playing-skip" data-icon="skip" aria-label="Next station"></button><button class="only" id="playing-stop" data-icon="stop" aria-label="Stop the music"></button></div>
+  <div class="playing" id="playing" style="display: none"><img id="playing-cover" alt=""><span class="words"><b id="playing-name"></b><i id="playing-by"></i></span><button class="only" id="playing-skip" data-icon="skip" aria-label="Next station"></button><button class="only" id="playing-stop" data-icon="stop" aria-label="Stop the music"></button></div>
   <div class="notice" id="notice">Looking for photos…</div>
 </div>
 
@@ -196,6 +197,7 @@
   <div class="part" id="tool-music">
     <div class="row"><span class="label" id="music-said">Radio</span><span id="stations"></span></div>
     <p id="music-note"></p>
+    <div class="row"><span class="label">While music plays, Pictures shows (kept by this screen only)</span><span id="np-wanted"></span></div>
     <div class="row" id="spotify-row" style="display: none"><span class="label" id="spotify-said">Spotify</span>
       <div class="spotify" id="spotify-track"><img id="spotify-cover" alt=""><div class="about"><div class="big" id="spotify-title"></div><div class="by" id="spotify-by"></div></div><button class="press only" id="spotify-previous" data-icon="rewind" aria-label="Previous track"></button><button class="press only on" id="spotify-toggle" aria-label="Play or pause"></button><button class="press only" id="spotify-next" data-icon="skip" aria-label="Next track"></button></div>
     </div>
@@ -223,6 +225,21 @@
       <div class="row"><span class="label">Short break</span><span id="pomo-short"></span></div>
       <div class="row"><span class="label">Long break</span><span id="pomo-long"></span></div>
     </div>
+  </div>
+</div>
+
+<div class="np" id="np">
+  <div class="back" id="np-back"></div>
+  <div class="clock" id="np-clock"></div>
+  <div class="art"><img id="np-cover" alt=""><div class="none" id="np-none">♪</div></div>
+  <div class="about">
+    <div class="from" id="np-from"></div>
+    <div class="title" id="np-title"></div>
+    <div class="by" id="np-by"></div>
+    <div class="album" id="np-album"></div>
+    <div class="progress" id="np-progress"><div class="line"><div id="np-done"></div></div><span id="np-at"></span><span class="length" id="np-length"></span></div>
+    <div class="buttons"><button class="press only" id="np-previous" data-icon="rewind" aria-label="Previous track"></button><button class="press only on" id="np-toggle" aria-label="Play, pause or stop"></button><button class="press only" id="np-next" data-icon="skip" aria-label="Next"></button><span class="loud"><button class="press" id="np-quieter">−</button><span class="hours" id="np-volume"></span><button class="press" id="np-louder">+</button></span></div>
+    <button class="press" id="np-close" data-icon="pictures">Back to the photos</button>
   </div>
 </div>
 

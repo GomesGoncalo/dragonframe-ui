@@ -18,6 +18,10 @@
 // like a station's. While the frame is chosen in a Spotify app, the volume set there
 // (the phone's volume buttons) is taken up here, and one set here is told to the app.
 //
+// What is playing shows in a corner of the pictures. A touch on it there gives it the whole
+// screen (the cover, the track, how far in it is, and the buttons), and so does Spotify
+// starting, if this screen is set to show what is playing rather than the photos.
+//
 // That volume is the music's alone. Chimes (reminders, timers, the doorbell) have their own
 // loudness, and while one sounds the music is turned down to let it through.
 //
@@ -36,6 +40,9 @@ const SPOTIFY_HUSH_MS = 5000;
 // For this long after the volume was set here, what Spotify says the volume is may be the
 // one from before, on its way; after it, Spotify is believed again.
 const VOLUME_SETTLES_MS = 2500;
+// What is playing has the whole screen. It gives it back this long after Spotify was paused.
+const NOW_PLAYING_RESTS_MS = 2 * 60 * 1000;
+const NOW_PLAYING = [['photos', 'The photos'], ['playing', 'What is playing']];
 const SPOTIFY_SAYS = {
   waiting: 'Spotify  ·  choose “Frame” as the speaker in the Spotify app to play here',
   idle: 'Spotify  ·  connected; play something in the Spotify app',
@@ -56,6 +63,8 @@ let fromSpotify = false;                        // what is playing here is Spoti
 let spotifyHushed = 0;
 let volumeSetAt = 0, volumeTimer = 0;
 let ducked = false, duckTimer = 0;
+// Whether what is playing has the whole screen, and whether it takes it by itself.
+let nowPlayingOpen = false, nowPlayingWanted = kept.read('frameNowPlaying', 'photos'), nowPlayingTimer = 0;
 const player = new Audio();
 player.preload = 'none';
 
@@ -76,6 +85,28 @@ function nowPlaying() {
   if (!fromSpotify) return playing;
   const track = spotify.track;
   return track ? track.title + (track.by ? '  ·  ' + track.by : '') : 'Spotify';
+}
+
+/// What there is to say about what is on, for the corner and for the whole screen: a
+/// station, or Spotify's track (which is still there to go on with while it is paused).
+function subject() {
+  if (playing && !fromSpotify) return { radio: true, title: playing, by: '', album: '', cover: '' };
+  const track = spotify.track;
+  if (!track || (spotify.stage !== 'playing' && spotify.stage !== 'paused')) return null;
+  return { radio: false, title: track.title, by: track.by, album: track.album, cover: track.cover || '', length: track.length_ms || 0 };
+}
+
+/// How far into Spotify's track things are, in milliseconds.
+function elapsed() {
+  const position = spotify.position;
+  if (!position) return 0;
+  return position.ms + (spotify.stage === 'playing' ? Math.max(0, Date.now() - position.at) : 0);
+}
+const minutes = (ms) => Math.floor(ms / 60000) + ':' + ('0' + Math.floor(ms / 1000) % 60).slice(-2);
+
+function showNowPlaying(open) {
+  nowPlayingOpen = open;
+  drawMusic();
 }
 
 /// Start (or start again) the sound of whatever is on: Spotify, or the station.
@@ -237,6 +268,7 @@ function spotifyNews(now) {
     fromSpotify = true;
     musicNote = '';
     streamTries = 0;
+    if (nowPlayingWanted === 'playing') nowPlayingOpen = true;
     tune();
   } else if (!sounding && fromSpotify) {
     // Paused or taken elsewhere from the app: quiet here at once.
@@ -248,7 +280,7 @@ function spotifyNews(now) {
 }
 
 function drawMusic() {
-  const key = JSON.stringify([stations, playing, hearing, volume, musicNote, spotify, fromSpotify]);
+  const key = JSON.stringify([stations, playing, hearing, volume, musicNote, spotify, fromSpotify, nowPlayingOpen]);
   if (key === musicDrawn) return;
   musicDrawn = key;
   const list = $('stations');
@@ -280,11 +312,62 @@ function drawMusic() {
   cover.style.visibility = picture ? 'visible' : 'hidden';
   label($('spotify-toggle'), spotify.stage === 'playing' ? 'pause' : 'play', '');
 
-  // Over the pictures: what is on, with Stop and Next while the tabs are up.
-  const said = nowPlaying();
-  $('playing').style.display = said ? '' : 'none';
-  $('playing-name').textContent = said ? '♪  ' + said + (hearing ? '' : '…') : '';
+  choices($('np-wanted'), NOW_PLAYING, nowPlayingWanted, (wanted) => {
+    nowPlayingWanted = wanted;
+    kept.write('frameNowPlaying', wanted);
+    musicDrawn = '';
+    drawMusic();
+  });
+
+  // In the corner of the pictures: what is on, with Stop and Next while the tabs are up.
+  const on = nowPlaying() ? subject() : null;
+  $('playing').style.display = on ? '' : 'none';
+  const small = $('playing-cover'), art = on && on.cover ? on.cover : '';
+  if (small.getAttribute('src') !== art) {
+    if (art) small.src = art; else small.removeAttribute('src');
+  }
+  small.style.display = art ? '' : 'none';
+  $('playing-name').textContent = on ? (on.radio ? '♪  ' : '') + on.title + (hearing ? '' : '…') : '';
+  $('playing-by').textContent = on ? on.by : '';
+
+  // With the whole screen: there while there is something to show.
+  const whole = subject();
+  if (!whole) nowPlayingOpen = false;
+  $('np').classList.toggle('on', nowPlayingOpen);
+  clearTimeout(nowPlayingTimer);
+  if (!nowPlayingOpen) return;
+  // Paused and left alone, it gives the screen back to the photos.
+  if (!whole.radio && spotify.stage === 'paused') nowPlayingTimer = setTimeout(() => showNowPlaying(false), NOW_PLAYING_RESTS_MS);
+  const large = $('np-cover');
+  if (large.getAttribute('src') !== whole.cover) {
+    if (whole.cover) large.src = whole.cover; else large.removeAttribute('src');
+    $('np-back').style.backgroundImage = whole.cover ? 'url("' + whole.cover + '")' : 'none';
+  }
+  large.style.display = whole.cover ? '' : 'none';
+  $('np-none').style.display = whole.cover ? 'none' : '';
+  $('np-from').textContent = whole.radio ? 'Radio' : 'Spotify' + (spotify.stage === 'paused' ? '  ·  paused' : '');
+  $('np-title').textContent = whole.title;
+  $('np-by').textContent = whole.by;
+  $('np-album').textContent = whole.album;
+  $('np-progress').style.display = !whole.radio && whole.length ? '' : 'none';
+  $('np-previous').style.display = whole.radio ? 'none' : '';
+  label($('np-toggle'), whole.radio ? 'stop' : spotify.stage === 'playing' ? 'pause' : 'play', '');
+  $('np-volume').textContent = volume;
+  drawProgress();
 }
+
+/// How far into the track things are, on the whole screen. Drawn every second.
+function drawProgress() {
+  if (!nowPlayingOpen) return;
+  $('np-clock').textContent = clockText(new Date());
+  const whole = subject();
+  if (!whole || whole.radio || !whole.length) return;
+  const at = Math.min(whole.length, elapsed());
+  $('np-done').style.width = 100 * at / whole.length + '%';
+  $('np-at').textContent = minutes(at);
+  $('np-length').textContent = minutes(whole.length);
+}
+setInterval(drawProgress, 1000);
 
 stationsNews = (found) => {
   if (JSON.stringify(found) === JSON.stringify(stations)) return;
@@ -303,7 +386,25 @@ $('louder').onclick = () => setVolume(volume + VOLUME_STEP);
 $('spotify-previous').onclick = () => orderSpotify('previous');
 $('spotify-next').onclick = () => orderSpotify('next');
 $('spotify-toggle').onclick = () => orderSpotify(spotify.stage === 'playing' ? 'pause' : 'play');
-// On the pictures a touch means "next photo" or "tabs"; these two keep theirs to themselves.
+// On the pictures a touch means "next photo" or "tabs". A touch on what is playing there
+// gives it the whole screen; one on the whole screen brings up the tabs.
+$('playing').onclick = (event) => { event.stopPropagation(); showNowPlaying(true); touched(); };
+$('np').onclick = (event) => {
+  event.stopPropagation();
+  if (!event.target.closest('button')) document.body.classList.toggle('bar');
+  touched();
+};
+$('np-close').onclick = () => showNowPlaying(false);
+$('np-previous').onclick = () => orderSpotify('previous');
+// The next station, or Spotify's next track (also while it is paused, when nothing sounds here).
+$('np-next').onclick = () => (playing && !fromSpotify ? skipStation() : orderSpotify('next'));
+$('np-toggle').onclick = () => {
+  if (playing && !fromSpotify) stopMusic();
+  else orderSpotify(spotify.stage === 'playing' ? 'pause' : 'play');
+};
+$('np-quieter').onclick = () => setVolume(volume - VOLUME_STEP);
+$('np-louder').onclick = () => setVolume(volume + VOLUME_STEP);
+// These two buttons in the corner keep their touches to themselves.
 $('playing-stop').onclick = (event) => { event.stopPropagation(); stopMusic(); touched(); };
 $('playing-skip').onclick = (event) => { event.stopPropagation(); skipStation(); touched(); };
 drawMusic();

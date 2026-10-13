@@ -97,6 +97,10 @@ fn player_news(event: PlayerEvent) -> Option<Value> {
         PlayerEvent::Playing { position_ms, .. } => Some(json!({ "event": "playing", "position_ms": position_ms })),
         PlayerEvent::Paused { position_ms, .. } => Some(json!({ "event": "paused", "position_ms": position_ms })),
         PlayerEvent::Stopped { .. } => Some(json!({ "event": "stopped" })),
+        // Someone moved to another place in the track, or the count of where it is was put right.
+        PlayerEvent::Seeked { position_ms, .. } | PlayerEvent::PositionCorrection { position_ms, .. } => {
+            Some(json!({ "event": "position", "position_ms": position_ms }))
+        }
         PlayerEvent::VolumeChanged { volume } => Some(json!({ "event": "volume", "percent": volume::percent(volume) })),
         PlayerEvent::SessionConnected { .. } => Some(json!({ "event": "chosen" })),
         PlayerEvent::SessionDisconnected { .. } => Some(json!({ "event": "let_go" })),
