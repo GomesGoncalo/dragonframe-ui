@@ -16,8 +16,8 @@ use sha1::{Digest as _, Sha1};
 use tracing::{debug, info, warn};
 
 use crate::types::{
-    hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Reminder, Restore, Screen,
-    Slideshow, Source, SyncedName, SYNC_SUBDIR,
+    hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Reminder, Restore, RoadsKey, Screen,
+    Slideshow, Source, Spot, SyncedName, Trip, SYNC_SUBDIR,
 };
 
 const MEDIA_URI: &str = "content://media/external/images/media";
@@ -536,6 +536,12 @@ pub struct Settings {
     pub home_key: Option<HomeKey>,
     /// The rules that turn calendar events into reminders.
     pub reminders: Vec<Reminder>,
+    /// Where trips start unless they say otherwise.
+    pub home: Option<Spot>,
+    /// How the events that are travelled to are reached.
+    pub trips: Vec<Trip>,
+    /// The key for the driving service; without one, trips by car cannot be worked out.
+    pub roads_key: Option<RoadsKey>,
 }
 
 /// How the most recent sync went.
@@ -592,6 +598,14 @@ impl Settings {
                 .flatten()
                 .filter_map(|rule| serde_json::from_value(rule.clone()).ok())
                 .collect(),
+            home: saved["home"].as_str().and_then(Spot::parse),
+            trips: saved["trips"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|trip| serde_json::from_value(trip.clone()).ok())
+                .collect(),
+            roads_key: saved["roads_key"].as_str().and_then(RoadsKey::parse),
         }
     }
 
@@ -614,6 +628,9 @@ impl Settings {
             "place": self.place,
             "home_key": self.home_key,
             "reminders": self.reminders,
+            "home": self.home,
+            "trips": self.trips,
+            "roads_key": self.roads_key,
         })
     }
 }
@@ -999,6 +1016,13 @@ mod tests {
                 { "words": "swimming", "when": { "minutes": 45 } },
             ]))
             .unwrap(),
+            home: Spot::parse("BR6 0AA"),
+            trips: serde_json::from_value(json!([
+                { "title": "Dentist", "place": "12 High St", "to": "BR6 0AA", "how": "transit" },
+                { "title": "Match", "to": "Wembley", "how": "park", "via": "Orpington station", "margin": 20 },
+            ]))
+            .unwrap(),
+            roads_key: RoadsKey::parse("0123456789abcdefABCDEF"),
         };
         save_settings(&frame.0, &settings);
         assert_eq!(load_settings(&frame.0), settings);

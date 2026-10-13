@@ -11,8 +11,8 @@ use tracing::info;
 
 use crate::app::{blocking, now_secs, Shared};
 use crate::routes::{header, ApiError, ApiResult, Parsed};
-use crate::types::{CalendarLinks, EventId, Reminders, Window};
-use crate::{auth, calendar, store};
+use crate::types::{CalendarLinks, EventId, How, Reminders, RoadsKey, Spot, Trips, Window};
+use crate::{auth, calendar, store, travel};
 
 #[derive(Deserialize)]
 pub(crate) struct CalendarsRequest {
@@ -22,6 +22,18 @@ pub(crate) struct CalendarsRequest {
 #[derive(Deserialize)]
 pub(crate) struct RemindersRequest {
     pub(crate) rules: Reminders,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TravelRequest {
+    pub(crate) home: Option<Spot>,
+    pub(crate) trips: Trips,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RoadsKeyRequest {
+    /// The key, or null to stop using the driving service.
+    pub(crate) key: Option<RoadsKey>,
 }
 
 #[derive(Deserialize)]
@@ -47,17 +59,25 @@ pub(crate) async fn calendar_view(
             // Each event says which reminder rules are about it, by their place in the list.
             let mut events = app.calendars.between(window);
             for event in &mut events {
-                let title = event["title"].as_str().unwrap_or_default();
+                let title = event["title"].as_str().unwrap_or_default().to_string();
                 let about: Vec<usize> = (0..settings.reminders.len())
-                    .filter(|&rule| settings.reminders[rule].words.found_in(title))
+                    .filter(|&rule| settings.reminders[rule].words.found_in(&title))
                     .collect();
                 event["remind"] = json!(about);
+                // And which trip, if any, says how it is reached.
+                let place = event["place"].as_str().map(str::to_string);
+                event["trip"] = json!(settings.trips.iter().position(|trip| trip.is_for(&title, place.as_deref())));
             }
             json!({
                 "events": events,
                 "feeds": app.calendars.feeds(may_change),
                 "added": app.calendars.added(),
                 "reminders": settings.reminders,
+                // Home and the trips are addresses, and are shown like the calendar links are:
+                // to whoever may change them.
+                "travel": may_change.then(|| json!({ "home": settings.home, "trips": settings.trips })),
+                "ways": How::available(settings.roads_key.is_some()),
+                "driving": settings.roads_key.is_some(),
                 "unlocked": may_change,
             })
         })
@@ -105,4 +125,59 @@ pub(crate) async fn save_reminders(
     blocking(move || app.update_settings(|settings| settings.reminders = rules)).await;
     info!(rules = count, "reminder rules saved");
     Json(json!({ "reminders": count }))
+}
+
+/// Keep where home is and exactly these trips. A trip with a car in it needs the driving key.
+pub(crate) async fn save_travel(State(app): State<Shared>, Parsed(request): Parsed<TravelRequest>) -> ApiResult {
+    let TravelRequest { home, trips } = request;
+    let trips = trips.into_inner();
+    let count = trips.len();
+    blocking(move || {
+        app.update_settings(|settings| {
+            if settings.roads_key.is_none() && trips.iter().any(|trip| trip.how.drives()) {
+                return Err(ApiError::new(StatusCode::CONFLICT, travel::TravelError::NoKey.to_string()));
+            }
+            settings.home = home;
+            settings.trips = trips;
+            Ok(())
+        })
+    })
+    .await?;
+    info!(trips = count, "trips saved");
+    Ok(Json(json!({ "trips": count })))
+}
+
+/// Keep the key for the driving service, or with null forget it. It is never handed back.
+pub(crate) async fn save_roads_key(State(app): State<Shared>, Parsed(request): Parsed<RoadsKeyRequest>) -> Json<Value> {
+    let driving = request.key.is_some();
+    blocking(move || app.update_settings(|settings| settings.roads_key = request.key)).await;
+    info!(driving, "driving key changed");
+    Json(json!({ "driving": driving, "ways": How::available(driving) }))
+}
+
+/// When to leave for an event: `?trip=` is the trip's place in the list and `?arrive=` when
+/// the event starts, in seconds since 1970.
+pub(crate) async fn travel_plan(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
+    let number = |name: &str| query.get(name).and_then(|text| text.parse::<i64>().ok());
+    let (Some(which), Some(arrive)) = (number("trip"), number("arrive")) else {
+        return Err(ApiError::bad_request("which trip, and arriving when?"));
+    };
+    let cfg = std::sync::Arc::clone(&app.cfg);
+    let settings = blocking(move || store::load_settings(&cfg)).await;
+    let trip =
+        usize::try_from(which).ok().and_then(|which| settings.trips.get(which)).ok_or_else(ApiError::not_found)?;
+    let plan = app.travel.plan(&app.http, settings.roads_key.as_ref(), settings.home.as_ref(), trip, arrive).await;
+    let plan = plan.map_err(|e| {
+        use travel::TravelError::{KeyRefused, NoKey, NoRoute, NoStart, NotFound};
+        let status = match e {
+            NotFound(_) | NoRoute => StatusCode::NOT_FOUND,
+            NoStart | NoKey | KeyRefused => StatusCode::CONFLICT,
+            _ => StatusCode::BAD_GATEWAY,
+        };
+        ApiError::new(status, e.to_string())
+    })?;
+    let mut view = plan.view();
+    view["how"] = json!(trip.how);
+    view["margin"] = json!(trip.margin);
+    Ok(Json(view))
 }

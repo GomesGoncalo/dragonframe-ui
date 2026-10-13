@@ -155,6 +155,18 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
       <div class="rows" id="rmRules" style="margin-top: 14px"></div>
     </div>
     <div class="card narrow">
+      <h2>Getting there</h2>
+      <p class="muted">For events you travel to, the frame works out when to leave and says so on its screen from half an hour before. Say where home is, then set up each kind of event once: where it is and how you get there. Every later event with the same name and location is reached the same way. Postcodes are the surest thing to type; addresses and station names usually work.</p>
+      <label class="row"><span>Home</span> <input type="text" id="trHome" maxlength="120" placeholder="Postcode or address" style="flex: 1"></label>
+      <p class="muted" id="trWays"></p>
+      <div class="bar" style="margin: 10px 0 0">
+        <input type="password" id="trKey" maxlength="128" placeholder="TomTom routing key" autocomplete="off" aria-label="Key for the driving service">
+        <button class="btn" id="trKeySave">Use this key</button>
+        <button class="btn danger hidden" id="trKeyForget">Forget the key</button>
+      </div>
+      <div class="rows" id="trTrips" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
       <h2>Coming up on the frame</h2>
       <p class="muted" id="calNone"></p>
       <div class="rows" id="calComing"></div>

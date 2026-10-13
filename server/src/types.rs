@@ -544,7 +544,7 @@ impl<'de> Deserialize<'de> for CalendarLinks {
 }
 
 /// What an event is called: one line of 1 to 120 characters.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct Title(String);
 
@@ -974,6 +974,175 @@ impl<'de> Deserialize<'de> for Ahead {
 
 /// The reminder rules: at most twenty.
 pub type Reminders = Bounded<Reminder, 0, 20>;
+
+// --- getting to events ------------------------------------------------------------------------
+
+/// Somewhere a trip starts, ends or changes: a postcode, an address or the name of a station,
+/// as someone typed it. One line of 1 to 120 characters.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct Spot(String);
+
+impl Spot {
+    pub fn parse(text: &str) -> Option<Spot> {
+        let text = text.trim();
+        let usable = (1..=120).contains(&text.chars().count()) && !text.contains(char::is_control);
+        usable.then(|| Spot(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// This as a UK postcode without its space ("BR60AA"), if that is what it is.
+    pub fn postcode(&self) -> Option<String> {
+        let code: String = self.0.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
+        let (outward, inward) = code.split_at_checked(code.len().checked_sub(3)?)?;
+        let inward_fits = inward.starts_with(|c: char| c.is_ascii_digit())
+            && inward.chars().skip(1).all(|c| c.is_ascii_uppercase())
+            && inward.len() == 3;
+        let outward_fits = (2..=4).contains(&outward.len())
+            && outward.starts_with(|c: char| c.is_ascii_uppercase())
+            && outward.chars().all(|c| c.is_ascii_alphanumeric())
+            && outward.contains(|c: char| c.is_ascii_digit());
+        (inward_fits && outward_fits).then_some(code)
+    }
+}
+
+impl<'de> Deserialize<'de> for Spot {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Spot::parse(&text)
+            .ok_or_else(|| de::Error::custom("a place is a postcode, an address or a station, up to 120 characters"))
+    }
+}
+
+/// How a trip is made. `Park` is by car to a station and on from there by public transport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum How {
+    Transit,
+    Car,
+    Walk,
+    Cycle,
+    Park,
+}
+
+impl How {
+    /// Whether working this out takes the driving service, which needs a key.
+    pub fn drives(self) -> bool {
+        matches!(self, How::Car | How::Park)
+    }
+
+    /// The ways there are of making a trip: the ones public transport's planner knows, and
+    /// with a key for the driving service, the ones with a car in them.
+    pub fn available(driving: bool) -> Vec<How> {
+        let all = [How::Transit, How::Walk, How::Cycle, How::Car, How::Park];
+        all.into_iter().filter(|how| driving || !how.drives()).collect()
+    }
+}
+
+/// The key for the driving service (`TomTom`), as its owner typed it: 16 to 128 letters,
+/// digits, dashes and underscores. It is kept on the frame and never handed back out.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct RoadsKey(String);
+
+impl RoadsKey {
+    pub fn parse(text: &str) -> Option<RoadsKey> {
+        let text = text.trim();
+        let usable = (16..=128).contains(&text.len())
+            && text.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
+        usable.then(|| RoadsKey(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A key is never printed in logs or debug output.
+impl fmt::Debug for RoadsKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RoadsKey(****)")
+    }
+}
+
+impl<'de> Deserialize<'de> for RoadsKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        RoadsKey::parse(&text).ok_or_else(|| de::Error::custom("that does not look like a key for the driving service"))
+    }
+}
+
+/// How someone gets to an event: every event with this name and this location is reached
+/// this way. The frame works out when to leave and says so ahead of time.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+pub struct Trip {
+    /// The event's name and, if it has one, its location, exactly as the calendar has them.
+    pub title: Title,
+    pub place: Option<String>,
+    /// Where the trip starts; home when not given.
+    pub from: Option<Spot>,
+    pub to: Spot,
+    pub how: How,
+    /// The station driven to, for `How::Park` and only for it.
+    pub via: Option<Spot>,
+    /// Minutes to spare on top of the journey, at most two hours.
+    pub margin: u8,
+}
+
+impl Trip {
+    const USUAL_MARGIN: u64 = 10;
+    const MOST_MARGIN: u64 = 120;
+
+    /// Whether an event with this name and location is one this trip is for.
+    pub fn is_for(&self, title: &str, place: Option<&str>) -> bool {
+        self.title.as_str() == title.trim() && self.place.as_deref() == place
+    }
+}
+
+impl<'de> Deserialize<'de> for Trip {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            title: Title,
+            #[serde(default)]
+            place: Option<String>,
+            #[serde(default)]
+            from: Option<Spot>,
+            to: Spot,
+            how: How,
+            #[serde(default)]
+            via: Option<Spot>,
+            #[serde(default)]
+            margin: Option<u64>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let margin = raw.margin.unwrap_or(Trip::USUAL_MARGIN);
+        if margin > Trip::MOST_MARGIN {
+            return Err(de::Error::custom("the time to spare is at most 120 minutes"));
+        }
+        if raw.place.as_ref().is_some_and(|place| place.is_empty() || place.chars().count() > 300) {
+            return Err(de::Error::custom("an event's location is 1 to 300 characters"));
+        }
+        if (raw.how == How::Park) != raw.via.is_some() {
+            return Err(de::Error::custom("a station to drive to goes with driving to a station, and only with it"));
+        }
+        Ok(Trip {
+            title: raw.title,
+            place: raw.place,
+            from: raw.from,
+            to: raw.to,
+            how: raw.how,
+            via: raw.via,
+            margin: u8::try_from(margin).unwrap_or(0),
+        })
+    }
+}
+
+/// The trips that are set up: at most forty.
+pub type Trips = Bounded<Trip, 0, 40>;
 
 /// A place on the map, for the weather.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1666,5 +1835,65 @@ mod tests {
         assert!(from_value::<Reminder>(json!({ "words": "bin", "when": { "minutes": 0 }, "say": "" })).is_err());
         let many: Vec<_> = (0..21).map(|_| json!({ "words": "bin", "when": { "minutes": 0 } })).collect();
         assert!(from_value::<Reminders>(json!(many)).is_err());
+    }
+
+    #[test]
+    fn a_spot_is_a_line_of_text_and_knows_when_it_is_a_postcode() {
+        let spot = |text: &str| Spot::parse(text).unwrap();
+        assert_eq!(spot("  12 High Street, Orpington ").as_str(), "12 High Street, Orpington");
+        for (text, code) in [("br6 0aa", "BR60AA"), ("SE1 9SG", "SE19SG"), ("EC1A1BB", "EC1A1BB"), ("M1 1AE", "M11AE")]
+        {
+            assert_eq!(spot(text).postcode().as_deref(), Some(code), "{text}");
+        }
+        for text in ["Orpington station", "12 High Street", "BR6", "123 456", "A", "BR6 0A1", "é9 9éé"] {
+            assert_eq!(spot(text).postcode(), None, "{text}");
+        }
+        let too_long = "x".repeat(121);
+        for bad in ["", "   ", "a\nb", too_long.as_str()] {
+            assert_eq!(Spot::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_trip_says_how_an_event_is_reached() {
+        let trip = from_value::<Trip>(
+            json!({ "title": " Dentist ", "place": "12 High St", "to": "BR6 0AA", "how": "transit" }),
+        )
+        .unwrap();
+        assert_eq!((trip.margin, &trip.from, &trip.via), (10, &None, &None));
+        assert!(trip.is_for("Dentist", Some("12 High St")));
+        assert!(!trip.is_for("Dentist", None) && !trip.is_for("Dentist", Some("Elsewhere")));
+        assert!(!trip.is_for("Dentist again", Some("12 High St")));
+        assert_eq!(from_value::<Trip>(json!(trip)).unwrap(), trip, "what is saved reads back");
+
+        let park = json!({ "title": "Match", "to": "Wembley Stadium", "how": "park", "via": "Orpington station", "margin": 20, "from": "SE1 9SG" });
+        let park = from_value::<Trip>(park).unwrap();
+        assert_eq!((park.how, park.margin, park.place.as_deref()), (How::Park, 20, None));
+        assert!(park.is_for("Match", None));
+
+        for bad in [
+            json!({ "title": "x", "to": "BR6 0AA", "how": "park" }),
+            json!({ "title": "x", "to": "BR6 0AA", "how": "car", "via": "Orpington station" }),
+            json!({ "title": "x", "to": "BR6 0AA", "how": "teleport" }),
+            json!({ "title": "x", "to": "", "how": "car" }),
+            json!({ "title": "", "to": "BR6 0AA", "how": "car" }),
+            json!({ "title": "x", "to": "BR6 0AA", "how": "car", "margin": 121 }),
+            json!({ "title": "x", "to": "BR6 0AA", "how": "car", "place": "" }),
+            json!({ "title": "x", "how": "car" }),
+        ] {
+            assert!(from_value::<Trip>(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn driving_is_offered_only_with_a_key_which_is_never_printed() {
+        assert_eq!(How::available(false), [How::Transit, How::Walk, How::Cycle]);
+        assert_eq!(How::available(true), [How::Transit, How::Walk, How::Cycle, How::Car, How::Park]);
+        let key = RoadsKey::parse(" AbCdEf0123456789-_xyz ").unwrap();
+        assert_eq!(key.as_str(), "AbCdEf0123456789-_xyz");
+        assert_eq!(format!("{key:?}"), "RoadsKey(****)");
+        for bad in ["", "short", "has spaces in the middle of it", "semi;colon;semi;colon;semi"] {
+            assert_eq!(RoadsKey::parse(bad), None, "{bad:?}");
+        }
     }
 }

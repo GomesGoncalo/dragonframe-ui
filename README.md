@@ -106,6 +106,36 @@ bins (a repeating event, "the day before at 19:00", "Put the bins out"), a swimm
 "birthday"). The note stays until someone touches it or the event is over. It does not
 chime while the screen is off for the night, but it is there in the morning.
 
+### Getting there
+
+For events that are travelled to, the frame works out when to leave. On the management
+page (Calendar, then Getting there) say where home is, then set up each kind of event
+once: where it is, how it is reached, and how many minutes to spare. Every later event
+with the same name and location is reached the same way. The page shows the plan for
+the next one ("leave 16:57, 17:20 Southeastern to London Bridge"), or why there is none.
+
+From half an hour before it is time to leave, a note on Pictures says "Leave by 16:57"
+with the event and the first thing to catch; it chimes when it appears and again when
+it is time to go, and stays until touched or until the event starts. Plans are made for
+events in the next 24 hours and asked for again every ten minutes, so a disruption
+changes the time.
+
+- **Public transport, on foot, by bicycle**: from Transport for London's journey
+  planner, which needs no account. It plans to arrive by the event's start and takes
+  the journey that leaves latest. It only knows London and the railways around it.
+- **By car, and by car to a station then public transport**: driving times come from
+  TomTom's routing service, which needs a key (free for this much use). These two ways
+  are offered only once a key has been typed on the page. The key is kept in the
+  frame's settings, is never sent back to any page and never logged; like anything on
+  the frame it could be read by someone on the same Wi-Fi who went looking. Without a
+  key nothing is ever sent to TomTom.
+- Places are postcodes (looked up at postcodes.io), or addresses and station names
+  (looked up at OpenStreetMap's search). A postcode is the surest. Each place is looked
+  up once.
+
+Home and the trips are addresses, so with a PIN set they are only shown to a browser
+that has entered it.
+
 ### Night mode
 
 The server switches the screen off and on with Android's sleep and wake keys.
@@ -276,7 +306,7 @@ a value it would still have to check.
 | `app.rs` | The state every part shares |
 | `routes/mod.rs` | The table of routes, the PIN guard, how refusals are answered |
 | `routes/photos.rs` | Listing, serving, adding and deleting photos; the bin; look-alikes; album syncs |
-| `routes/calendars.rs` | What is on the calendar, subscribed calendars, added events, reminder rules |
+| `routes/calendars.rs` | What is on the calendar, subscribed calendars, added events, reminder rules, trips |
 | `routes/frame.rs` | The frame's Wi-Fi, screen, slideshow, night, chime and weather |
 | `routes/access.rs` | Unlocking with the PIN, locking, changing it |
 | `routes/pages.rs` | Handing out the pages in `pages/` |
@@ -291,6 +321,7 @@ a value it would still have to check.
 | `device.rs` | The frame itself: Wi-Fi status, which screen is in front, room light, screen on and off. Has a stand-in for the simulator |
 | `night.rs` | Deciding when the screen should be off |
 | `weather.rs` | Finding a place by name and fetching its forecast from Open-Meteo |
+| `travel.rs` | When to leave for an event: journeys from TfL, driving times from TomTom, places looked up by name |
 | `home.rs`, `routes/home.rs` | What the house's relay reports (alarm, sensors, cameras, doorbell), kept in memory |
 | `plain.rs` | Listening for plain http, and resetting https attempts |
 | `auth.rs`, `dns.rs` | The PIN and sessions; name lookups that work in a static binary on Android |
@@ -321,6 +352,8 @@ Routes added for the screen and calendar:
 | `GET /api/slides` | Photos the screen shows (hidden ones left out) as `[path, taken, width, height, favourite]` |
 | `POST /api/mark` | Make a photo a `favourite`, `hidden`, or neither (`null`) |
 | `POST /api/reminders` | Keep exactly these reminder rules |
+| `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list |
+| `POST /api/travel`, `/api/travel/key` | Keep home and the trips; keep or forget the driving key |
 | `GET /api/calendar?from=&to=` | Events in a window (seconds since 1970), feed status, added events |
 | `POST /api/calendars` | Set the subscribed calendar links |
 | `POST /api/events/add`, `/api/events/delete` | Events added by hand |
@@ -371,3 +404,6 @@ opening the Wi-Fi list and coming back from it, switching to the original screen
 the Settings tab, the automatic fallback, the new screen coming up by itself after a
 reboot, a whole night of night mode (including waking when a dark room is lit), the
 chime through the frame's speaker, and an alarm ringing while the screen is off.
+
+Driving times have only been tried against a stand-in for TomTom's service, never the
+real one: that needs a key.

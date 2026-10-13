@@ -51,7 +51,7 @@ main { max-width: 1440px; margin: 0 auto; padding: var(--pad); padding-bottom: c
 .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 select.small { min-height: 30px; font-size: 13px; padding: 0 6px; }
-select, textarea, input[type=number], input[type=text], input[type=date], input[type=time] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; min-height: 36px; }
+select, textarea, input[type=number], input[type=text], input[type=password], input[type=date], input[type=time] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; min-height: 36px; }
 textarea { width: 100%; min-height: 84px; padding: 9px 11px; resize: vertical; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 input[type=number] { width: 110px; }
 input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex: none; margin-top: 3px; }
@@ -81,6 +81,10 @@ pre.log { background: var(--raised); border: 1px solid var(--line); border-radiu
 .pick { position: absolute; top: 6px; left: 6px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, .35); color: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; z-index: 1; }
 .tile.sel .pick { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .tag { position: absolute; left: 6px; bottom: 6px; font-size: 11px; line-height: 1.5; padding: 1px 8px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; z-index: 1; pointer-events: none; }
+.tripform { padding: 4px 0 12px; }
+.tripform input[type=text] { flex: 1 1 200px; min-width: 0; }
+#trKey { flex: 0 1 280px; min-width: 0; }
+.tripform input[type=number] { width: 64px; }
 .tag.mark { left: auto; right: 6px; }
 .tile.hid img.ready { opacity: .35; }
 .month { grid-column: 1 / -1; font-size: 15px; font-weight: 600; margin-top: 10px; }

@@ -11,6 +11,7 @@ use crate::home::Home;
 use crate::index::Index;
 use crate::marks::Marks;
 use crate::store::{Config, Settings};
+use crate::travel::Travel;
 use crate::types::Screen;
 use crate::weather::Weather;
 use crate::{auth, faces, gphotos, store, weather};
@@ -46,6 +47,8 @@ pub(crate) struct App {
     pub(crate) weather: Arc<Weather>,
     /// What the house's relay has said about the doorbell, cameras, alarm and sensors.
     pub(crate) home: Home,
+    /// Working out when to leave for events.
+    pub(crate) travel: Travel,
 }
 
 /// A moment on the clock that waiting is measured by (tokio's, which tests can move forward).
@@ -97,6 +100,7 @@ impl App {
             watch: Mutex::default(),
             weather: Arc::new(Weather::new(weather::FORECAST_URL, weather::PLACES_URL)),
             home: Home::default(),
+            travel: Travel::default(),
         })
     }
 

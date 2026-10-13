@@ -15,7 +15,7 @@
 .menu.asking .acts { display: none; }
 
 /* --- reminders: notes at the side of the pictures, each until it is touched --- */
-.reminders { position: absolute; top: 16vmin; right: 3vmin; width: 62vmin; max-width: 80%; display: none; }
+.reminders { position: absolute; top: 16vmin; right: 3vmin; width: 76vmin; max-width: 80%; display: none; }
 body[data-tab="pictures"] .reminders { display: block; }
 .reminder {
   position: relative; display: block; width: 100%; box-sizing: border-box; margin-bottom: 1.4vmin; padding: 1.8vmin 10vmin 1.8vmin 3vmin;

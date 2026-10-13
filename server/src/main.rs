@@ -40,6 +40,7 @@ mod plain;
 mod routes;
 mod store;
 mod tasks;
+mod travel;
 mod types;
 mod weather;
 

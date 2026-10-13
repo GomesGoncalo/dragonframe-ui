@@ -21,7 +21,9 @@ use tracing::{debug, warn};
 
 use crate::app::{blocking, Shared};
 use crate::routes::access::{change_pin, lock, unlock};
-use crate::routes::calendars::{add_event, calendar_view, delete_event, save_calendars, save_reminders};
+use crate::routes::calendars::{
+    add_event, calendar_view, delete_event, save_calendars, save_reminders, save_roads_key, save_travel, travel_plan,
+};
 use crate::routes::frame::{
     address_code, alive, device_view, forget_place, open_wifi_settings, set_chime, set_night, set_place, set_screen,
     set_slideshow, weather_view,
@@ -172,6 +174,8 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/events/add", post(add_event))
         .route("/api/events/delete", post(delete_event))
         .route("/api/reminders", post(save_reminders))
+        .route("/api/travel", get(travel_plan).post(save_travel))
+        .route("/api/travel/key", post(save_roads_key))
         .route("/api/device", get(device_view))
         .route("/api/address.svg", get(address_code))
         .route("/api/alive", get(alive))

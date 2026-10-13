@@ -1,5 +1,6 @@
-// Two things that sit over the frame's tabs: the menu a photo gets when it is pressed and
-// held (make it a favourite, or hide it), and the reminders that calendar events bring up.
+// Things that sit over the frame's tabs: the menu a photo gets when it is pressed and held
+// (make it a favourite, or hide it), the reminders that calendar events bring up, and
+// the note that says when to leave for an event that is travelled to.
 //
 // Loaded after screen.js, whose helpers it uses.
 
@@ -175,23 +176,83 @@ function dueFor(event, rule) {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), time[0], time[1]);
 }
 
+// --- when to leave ----------------------------------------------------------------------
+
+// An event that is travelled to gets a note this long before it is time to leave.
+const LEAVE_NOTE_MS = 30 * 60 * 1000;
+// Plans are asked for events starting within this long, and asked again this often (the
+// journey planner knows about disruptions only near the time).
+const PLAN_AHEAD_MS = 24 * 60 * 60 * 1000, PLAN_AGAIN_MS = 10 * 60 * 1000;
+const plans = {};       // by trip and start: { leave, catch, steps, asked }
+let planning = false;
+
+const planKey = (event) => event.trip + '|' + event.start.getTime();
+
+/// Ask the server when to leave for the events coming up that have a trip, one at a time.
+async function refreshPlans(now) {
+  if (planning) return;
+  const next = events.filter((event) => {
+    const away = event.start.getTime() - now, plan = plans[planKey(event)];
+    return event.trip !== null && !event.allDay && away > 0 && away < PLAN_AHEAD_MS && (!plan || now - plan.asked > PLAN_AGAIN_MS);
+  })[0];
+  if (!next) return;
+  planning = true;
+  const key = planKey(next), before = plans[key];
+  // Whatever comes of it, this one is not asked about again for a while.
+  plans[key] = Object.assign({}, before, { asked: now });
+  try {
+    const reply = await fetch('/api/travel?trip=' + next.trip + '&arrive=' + Math.floor(next.start.getTime() / 1000), { cache: 'no-store' });
+    if (reply.ok) plans[key] = Object.assign(await reply.json(), { asked: now });
+  } catch (error) {
+    // The plan we had, if any, stands.
+  }
+  planning = false;
+  remind(Date.now());
+}
+
+/// The notes about leaving that are up at a moment.
+function leavingAt(now) {
+  const up = [];
+  events.forEach((event) => {
+    const plan = event.trip === null || event.allDay ? null : plans[planKey(event)];
+    if (!plan || typeof plan.leave !== 'number') return;
+    const leave = plan.leave * 1000, due = leave - LEAVE_NOTE_MS, until = event.start.getTime();
+    const key = 'leave|' + event.title + '|' + until;
+    if (now < due || now >= until || done[key]) return;
+    const how = plan.catch || (plan.steps || [])[0] || '';
+    up.push({
+      key: key, event: event, due: due, until: until, chime: true,
+      // It sounds when it comes up and again when it is time to go.
+      sounds: [[key, due], [key + '|go', leave]],
+      what: now < leave ? 'Leave by ' + clockText(new Date(leave)) : 'Time to leave',
+      when: event.title + '  ·  ' + clockText(event.start) + (how ? '  ·  ' + how : ''),
+    });
+  });
+  return up;
+}
+
 /// The reminders that are up at a moment: due, not yet over, and not touched away.
 function remindersAt(now) {
-  const up = [];
+  const up = [], today = new Date(now);
   events.forEach((event) => {
     event.rules.forEach((rule) => {
       const due = dueFor(event, rule).getTime();
       // It stays until the event is over, and at least an hour.
       const until = Math.max(event.end.getTime(), event.start.getTime(), due + 60 * 60 * 1000);
       const key = rule.words + '|' + event.title + '|' + event.start.getTime();
-      if (now >= due && now < until && !done[key]) up.push({ key: key, event: event, rule: rule, due: due, until: until });
+      if (now < due || now >= until || done[key]) return;
+      const when = dayText(event, today) + (event.allDay ? '' : '  ·  ' + clockText(event.start));
+      up.push({
+        key: key, event: event, due: due, until: until, chime: rule.chime, sounds: [[key, due]],
+        what: rule.say || event.title, when: (rule.say ? event.title + '  ·  ' : '') + when,
+      });
     });
   });
   // One note for one event, even if two rules are about it: the first rule's.
   const seen = {};
-  return up.sort((x, y) => x.event.start - y.event.start)
-    .filter((r) => !seen[r.event.title + r.event.start] && (seen[r.event.title + r.event.start] = true))
-    .slice(0, MOST_REMINDERS);
+  const rules = up.filter((r) => !seen[r.event.title + r.event.start] && (seen[r.event.title + r.event.start] = true));
+  // Leaving comes before everything else; then whatever is soonest.
+  return leavingAt(now).concat(rules.sort((x, y) => x.event.start - y.event.start)).slice(0, MOST_REMINDERS);
 }
 
 function dismiss(reminder) {
@@ -203,22 +264,24 @@ function dismiss(reminder) {
 }
 
 remind = (now) => {
-  const up = remindersAt(now), today = new Date(now);
+  refreshPlans(now);
+  const up = remindersAt(now);
   up.forEach((r) => {
-    if (chimed[r.key]) return;
-    chimed[r.key] = true;
-    if (r.rule.chime && !asleep && now - r.due < CHIME_LATE_MS) playChime();
+    r.sounds.forEach((sound) => {
+      if (chimed[sound[0]] || now < sound[1]) return;
+      chimed[sound[0]] = true;
+      if (r.chime && !asleep && now - sound[1] < CHIME_LATE_MS) playChime();
+    });
   });
-  const key = JSON.stringify(up.map((r) => [r.key, r.rule.say, dayText(r.event, today)]));
+  const key = JSON.stringify(up.map((r) => [r.key, r.what, r.when]));
   if (key === remindersDrawn) return;
   remindersDrawn = key;
   const box = $('reminders');
   box.textContent = '';
   up.forEach((r) => {
-    const when = dayText(r.event, today) + (r.event.allDay ? '' : '  ·  ' + clockText(r.event.start));
     const note = element('button', 'reminder', '');
-    note.appendChild(element('div', 'what', r.rule.say || r.event.title));
-    note.appendChild(element('div', 'when', (r.rule.say ? r.event.title + '  ·  ' : '') + when));
+    note.appendChild(element('div', 'what', r.what));
+    note.appendChild(element('div', 'when', r.when));
     note.appendChild(element('div', 'tick', '✓'));
     note.onclick = (event) => {
       event.stopPropagation();

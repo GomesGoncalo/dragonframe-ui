@@ -24,7 +24,7 @@ use crate::store::{Config, LastSync, Settings};
 use crate::tasks::*;
 use crate::types::*;
 use crate::weather::Weather;
-use crate::{calendar, device, faces, gphotos, index, night, store, types, weather};
+use crate::{calendar, device, faces, gphotos, index, night, store, travel, types, weather};
 
 const SYNCED: &str = "frame-sync/fs_0123456789abcdef.jpg";
 const HOST_NAME: &str = "192.168.4.23:8080";
@@ -89,6 +89,7 @@ mod house;
 mod protection;
 mod reading;
 mod syncing;
+mod trips;
 
 #[test]
 fn percent_decoding() {

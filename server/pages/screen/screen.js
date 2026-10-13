@@ -456,6 +456,8 @@ async function fetchEvents(first, days) {
     from: e.added ? 'Added here' : e.calendar || '',
     // The reminder rules that are about it (see reminders.js).
     rules: (e.remind || []).map((rule) => (found.reminders || [])[rule]).filter(Boolean),
+    // Which trip says how it is reached, if one does.
+    trip: typeof e.trip === 'number' ? e.trip : null,
   }));
 }
 
