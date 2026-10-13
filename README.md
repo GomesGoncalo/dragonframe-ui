@@ -546,10 +546,10 @@ player is; on the frame it is `framespot` beside the data).
 - There is no on-screen back or home button, and no shell command to join a Wi-Fi
   network.
 - It has a light sensor, an accelerometer, a speaker, an infrared receiver and
-  Bluetooth; no camera and no battery. Android lists a microphone, but a recording made
-  over adb while a tone was sent to the speaker held only silence, so there appears to
-  be none fitted (nobody was by the frame to confirm the tone could be heard). Voice
-  control would most likely need a USB microphone.
+  Bluetooth; no camera and no battery. Android lists a microphone, but there is no
+  working one: recordings made over adb through both of its inputs, while loud tones
+  that could be heard in the room came from the speaker, held only silence. Listening
+  on the frame itself would take a USB microphone.
 - Its language is set to US English, so the screen page picks the date format from the
   time zone instead (day first outside the Americas).
 - iOS Safari tries https first on links opened from the Camera, and does not always
