@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  The frame's own screen, shown full screen by the frame's screen app. It has three tabs:
+  The frame's own screen, shown full screen by the frame's screen app. It has four tabs:
 
   Pictures  a slideshow with a clock and the weather. Each photo carries the date it was
             taken for its first five seconds, and whenever the tabs are up. Every photo
@@ -12,6 +12,7 @@
   Calendar  the month or the week, and what is coming up, each calendar in its own colour.
             Arrows or a swipe move to other months and weeks; a touch on a day shows
             what is on it.
+  Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css).
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
             asked for each time Settings is opened, on a keypad on the screen.
 
@@ -39,6 +40,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Frame</title>
 <link rel="stylesheet" href="screen.css">
+<link rel="stylesheet" href="utilities.css">
 </head>
 <body data-tab="pictures" data-view="month" data-part="pictures">
 
@@ -52,6 +54,7 @@
     <div class="date"><span id="date"></span><span class="weather" id="sky"></span></div>
     <div class="morning" id="morning"></div>
   </div>
+  <div class="running" id="running"></div>
   <div class="notice" id="notice">Looking for photos…</div>
 </div>
 
@@ -135,17 +138,61 @@
   </div>
 </div>
 
+<div class="view" id="utilities">
+  <div class="top"><h1>Utilities</h1><div class="now" id="now-too"></div></div>
+  <div class="switch" id="tools">
+    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button>
+  </div>
+
+  <div class="part" id="tool-timers">
+    <div class="row"><span class="label">Start a timer for</span><span id="timer-presets"></span></div>
+    <div class="row"><span class="label">Or for</span><button class="press" data-custom="-5">−5</button><button class="press" data-custom="-1">−1</button><span class="hours" id="timer-custom"></span><button class="press" data-custom="1">+1</button><button class="press" data-custom="5">+5</button><button class="press on spaced" id="timer-start">Start</button></div>
+    <div id="timers"></div>
+  </div>
+
+  <div class="part" id="tool-alarms">
+    <div class="columns">
+      <div class="row"><span class="label">Hour</span><button class="press" data-alarm="hour" data-by="-1">−</button><span class="hours" id="alarm-hour"></span><button class="press" data-alarm="hour" data-by="1">+</button></div>
+      <div class="row"><span class="label">Minute</span><button class="press" data-alarm="minute" data-by="-5">−</button><span class="hours" id="alarm-minute"></span><button class="press" data-alarm="minute" data-by="5">+</button></div>
+      <div class="row"><span class="label">Rings</span><span id="alarm-repeats"></span><button class="press on spaced" id="alarm-add">Add alarm</button></div>
+    </div>
+    <div id="alarms"></div>
+  </div>
+
+  <div class="part" id="tool-pomodoro">
+    <div class="pomodoro" id="pomodoro">
+      <div class="phase" id="pomo-phase"></div>
+      <div class="count" id="pomo-count"></div>
+      <div class="round" id="pomo-round"></div>
+      <button class="press on" id="pomo-go">Start</button><button class="press" id="pomo-skip">Skip</button><button class="press" id="pomo-reset">Reset</button>
+    </div>
+    <div class="columns lengths">
+      <div class="row"><span class="label">Focus</span><span id="pomo-focus"></span></div>
+      <div class="row"><span class="label">Short break</span><span id="pomo-short"></span></div>
+      <div class="row"><span class="label">Long break</span><span id="pomo-long"></span></div>
+    </div>
+  </div>
+</div>
+
 <div class="soon" id="soon"><div class="when" id="soon-when"></div><div class="what" id="soon-what"></div></div>
 
 <div class="tabs" id="tabs">
   <button data-tab="pictures" data-icon="pictures">Pictures</button>
   <button data-tab="calendar" data-icon="calendar">Calendar</button>
+  <button data-tab="utilities" data-icon="utilities">Utilities</button>
   <button data-tab="settings" data-icon="settings">Settings</button>
   <button class="pause" id="pause" data-icon="pause">Pause</button>
+</div>
+
+<div class="ring" id="ring">
+  <div class="what" id="ring-what"></div>
+  <div class="more" id="ring-more"></div>
+  <button class="press" id="ring-snooze">Snooze 5 min</button><button class="press on" id="ring-stop">Stop</button>
 </div>
 
 <div class="asleep">The screen is off (night mode). On the frame this is a dark screen.</div>
 
 <script src="screen.js"></script>
+<script src="utilities.js"></script>
 </body>
 </html>

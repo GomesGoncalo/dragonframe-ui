@@ -138,10 +138,27 @@ pub(crate) async fn mind_the_night(app: &Shared, room: &mut night::Room) {
     let now = Moment::now();
     room.note(light, now);
     let time = time_of_day(zone.as_deref(), now_secs());
-    let off = night::screen_should_be_off(&settings, time, room.dark_for(now), untouched);
+    // The screen page may need the display: a timer counting down, or an alarm about to ring.
+    let needed = {
+        let mut watch = app.watch();
+        if night::alarm_due(watch.wake_at, now_secs()) {
+            let after = now + night::ON_AFTER_AN_ALARM;
+            watch.stay_on_until = Some(watch.stay_on_until.map_or(after, |until| until.max(after)));
+        }
+        watch.stay_on_until.is_some_and(|until| until > now)
+    };
+    let off = !needed && night::screen_should_be_off(&settings, time, room.dark_for(now), untouched);
     let we_switched_it_off = app.watch().asleep;
     let device = app.device;
-    if off && on == Some(true) {
+    if needed && on == Some(false) {
+        // Whoever switched it off, an alarm or a running timer wants it on.
+        blocking(move || device.switch_screen(true)).await;
+        let mut watch = app.watch();
+        watch.asleep = false;
+        watch.heard = Some(now);
+        watch.shown = watch.shown.map(|_| now);
+        info!("the screen was switched on for an alarm or a timer");
+    } else if off && on == Some(true) {
         blocking(move || device.switch_screen(false)).await;
         app.watch().asleep = true;
         info!("night mode switched the screen off");

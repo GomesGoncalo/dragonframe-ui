@@ -29,7 +29,7 @@ data), `android/build/`, `server/target/` and `server/models/`.
 
 ## The frame's screen
 
-Three tabs, each with an icon. On Pictures the tab bar is hidden until you tap the middle
+Four tabs, each with an icon. On Pictures the tab bar is hidden until you tap the middle
 of the screen; on the other two it stays visible. The frame can stand either way up: the
 screen turns with it and lays itself out for a wide or a tall display. Calendar and
 Settings go back to Pictures when left alone (5 minutes unless set otherwise).
@@ -48,6 +48,14 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   are grey. The arrows, or a swipe, move to other months and weeks; "Today" comes back.
   A touch on a day lists what is on it, past or future (from the week view this opens
   the month with that day picked).
+- **Utilities.** Timers (up to four at once, from preset lengths or one set by hand),
+  alarms (once, every day, weekdays or weekends, with a five-minute snooze) and a
+  pomodoro clock (focus and break lengths can be chosen; a long break after four
+  rounds). When a timer or alarm goes off, the frame chimes repeatedly and shows a
+  notice over everything until it is stopped. A running timer or pomodoro shows in the
+  corner of Pictures, keeps the screen on through night mode, and keeps its tab open.
+  An alarm switches the screen on if night mode has it off. These are kept on the frame
+  itself and need no PIN.
 - **Settings**, in five parts. If a PIN is set, a keypad asks for it each time Settings
   is opened, and nothing is shown until it is right:
   - Pictures: how often they change, the order, how long before the screen goes back to
@@ -219,8 +227,9 @@ a value it would still have to check.
 | `types.rs` | Values checked once, where they enter |
 | `tests/` | Tests of the routes, one file per area; each module also has its own tests |
 
-Each page in `server/pages/` is an ordinary `index.html` with its stylesheet and script
-beside it. The server sends a page as one document with those two put inside it, so a
+Each page in `server/pages/` is an ordinary `index.html` with its stylesheets and scripts
+beside it (the screen's Utilities tab has its own pair, `utilities.css` and
+`utilities.js`). The server sends a page as one document with those put inside it, so a
 page arrives in one request and is never half old and half new. Changing a page means
 editing those files and rebuilding.
 
@@ -247,7 +256,7 @@ Routes added for the screen and calendar:
 | `POST /api/weather/place`, `/api/weather/forget` | Choose the place by name, or stop showing the weather |
 | `POST /api/night`, `/api/chime` | Night mode and the event chime |
 | `GET /api/address.svg` | QR code of the management address |
-| `GET /api/alive` | The screen saying it is running |
+| `GET /api/alive` | The screen saying it is running; `?busy=<seconds>` keeps the display on, `?wake=<seconds since 1970>` has it on then |
 | `POST /api/screen`, `/api/slideshow`, `/api/wifi/settings` | Choose the screen, set the slideshow, open the Wi-Fi list |
 
 On the frame, data lives in `/data/local/frameserver`: `settings.json`, `events.json`,
@@ -284,5 +293,5 @@ simulated frame's time zone), `FRAME_LOG` (log level).
 These work in the tests and the simulator but have not been exercised on the device:
 opening the Wi-Fi list and coming back from it, switching to the original screen from
 the Settings tab, the automatic fallback, the new screen coming up by itself after a
-reboot, a whole night of night mode (including waking when a dark room is lit), and the
-chime through the frame's speaker.
+reboot, a whole night of night mode (including waking when a dark room is lit), the
+chime through the frame's speaker, and an alarm ringing while the screen is off.

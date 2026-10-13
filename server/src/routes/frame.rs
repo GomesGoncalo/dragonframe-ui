@@ -1,10 +1,11 @@
 //! The frame itself: its Wi-Fi, which screen it shows, how that screen behaves (slideshow,
 //! night, chime), and the weather.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -15,7 +16,7 @@ use tracing::{info, warn};
 
 use crate::app::{blocking, Moment, Shared};
 use crate::routes::{ApiError, ApiResult, Parsed, NO_STORE};
-use crate::types::{Chime, Night, PlaceQuery, Screen, Slideshow};
+use crate::types::{Chime, Night, PlaceQuery, Screen, Slideshow, Vigil};
 use crate::{store, weather};
 
 /// Android's Wi-Fi settings are left again once the frame has not been touched for this long.
@@ -88,10 +89,19 @@ pub(crate) async fn address_code(State(app): State<Shared>) -> ApiResult<Respons
 
 /// The new screen calls this every half minute to say it is running, and learns how it
 /// should behave. If the calls stop, the frame goes back to its own screen.
-pub(crate) async fn alive(State(app): State<Shared>) -> Json<Value> {
+///
+/// With it the screen says what it needs of the display: `?busy=<seconds>` to keep it on
+/// (a timer is counting down) and `?wake=<seconds since 1970>` to have it on then (an alarm).
+/// Night mode honours both.
+pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> Json<Value> {
+    let asked = |name: &str| query.get(name).map(String::as_str);
+    let vigil = Vigil::from_query(asked("busy"), asked("wake"));
     let asleep = {
         let mut watch = app.watch();
-        watch.heard = Some(Moment::now());
+        let now = Moment::now();
+        watch.heard = Some(now);
+        watch.stay_on_until = vigil.stay_on.map(|long| now + long);
+        watch.wake_at = vigil.wake_at;
         watch.asleep
     };
     let cfg = Arc::clone(&app.cfg);

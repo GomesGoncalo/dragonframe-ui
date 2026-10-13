@@ -265,6 +265,49 @@ async fn night_mode_switches_the_screen_off_for_the_night_and_back_on_after() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_running_timer_keeps_the_screen_on_and_an_alarm_switches_it_on() {
+    let _screen = ONE_SCREEN.lock().await;
+    let (app, _frame) = app("night-vigil");
+    let mut room = night::Room::default();
+    let on = || app.device.power().0;
+    post(&app, "/api/night", r#"{"on":true,"from":"00:00","until":"23:59"}"#).await;
+
+    // A timer is counting down: the screen stays on through the night.
+    get(&app, "/api/alive?busy=600").await;
+    mind_the_night(&app, &mut room).await;
+    assert_eq!((on(), app.watch().asleep), (Some(true), false));
+
+    // The timer is over (the screen stops asking): the night takes the screen back.
+    get(&app, "/api/alive").await;
+    mind_the_night(&app, &mut room).await;
+    assert_eq!((on(), app.watch().asleep), (Some(false), true));
+
+    // An alarm far off changes nothing; one that is due switches the screen on, to stay on a while.
+    get(&app, &format!("/api/alive?wake={}", now_secs() + 3600)).await;
+    mind_the_night(&app, &mut room).await;
+    assert_eq!(on(), Some(false));
+    get(&app, &format!("/api/alive?wake={}", now_secs() + 20)).await;
+    mind_the_night(&app, &mut room).await;
+    assert_eq!((on(), app.watch().asleep), (Some(true), false));
+    mind_the_night(&app, &mut room).await;
+    assert_eq!(on(), Some(true), "it does not go straight back off");
+    tokio::time::sleep(night::ON_AFTER_AN_ALARM + Duration::from_secs(1)).await;
+    get(&app, "/api/alive").await;
+    app.watch().stay_on_until = None;
+    app.watch().wake_at = None;
+    mind_the_night(&app, &mut room).await;
+    assert_eq!(on(), Some(false), "afterwards the night resumes");
+
+    // An alarm also switches on a screen that someone else switched off.
+    post(&app, "/api/night", r#"{"on":false}"#).await;
+    mind_the_night(&app, &mut room).await;
+    app.device.switch_screen(false);
+    get(&app, &format!("/api/alive?wake={}", now_secs())).await;
+    mind_the_night(&app, &mut room).await;
+    assert_eq!(on(), Some(true));
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_screen_someone_else_switched_off_is_not_switched_on_by_night_mode() {
     let _screen = ONE_SCREEN.lock().await;
     let (app, _frame) = app("night-not-ours");

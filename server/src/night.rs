@@ -21,6 +21,17 @@ pub const DARK_FOR: Duration = Duration::from_mins(2);
 /// A frame touched more recently than this is being used, and stays on.
 pub const LEFT_ALONE: Duration = Duration::from_mins(5);
 
+/// The screen is switched on this long before an alarm (the check runs every half minute), an
+/// alarm that was missed is still honoured for this long, and after one the screen stays on a while.
+const BEFORE_AN_ALARM_SECS: u64 = 45;
+const AFTER_AN_ALARM_SECS: u64 = 2 * 60;
+pub const ON_AFTER_AN_ALARM: Duration = Duration::from_mins(10);
+
+/// Whether an alarm set for `wake_at` is due around `now` (both in seconds since 1970).
+pub fn alarm_due(wake_at: Option<u64>, now: u64) -> bool {
+    wake_at.is_some_and(|at| at <= now + BEFORE_AN_ALARM_SECS && now < at + AFTER_AN_ALARM_SECS)
+}
+
 /// A moment on the clock that waiting is measured by.
 type Moment = tokio::time::Instant;
 
@@ -104,6 +115,17 @@ mod tests {
         assert!(!screen_should_be_off(&night(true), at("15:00"), DARK_FOR.checked_sub(Duration::from_secs(1)), LONG));
         assert!(!screen_should_be_off(&night(true), at("15:00"), None, LONG), "a lit room");
         assert!(!screen_should_be_off(&night(false), at("15:00"), LONG, LONG), "not asked to follow the light");
+    }
+
+    #[test]
+    fn an_alarm_is_due_from_shortly_before_it_until_shortly_after() {
+        let at = 1_800_000_000;
+        assert!(!alarm_due(None, at));
+        assert!(!alarm_due(Some(at), at - 46), "not yet");
+        assert!(alarm_due(Some(at), at - 45));
+        assert!(alarm_due(Some(at), at));
+        assert!(alarm_due(Some(at), at + 119));
+        assert!(!alarm_due(Some(at), at + 120), "long gone");
     }
 
     #[test]

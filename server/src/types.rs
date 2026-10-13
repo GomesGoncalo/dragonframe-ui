@@ -871,6 +871,29 @@ impl<'de> Deserialize<'de> for PlaceQuery {
     }
 }
 
+/// What the frame's screen page asks of the display when it says it is running: to stay on
+/// for a while (a timer is counting down), and to be on at a moment to come (an alarm).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Vigil {
+    /// Keep the display on for this long from now, at most four hours.
+    pub stay_on: Option<std::time::Duration>,
+    /// Have the display on at this moment, in seconds since 1970.
+    pub wake_at: Option<u64>,
+}
+
+impl Vigil {
+    const LONGEST_SECS: u64 = 4 * 60 * 60;
+
+    /// From query parameters; anything unreadable asks for nothing.
+    pub fn from_query(busy: Option<&str>, wake: Option<&str>) -> Vigil {
+        let number = |text: Option<&str>| text.and_then(|t| t.parse::<u64>().ok()).filter(|n| *n > 0);
+        Vigil {
+            stay_on: number(busy).map(|secs| std::time::Duration::from_secs(secs.min(Self::LONGEST_SECS))),
+            wake_at: number(wake),
+        }
+    }
+}
+
 /// The stretch of time a calendar request asks about, in seconds since 1970: never
 /// backwards, and never longer than the calendar is prepared to work out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1102,6 +1125,18 @@ mod tests {
         assert_eq!(from_value::<PlaceQuery>(json!("  Porto ")).unwrap().as_str(), "Porto");
         for bad in [json!(""), json!("   "), json!("x".repeat(101)), json!(5)] {
             assert!(from_value::<PlaceQuery>(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_vigil_asks_for_the_display_within_reason() {
+        use std::time::Duration;
+        assert_eq!(Vigil::from_query(None, None), Vigil::default());
+        let asked = Vigil::from_query(Some("600"), Some("1800000000"));
+        assert_eq!(asked, Vigil { stay_on: Some(Duration::from_mins(10)), wake_at: Some(1_800_000_000) });
+        assert_eq!(Vigil::from_query(Some("999999"), None).stay_on, Some(Duration::from_hours(4)), "capped");
+        for junk in ["", "0", "-5", "soon", "1.5"] {
+            assert_eq!(Vigil::from_query(Some(junk), Some(junk)), Vigil::default(), "{junk:?}");
         }
     }
 

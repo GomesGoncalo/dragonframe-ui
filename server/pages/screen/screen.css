@@ -169,6 +169,8 @@ body.asleep .asleep { display: block; }
 
 /* --- standing tall --- */
 @media (orientation: portrait) {
+  .tabs button { font-size: 2.4vmin; padding: 1.5vmin 2vmin; margin: 0 .1vmin; }
+  .tabs .pause { margin-left: .6vmin; padding-left: 2vmin; }
   .month { right: 7vmin; width: auto; }
   .agenda { top: 100vmin; left: 7vmin; }
   .week { grid-template-columns: 1fr; grid-template-rows: repeat(7, 1fr); }

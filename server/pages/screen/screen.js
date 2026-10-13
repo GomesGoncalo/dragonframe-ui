@@ -60,6 +60,9 @@ const ICONS = {
   sound: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20.5a2 2 0 0 0 4 0"/>',
   wifi: '<path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9 16.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r=".6"/>',
   frame: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/>',
+  utilities: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2.5M9.5 2.5h5"/>',
+  alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.3 2.3M5.5 3.5L2.5 6.5M18.5 3.5l3 3"/>',
+  pomodoro: '<circle cx="12" cy="14" r="7"/><path d="M12 7c0-2 1-3.5 3-3.5M8.5 6.5l3.5 1.2 3.5-1.2"/>',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -87,6 +90,10 @@ let barTimer = 0, leaveTimer = 0, deviceTimer = 0, soonTimer = 0, datedTimer = 0
 // With a PIN set, Settings asks for it each time it is opened; the token is what the PIN bought.
 let token = null, typed = '';
 let heard = false;  // whether the server has said how things are set yet
+// Two things the Utilities tab (utilities.js) has a say in: what is asked of the display each
+// time the page reports in, and whether its tab may be left for Pictures by itself.
+let aliveNeeds = () => '';
+let staysOpen = () => false;
 
 const url = (kind, path) => '/' + kind + '?p=' + encodeURIComponent(path);
 const shape = (photo) => (photo[2] && photo[3] ? photo[2] / photo[3] : 0);
@@ -875,7 +882,7 @@ async function tryPin() {
 /// Tell the server this screen is running, and learn how things are set.
 async function sayAlive() {
   try {
-    const reply = await (await fetch('/api/alive', { cache: 'no-store' })).json();
+    const reply = await (await fetch('/api/alive' + aliveNeeds(), { cache: 'no-store' })).json();
     const wanted = reply.slideshow;
     if (wanted && JSON.stringify(wanted) !== JSON.stringify(slideshow)) {
       if (wanted.order !== slideshow.order) queue = [];
@@ -948,7 +955,11 @@ function touched() {
   // Left alone, Calendar and Settings give way to Pictures. If set never to, Settings still
   // gives way, to whichever of the other two was open before it.
   if (tab !== 'pictures' && slideshow.home_after !== null) {
-    leaveTimer = setTimeout(() => showTab('pictures'), slideshow.home_after * 60 * 1000);
+    leaveTimer = setTimeout(() => {
+      // Not while a timer is counting down on the tab that is open; look again later.
+      if (tab === 'utilities' && staysOpen()) touched();
+      else showTab('pictures');
+    }, slideshow.home_after * 60 * 1000);
   } else if (tab === 'settings') {
     leaveTimer = setTimeout(() => showTab(remembered('frameTab') === 'calendar' ? 'calendar' : 'pictures'), LEAVE_SETTINGS_MS);
   }
@@ -1016,7 +1027,8 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === ' ') setPaused(!paused);
   else if (event.key === '1') showTab('pictures');
   else if (event.key === '2') showTab('calendar');
-  else if (event.key === '3') showTab('settings');
+  else if (event.key === '3') showTab('utilities');
+  else if (event.key === '4') showTab('settings');
 });
 
 // Every tab gets its drawing.

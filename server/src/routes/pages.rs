@@ -1,8 +1,8 @@
 //! The pages the server hands out, and the log for reading in a browser.
 //!
 //! Their sources are ordinary html, css and js files in `pages/`. Each page is sent as
-//! one document with its stylesheet and script inside it, so it arrives in one request and
-//! is never half old and half new.
+//! one document with its stylesheets and scripts inside it, so it arrives in one request
+//! and is never half old and half new.
 
 use std::sync::Arc;
 
@@ -17,19 +17,30 @@ use crate::store;
 
 use std::sync::LazyLock;
 
-/// A page with its stylesheet and script put inside it: the one `<link>` and the one
-/// `<script src>` in the page are replaced by what they name.
-fn whole(html: &str, sheet: (&str, &str), script: (&str, &str)) -> String {
-    html.replace(&format!(r#"<link rel="stylesheet" href="{}">"#, sheet.0), &format!("<style>\n{}</style>", sheet.1))
-        .replace(&format!(r#"<script src="{}"></script>"#, script.0), &format!("<script>\n{}</script>", script.1))
+/// A page with its stylesheets and scripts put inside it: each `<link>` to a stylesheet
+/// and each `<script src>` in the page is replaced by the file it names.
+fn whole(html: &str, files: &[(&str, &str)]) -> String {
+    let mut page = html.to_string();
+    for (name, text) in files {
+        let sheet = std::path::Path::new(name).extension().is_some_and(|kind| kind.eq_ignore_ascii_case("css"));
+        let (tag, inside) = if sheet {
+            (format!(r#"<link rel="stylesheet" href="{name}">"#), format!("<style>\n{text}</style>"))
+        } else {
+            (format!(r#"<script src="{name}"></script>"#), format!("<script>\n{text}</script>"))
+        };
+        page = page.replace(&tag, &inside);
+    }
+    page
 }
 
 /// The page for managing the frame from a phone or computer.
 static MANAGE: LazyLock<String> = LazyLock::new(|| {
     whole(
         include_str!("../../pages/manage/index.html"),
-        ("manage.css", include_str!("../../pages/manage/manage.css")),
-        ("manage.js", include_str!("../../pages/manage/manage.js")),
+        &[
+            ("manage.css", include_str!("../../pages/manage/manage.css")),
+            ("manage.js", include_str!("../../pages/manage/manage.js")),
+        ],
     )
 });
 
@@ -37,8 +48,12 @@ static MANAGE: LazyLock<String> = LazyLock::new(|| {
 static SCREEN: LazyLock<String> = LazyLock::new(|| {
     whole(
         include_str!("../../pages/screen/index.html"),
-        ("screen.css", include_str!("../../pages/screen/screen.css")),
-        ("screen.js", include_str!("../../pages/screen/screen.js")),
+        &[
+            ("screen.css", include_str!("../../pages/screen/screen.css")),
+            ("utilities.css", include_str!("../../pages/screen/utilities.css")),
+            ("screen.js", include_str!("../../pages/screen/screen.js")),
+            ("utilities.js", include_str!("../../pages/screen/utilities.js")),
+        ],
     )
 });
 

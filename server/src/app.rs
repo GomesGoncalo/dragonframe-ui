@@ -58,6 +58,10 @@ pub(crate) struct ScreenWatch {
     pub(crate) fell_back: bool,
     /// Night mode has switched the screen off, so nothing is expected of the new screen.
     pub(crate) asleep: bool,
+    /// The screen page asked for the display to stay on until then (a timer is counting down).
+    pub(crate) stay_on_until: Option<Moment>,
+    /// The screen page asked for the display to be on at this moment, in seconds since 1970 (an alarm).
+    pub(crate) wake_at: Option<u64>,
 }
 
 pub(crate) type Shared = Arc<App>;
