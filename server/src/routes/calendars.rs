@@ -2,8 +2,11 @@
 
 use std::collections::HashMap;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::HeaderValue;
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -171,7 +174,8 @@ pub(crate) async fn save_roads_key(State(app): State<Shared>, Parsed(request): P
 }
 
 /// When to leave for an event: `?trip=` is the trip's place in the list and `?arrive=` when
-/// the event starts, in seconds since 1970.
+/// the event starts, in seconds since 1970. With `?how=`, the same trip made another way,
+/// for comparing; the answer says which ways there are.
 pub(crate) async fn travel_plan(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
     let number = |name: &str| query.get(name).and_then(|text| text.parse::<i64>().ok());
     let (Some(which), Some(arrive)) = (number("trip"), number("arrive")) else {
@@ -179,9 +183,16 @@ pub(crate) async fn travel_plan(State(app): State<Shared>, Query(query): Query<H
     };
     let cfg = std::sync::Arc::clone(&app.cfg);
     let settings = blocking(move || store::load_settings(&cfg)).await;
-    let trip =
+    let set_up =
         usize::try_from(which).ok().and_then(|which| settings.trips.get(which)).ok_or_else(ApiError::not_found)?;
-    let plan = app.travel.plan(&app.http, settings.roads_key.as_ref(), settings.home.as_ref(), trip, arrive).await;
+    let trip = match query.get("how") {
+        None => set_up.clone(),
+        Some(how) => serde_json::from_value::<How>(json!(how))
+            .ok()
+            .and_then(|how| set_up.by(how))
+            .ok_or_else(|| ApiError::bad_request("this trip cannot be made that way"))?,
+    };
+    let plan = app.travel.plan(&app.http, settings.roads_key.as_ref(), settings.home.as_ref(), &trip, arrive).await;
     let plan = plan.map_err(|e| {
         use travel::TravelError::{KeyRefused, NoKey, NoRoute, NoStart, NotFound};
         let status = match e {
@@ -194,5 +205,18 @@ pub(crate) async fn travel_plan(State(app): State<Shared>, Query(query): Query<H
     let mut view = plan.view();
     view["how"] = json!(trip.how);
     view["margin"] = json!(trip.margin);
+    view["usual"] = json!(set_up.how);
+    view["ways"] = json!(set_up.ways(settings.roads_key.is_some()));
     Ok(Json(view))
+}
+
+/// One square of the map (OpenStreetMap's), for drawing the way to an event on. They are
+/// fetched through here, and kept, so the screen never talks to the map's keepers itself.
+pub(crate) async fn map_tile(State(app): State<Shared>, Path(square): Path<(u32, u32, u32)>) -> ApiResult<Response> {
+    let picture = app.travel.tile(&app.http, &app.cfg, square).await.map_err(|e| {
+        let status = if e == travel::TravelError::NoSuchTile { StatusCode::NOT_FOUND } else { StatusCode::BAD_GATEWAY };
+        ApiError::new(status, e.to_string())
+    })?;
+    let headers = [(CONTENT_TYPE, HeaderValue::from_static("image/png")), (CACHE_CONTROL, crate::routes::KEEP_FOREVER)];
+    Ok((headers, picture).into_response())
 }

@@ -1100,6 +1100,18 @@ impl Trip {
     pub fn is_for(&self, title: &str, place: Option<&str>) -> bool {
         self.title.as_str() == title.trim() && self.place.as_deref() == place
     }
+
+    /// The same trip made another way, for comparing. Driving to a station needs the
+    /// station, which only a trip set up that way has.
+    pub fn by(&self, how: How) -> Option<Trip> {
+        let via = if how == How::Park { Some(self.via.clone()?) } else { None };
+        Some(Trip { how, via, ..self.clone() })
+    }
+
+    /// The ways this trip could be made, with or without the driving service.
+    pub fn ways(&self, driving: bool) -> Vec<How> {
+        How::available(driving).into_iter().filter(|how| self.by(*how).is_some()).collect()
+    }
 }
 
 impl<'de> Deserialize<'de> for Trip {
@@ -1865,11 +1877,18 @@ mod tests {
         assert!(!trip.is_for("Dentist", None) && !trip.is_for("Dentist", Some("Elsewhere")));
         assert!(!trip.is_for("Dentist again", Some("12 High St")));
         assert_eq!(from_value::<Trip>(json!(trip)).unwrap(), trip, "what is saved reads back");
+        // Another way of making it, for comparing; not by a station it does not name.
+        assert_eq!(trip.by(How::Car).map(|other| (other.how, other.to == trip.to)), Some((How::Car, true)));
+        assert_eq!(trip.by(How::Park), None);
+        assert_eq!(trip.ways(true), [How::Transit, How::Walk, How::Cycle, How::Car]);
+        assert_eq!(trip.ways(false), [How::Transit, How::Walk, How::Cycle]);
 
         let park = json!({ "title": "Match", "to": "Wembley Stadium", "how": "park", "via": "Orpington station", "margin": 20, "from": "SE1 9SG" });
         let park = from_value::<Trip>(park).unwrap();
         assert_eq!((park.how, park.margin, park.place.as_deref()), (How::Park, 20, None));
         assert!(park.is_for("Match", None));
+        assert_eq!(park.ways(true).last(), Some(&How::Park));
+        assert_eq!(park.by(How::Walk).unwrap().via, None, "the station is only for driving to");
 
         for bad in [
             json!({ "title": "x", "to": "BR6 0AA", "how": "park" }),

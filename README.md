@@ -122,7 +122,12 @@ changes the time.
 
 On the Calendar tab, an event with a trip carries its "Leave by" line in the lists,
 however far off it is. Touching any event in a list opens it large, with the whole way
-there step by step. An event, calendar or trip changed from the management page reaches
+there step by step, and beside it the same trip made each of the other ways there
+are (when to leave and how long it takes), to compare; touching one shows its steps.
+Comparing changes nothing: the trip stays as it was set up. Beside the steps is a map
+with the way drawn on it, each kind of transport in its own colour (the same colour
+marks its step). The map is OpenStreetMap's; its squares are fetched through the
+frame's server and kept in `tiles/`, so each is asked for once. An event, calendar or trip changed from the management page reaches
 the frame's screen within half a minute.
 
 - **Public transport, on foot, by bicycle**: from Transport for London's journey
@@ -357,8 +362,9 @@ Routes added for the screen and calendar:
 | `GET /api/slides` | Photos the screen shows (hidden ones left out) as `[path, taken, width, height, favourite]` |
 | `POST /api/mark` | Make a photo a `favourite`, `hidden`, or neither (`null`) |
 | `POST /api/reminders` | Keep exactly these reminder rules |
-| `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list |
+| `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list; `&how=` works it out another way |
 | `POST /api/travel`, `/api/travel/key` | Keep home and the trips; keep or forget the driving key |
+| `GET /api/map/{z}/{x}/{y}` | A square of the map, fetched from OpenStreetMap once and kept |
 | `GET /api/calendar?from=&to=` | Events in a window (seconds since 1970), feed status, added events |
 | `POST /api/calendars` | Set the subscribed calendar links |
 | `POST /api/events/add`, `/api/events/delete` | Events added by hand |

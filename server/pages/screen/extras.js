@@ -214,6 +214,7 @@ async function refreshPlans(now) {
   planning = false;
   if (tab === 'calendar') drawCalendar(new Date(), true);
   drawDetail();
+  if (detailed && planKey(detailed) === key && plans[key].ways) compareWays(detailed, plans[key]);
   remind(Date.now());
 }
 
@@ -223,6 +224,104 @@ const BY = { transit: 'by public transport', walk: 'on foot', cycle: 'by bicycle
 let detailed = null;    // the event being looked at
 let detailTimer = 0;
 
+// The same trip made other ways, to compare: by event and way, { leave, arrive, steps } or { error }.
+const compared = {};
+let chosenWay = null;   // the way being looked at; null for the one the trip is set up with
+
+/// Ask the server for the ways this trip could be made other than its own, one after another.
+async function compareWays(event, plan) {
+  const ways = (plan.ways || []).filter((way) => way !== plan.usual);
+  for (let i = 0; i < ways.length; i++) {
+    const key = planKey(event) + '|' + ways[i];
+    if (compared[key] && Date.now() - compared[key].asked < PLAN_AGAIN_MS) continue;
+    compared[key] = { asked: Date.now() };
+    try {
+      const reply = await fetch('/api/travel?trip=' + event.trip + '&arrive=' + Math.floor(event.start.getTime() / 1000) + '&how=' + ways[i], { cache: 'no-store' });
+      const said = await reply.json();
+      compared[key] = Object.assign(reply.ok ? said : { error: said.error }, { asked: Date.now() });
+    } catch (error) {
+      delete compared[key];  // asked again the next time the event is opened
+    }
+    if (detailed === event) drawDetail();
+  }
+}
+
+// How each kind of stretch is drawn on the map.
+// How each kind of stretch is drawn, on the map and beside its step: [colour, dashes, what it is called].
+const STROKES = {
+  walking: ['#ffffff', '2 9', 'on foot'], cycle: ['#7ee0a1', '10 8', 'by bicycle'], drive: ['#7ee0a1', '', 'by car'],
+  bus: ['#ff6b6b', '', 'bus'], tube: ['#6cb6ff', '', 'Underground'], 'national-rail': ['#f2e36b', '', 'train'],
+  overground: ['#f2a65a', '', 'Overground'], 'elizabeth-line': ['#b48ef2', '', 'Elizabeth line'],
+  dlr: ['#5fd4d0', '', 'DLR'], tram: ['#9be36b', '', 'tram'],
+};
+const OTHER_STROKE = ['#c9ccd1', '', ''];
+const TILE = 256, DEEPEST = 17;
+let mapDrawn = '';
+
+/// Draw the way there on a map in `box`: squares of OpenStreetMap's map, fetched through the
+/// frame's server, at the deepest zoom that shows the whole way, with the way drawn over them.
+function drawMap(box, lines) {
+  const points = (lines || []).reduce((all, line) => all.concat(line.points), []);
+  document.getElementById('detail').classList.toggle('mapped', points.length > 1);
+  const wide = box.clientWidth, high = box.clientHeight;
+  const key = JSON.stringify([lines, wide, high]);
+  if (key === mapDrawn) return;
+  mapDrawn = key;
+  box.textContent = '';
+  if (points.length < 2 || !wide || !high) return;
+  // Where a place is on a map of the whole world that is one unit square.
+  const across = (point) => (point[1] + 180) / 360;
+  const down = (point) => {
+    const sine = Math.sin(point[0] * Math.PI / 180);
+    return 0.5 - Math.log((1 + sine) / (1 - sine)) / (4 * Math.PI);
+  };
+  const xs = points.map(across), ys = points.map(down);
+  const left = Math.min.apply(null, xs), right = Math.max.apply(null, xs);
+  const top = Math.min.apply(null, ys), bottom = Math.max.apply(null, ys);
+  let zoom = DEEPEST;
+  while (zoom > 1 && ((right - left) * TILE * Math.pow(2, zoom) > 0.8 * wide || (bottom - top) * TILE * Math.pow(2, zoom) > 0.8 * high)) zoom--;
+  const size = TILE * Math.pow(2, zoom), squares = Math.pow(2, zoom);
+  // The corner of the box, in the map's own dots at this zoom.
+  const fromLeft = (left + right) / 2 * size - wide / 2, fromTop = (top + bottom) / 2 * size - high / 2;
+  for (let x = Math.floor(fromLeft / TILE); x * TILE < fromLeft + wide; x++) {
+    for (let y = Math.floor(fromTop / TILE); y * TILE < fromTop + high; y++) {
+      if (y < 0 || y >= squares) continue;
+      const square = new Image();
+      square.style.left = Math.round(x * TILE - fromLeft) + 'px';
+      square.style.top = Math.round(y * TILE - fromTop) + 'px';
+      square.src = '/api/map/' + zoom + '/' + (((x % squares) + squares) % squares) + '/' + y;
+      box.appendChild(square);
+    }
+  }
+  const spot = (point) => [(across(point) * size - fromLeft).toFixed(1), (down(point) * size - fromTop).toFixed(1)];
+  let drawing = '';
+  // Each stretch twice: a dark line under a coloured one, so it reads over any part of the map.
+  [true, false].forEach((under) => {
+    lines.forEach((line) => {
+      const stroke = STROKES[line.kind] || OTHER_STROKE;
+      drawing += '<polyline fill="none" stroke-linecap="round" stroke-linejoin="round" points="' + line.points.map((p) => spot(p).join(',')).join(' ')
+        + '" stroke="' + (under ? '#14161a' : stroke[0]) + '" stroke-width="' + (under ? 9 : 5) + '"'
+        + (!under && stroke[1] ? ' stroke-dasharray="' + stroke[1] + '"' : '') + '/>';
+    });
+  });
+  const from = spot(points[0]), to = spot(points[points.length - 1]);
+  drawing += '<circle cx="' + from[0] + '" cy="' + from[1] + '" r="8" fill="#fff" stroke="#14161a" stroke-width="3"/>'
+    + '<circle cx="' + to[0] + '" cy="' + to[1] + '" r="10" fill="#ff8f85" stroke="#14161a" stroke-width="3"/>';
+  const over = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  over.setAttribute('viewBox', '0 0 ' + wide + ' ' + high);
+  over.innerHTML = drawing;
+  box.appendChild(over);
+  box.appendChild(element('div', 'credit', '© OpenStreetMap contributors'));
+}
+
+/// What one way of making the trip comes to, in a few words: when to leave and how long it takes.
+function inShort(plan) {
+  if (!plan || (typeof plan.leave !== 'number' && !plan.error)) return 'Working it out…';
+  if (plan.error) return 'No way found';
+  const takes = Math.round((plan.arrive - plan.leave) / 60) - (plan.margin || 0);
+  return 'Leave ' + clockText(new Date(plan.leave * 1000)) + '  ·  ' + takes + ' min';
+}
+
 function drawDetail() {
   const event = detailed;
   if (!event) return;
@@ -230,21 +329,49 @@ function drawDetail() {
   $('detail-what').textContent = event.title;
   $('detail-about').textContent = day + (event.allDay ? '' : '  ·  ' + clockText(event.start))
     + (event.place ? '  ·  ' + event.place : '') + (event.from ? '  ·  ' + event.from : '');
-  const plan = event.trip === null || event.allDay ? null : plans[planKey(event)];
-  const steps = $('detail-steps');
+  const usual = event.trip === null || event.allDay ? null : plans[planKey(event)];
+  const steps = $('detail-steps'), ways = $('detail-ways');
   steps.textContent = '';
-  let leave = '', more = '';
+  ways.textContent = '';
+  let leave = '', more = '', lines = [];
   if (event.trip === null || event.allDay) {
     more = event.allDay ? '' : 'No trip is set up for this. Trips are set up from a phone or computer, under Calendar, then Getting there.';
   } else if (event.start <= Date.now()) {
     more = 'It has started.';
-  } else if (plan && typeof plan.leave === 'number') {
-    leave = 'Leave by ' + clockText(new Date(plan.leave * 1000));
-    more = 'Arriving ' + clockText(new Date(plan.arrive * 1000)) + '  ·  ' + (BY[plan.how] || '')
-      + (plan.margin ? '  ·  ' + plan.margin + ' min to spare' : '');
-    (plan.steps || []).forEach((step) => steps.appendChild(element('li', '', step)));
-  } else if (plan && plan.error) {
-    more = 'The way there could not be worked out: ' + plan.error;
+  } else if (usual && (typeof usual.leave === 'number' || usual.error)) {
+    // Every way the trip could be made, side by side; the one touched is shown in full.
+    const all = usual.ways && usual.ways.length ? usual.ways : [usual.usual];
+    const way = all.indexOf(chosenWay) >= 0 ? chosenWay : usual.usual;
+    const planFor = (which) => (which === usual.usual ? usual : compared[planKey(event) + '|' + which]);
+    if (all.length > 1) {
+      all.forEach((which) => {
+        const button = element('button', 'press way' + (which === way ? ' on' : ''), '');
+        button.appendChild(element('div', 'by', (BY[which] || which) + (which === usual.usual ? '  (as set up)' : '')));
+        button.appendChild(element('div', 'short', inShort(planFor(which))));
+        button.onclick = () => { chosenWay = which; drawDetail(); };
+        ways.appendChild(button);
+      });
+    }
+    const plan = planFor(way);
+    if (plan && typeof plan.leave === 'number') {
+      leave = 'Leave by ' + clockText(new Date(plan.leave * 1000));
+      more = 'Arriving ' + clockText(new Date(plan.arrive * 1000)) + '  ·  ' + (BY[way] || '')
+        + (plan.margin ? '  ·  ' + plan.margin + ' min to spare' : '');
+      // Each step carries the colour its stretch has on the map.
+      (plan.steps || []).forEach((step, i) => {
+        const stroke = STROKES[(plan.modes || [])[i]] || OTHER_STROKE;
+        const line = element('li', '', step);
+        const mark = element('i', stroke[1] ? 'dashed' : '', '');
+        mark.style.borderColor = stroke[0];
+        line.insertBefore(mark, line.firstChild);
+        steps.appendChild(line);
+      });
+      lines = plan.lines || [];
+    } else if (plan && plan.error) {
+      more = 'This way could not be worked out: ' + plan.error;
+    } else {
+      more = 'Working out when to leave…';
+    }
   } else {
     more = 'Working out when to leave…';
     listedPlans[planKey(event)] = true;
@@ -252,14 +379,18 @@ function drawDetail() {
   }
   $('detail-leave').textContent = leave;
   $('detail-more').textContent = more;
+  drawMap($('detail-map'), lines);
 }
 
 showEvent = (event) => {
   detailed = event;
+  chosenWay = null;
+  $('detail').classList.add('on');  // in sight first: the map is measured to be drawn
   drawDetail();
-  $('detail').classList.add('on');
   clearTimeout(detailTimer);
   detailTimer = setTimeout(closeDetail, 2 * 60 * 1000);
+  const plan = event.trip === null ? null : plans[planKey(event)];
+  if (plan && plan.ways) compareWays(event, plan);
 };
 function closeDetail() {
   detailed = null;
@@ -269,6 +400,8 @@ function closeDetail() {
 $('detail-close').onclick = closeDetail;
 $('detail').addEventListener('click', (event) => {
   event.stopPropagation();
+  clearTimeout(detailTimer);
+  detailTimer = setTimeout(closeDetail, 2 * 60 * 1000);
   touched();
 });
 

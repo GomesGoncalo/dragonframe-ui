@@ -46,6 +46,32 @@ async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
     assert_eq!(plan["leave"], HALF_PAST_SIX - 93 * 60);
     assert_eq!((&plan["catch"], &plan["how"]), (&json!("17:20 Southeastern to London Bridge"), &json!("transit")));
     assert_eq!(plan["steps"].as_array().unwrap().len(), 3);
+    assert_eq!(plan["lines"][0]["kind"], "walking");
+    assert_eq!(plan["modes"], json!(["walking", "national-rail", "walking"]));
+
+    // The map the way is drawn on comes through the frame too.
+    let square = get(&app, "/api/map/10/512/341").await;
+    assert_eq!(
+        (square.status, square.content_type(), &square.body[..]),
+        (StatusCode::OK, "image/png", &b"a picture"[..])
+    );
+    assert_eq!(get(&app, "/api/map/30/0/0").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(get(&app, "/api/map/9/1/1").await.status, StatusCode::BAD_GATEWAY);
+
+    assert_eq!((&plan["usual"], &plan["ways"]), (&json!("transit"), &json!(["transit", "walk", "cycle"])));
+
+    // The same trip another way, to compare: on foot it means leaving at 17:25.
+    let on_foot = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}&how=walk")).await.json();
+    assert_eq!(
+        (&on_foot["leave"], &on_foot["how"], &on_foot["usual"]),
+        (&json!(HALF_PAST_SIX - 65 * 60), &json!("walk"), &json!("transit"))
+    );
+    let by_car = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}&how=car")).await;
+    assert_eq!(by_car.status, StatusCode::CONFLICT, "not without the key");
+    for bad in ["park", "teleport"] {
+        let reply = get(&app, &format!("/api/travel?trip=0&arrive={HALF_PAST_SIX}&how={bad}")).await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
 
     assert_eq!(get(&app, "/api/travel?trip=1&arrive=1").await.status, StatusCode::NOT_FOUND, "no such trip");
     assert_eq!(get(&app, "/api/travel?trip=0").await.status, StatusCode::BAD_REQUEST);

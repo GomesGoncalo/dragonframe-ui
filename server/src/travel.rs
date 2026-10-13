@@ -27,6 +27,14 @@ pub const JOURNEYS_URL: &str = "https://api.tfl.gov.uk/Journey/JourneyResults";
 pub const ROADS_URL: &str = "https://api.tomtom.com/routing/1/calculateRoute";
 pub const POSTCODES_URL: &str = "https://api.postcodes.io/postcodes";
 pub const ADDRESSES_URL: &str = "https://nominatim.openstreetmap.org/search";
+pub const TILES_URL: &str = "https://tile.openstreetmap.org";
+/// The deepest the map zooms, and how many of its squares are kept on the frame.
+const DEEPEST_ZOOM: u32 = 18;
+const MOST_TILES_KEPT: usize = 1500;
+/// A line on the map is drawn with at most this many points.
+const MOST_POINTS: usize = 250;
+/// What a stretch by car is called, beside the journey planner's own words for the rest.
+const DRIVE: &str = "drive";
 /// OpenStreetMap's search asks every program that uses it to say what it is.
 const WHO_ASKS: &str = "frameserver (a photo frame at home)";
 /// What public transport's planner may use between two places.
@@ -57,6 +65,8 @@ pub enum TravelError {
     NoStart,
     #[error("trips by car need a key for the driving service")]
     NoKey,
+    #[error("there is no such square of the map")]
+    NoSuchTile,
 }
 
 impl From<reqwest::Error> for TravelError {
@@ -73,8 +83,31 @@ struct Point {
     longitude: f64,
 }
 
+/// A stretch of a journey as a line on the map.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Line {
+    /// How that stretch is made: `drive`, or what the journey planner calls it (`walking`,
+    /// `bus`, `tube`, `national-rail` and so on). Each is drawn in its own colour.
+    pub kind: String,
+    /// Where it goes, as latitude and longitude.
+    pub points: Vec<[f64; 2]>,
+}
+
+impl Line {
+    /// A line through these points, thinned if there are more than are worth drawing.
+    fn through(kind: &str, points: &[[f64; 2]]) -> Option<Line> {
+        let every = points.len().div_ceil(MOST_POINTS).max(1);
+        let last = points.last()?;
+        let mut thinned: Vec<[f64; 2]> = points.iter().step_by(every).copied().collect();
+        if thinned.last() != Some(last) {
+            thinned.push(*last);
+        }
+        (thinned.len() > 1).then(|| Line { kind: kind.to_string(), points: thinned })
+    }
+}
+
 /// When to leave for an event, and how the journey goes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Plan {
     /// When to leave, in seconds since 1970, time to spare included.
     pub leave: i64,
@@ -84,11 +117,20 @@ pub struct Plan {
     pub steps: Vec<String>,
     /// What there is to catch first, with its time: "17:20 Southeastern to London Bridge".
     pub catch: Option<String>,
+    /// How each step is made, one for one with `steps`, in the words `Line::kind` uses.
+    pub modes: Vec<String>,
+    /// The way there, for drawing on a map.
+    pub lines: Vec<Line>,
 }
 
 impl Plan {
     pub fn view(&self) -> Value {
-        json!({ "leave": self.leave, "arrive": self.arrive, "steps": self.steps, "catch": self.catch })
+        let lines: Vec<Value> =
+            self.lines.iter().map(|line| json!({ "kind": line.kind, "points": line.points })).collect();
+        json!({
+            "leave": self.leave, "arrive": self.arrive, "steps": self.steps, "modes": self.modes,
+            "catch": self.catch, "lines": lines,
+        })
     }
 }
 
@@ -97,7 +139,9 @@ struct Journey {
     start: i64,
     arrival: i64,
     steps: Vec<String>,
+    modes: Vec<String>,
     catch: Option<String>,
+    lines: Vec<Line>,
 }
 
 /// A time as the planner writes it: `2026-10-14T17:07:00`, on London's clocks.
@@ -129,6 +173,15 @@ struct Leg {
     departure: NaiveDateTime,
     instruction: Instruction,
     mode: Named,
+    #[serde(default)]
+    path: Option<LegPath>,
+}
+
+#[derive(Deserialize)]
+struct LegPath {
+    /// The planner writes the line as text holding a list of `[latitude, longitude]`.
+    #[serde(rename = "lineString", default)]
+    line: String,
 }
 
 #[derive(Deserialize)]
@@ -168,6 +221,14 @@ struct Driven {
 #[derive(Deserialize)]
 struct Route {
     summary: RouteSummary,
+    #[serde(default)]
+    legs: Vec<RouteLeg>,
+}
+
+#[derive(Deserialize)]
+struct RouteLeg {
+    #[serde(default)]
+    points: Vec<Coordinates>,
 }
 
 #[derive(Deserialize)]
@@ -183,6 +244,7 @@ pub struct Services {
     pub roads: String,
     pub postcodes: String,
     pub addresses: String,
+    pub tiles: String,
 }
 
 impl Default for Services {
@@ -192,6 +254,7 @@ impl Default for Services {
             roads: ROADS_URL.into(),
             postcodes: POSTCODES_URL.into(),
             addresses: ADDRESSES_URL.into(),
+            tiles: TILES_URL.into(),
         }
     }
 }
@@ -283,7 +346,13 @@ impl Travel {
         let best = in_time.or_else(|| planned.journeys.iter().min_by_key(|j| j.arrival)).ok_or(TravelError::NoRoute)?;
         let steps = best.legs.iter().map(|leg| format!("{} ({} min)", leg.instruction.summary, leg.duration));
         let catch = best.legs.iter().find(|leg| !matches!(leg.mode.id.as_str(), "walking" | "cycle"));
+        let lines = best.legs.iter().filter_map(|leg| {
+            let points: Vec<[f64; 2]> = serde_json::from_str(&leg.path.as_ref()?.line).ok()?;
+            Line::through(&leg.mode.id, &points)
+        });
         Ok(Journey {
+            lines: lines.collect(),
+            modes: best.legs.iter().map(|leg| leg.mode.id.clone()).collect(),
             start: in_london(best.start),
             arrival: in_london(best.arrival),
             steps: steps.collect(),
@@ -291,14 +360,14 @@ impl Travel {
         })
     }
 
-    /// How many seconds the drive between two places takes when arriving at `arrive`.
+    /// How many seconds the drive between two places takes when arriving at `arrive`, and the way it goes.
     async fn drive(
         &self,
         http: &reqwest::Client,
         key: &RoadsKey,
         (from, to): (Point, Point),
         arrive: i64,
-    ) -> Result<i64, TravelError> {
+    ) -> Result<(i64, Option<Line>), TravelError> {
         let url = format!(
             "{}/{},{}:{},{}/json",
             self.services.roads, from.latitude, from.longitude, to.latitude, to.longitude
@@ -306,7 +375,10 @@ impl Travel {
         let by = moment(arrive).format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let asked = [("key", key.as_str()), ("arriveAt", by.as_str()), ("travelMode", "car")];
         let driven: Driven = fetch(http.get(url).query(&asked)).await?;
-        driven.routes.first().map(|route| route.summary.seconds).ok_or(TravelError::NoRoute)
+        let route = driven.routes.first().ok_or(TravelError::NoRoute)?;
+        let points: Vec<[f64; 2]> =
+            route.legs.iter().flat_map(|leg| &leg.points).map(|at| [at.latitude, at.longitude]).collect();
+        Ok((route.summary.seconds, Line::through(DRIVE, &points)))
     }
 
     async fn work_out(
@@ -323,18 +395,22 @@ impl Travel {
         let spare = i64::from(trip.margin) * 60;
         match (trip.how, key, &trip.via) {
             (How::Car, Some(key), _) => {
-                let seconds = self.drive(http, key, (from, to), arrive).await?;
+                let (seconds, line) = self.drive(http, key, (from, to), arrive).await?;
                 let steps = vec![format!("Drive ({} min)", minutes(seconds))];
-                Ok(Plan { leave: arrive - seconds - spare, arrive, steps, catch: None })
+                let (lines, modes) = (line.into_iter().collect(), vec![DRIVE.to_string()]);
+                Ok(Plan { leave: arrive - seconds - spare, arrive, steps, modes, catch: None, lines })
             }
             (How::Park, Some(key), Some(station)) => {
                 let at = self.locate(http, station).await?;
                 let onward = self.journey(http, (at, to), PUBLIC_TRANSPORT, arrive).await?;
                 let parked = onward.start - PARKING_MINUTES * 60;
-                let seconds = self.drive(http, key, (from, at), parked).await?;
+                let (seconds, line) = self.drive(http, key, (from, at), parked).await?;
                 let mut steps = vec![format!("Drive to {} ({} min)", station.as_str(), minutes(seconds))];
                 steps.extend(onward.steps);
-                Ok(Plan { leave: parked - seconds - spare, arrive: onward.arrival, steps, catch: onward.catch })
+                let modes = std::iter::once(DRIVE.to_string()).chain(onward.modes).collect();
+                let lines = line.into_iter().chain(onward.lines).collect();
+                let (leave, arrive) = (parked - seconds - spare, onward.arrival);
+                Ok(Plan { leave, arrive, steps, modes, catch: onward.catch, lines })
             }
             (how, _, _) => {
                 let modes = match how {
@@ -343,9 +419,47 @@ impl Travel {
                     _ => PUBLIC_TRANSPORT,
                 };
                 let found = self.journey(http, (from, to), modes, arrive).await?;
-                Ok(Plan { leave: found.start - spare, arrive: found.arrival, steps: found.steps, catch: found.catch })
+                let Journey { start, arrival, steps, modes, catch, lines } = found;
+                Ok(Plan { leave: start - spare, arrive: arrival, steps, modes, catch, lines })
             }
         }
+    }
+
+    /// One square of the map, as a PNG picture: square `x`, `y` of zoom `z`, as map makers
+    /// number them. Squares are kept on the frame, so each is fetched from the map's
+    /// keepers once.
+    pub async fn tile(
+        &self,
+        http: &reqwest::Client,
+        cfg: &std::sync::Arc<crate::store::Config>,
+        (z, x, y): (u32, u32, u32),
+    ) -> Result<Vec<u8>, TravelError> {
+        if z > DEEPEST_ZOOM || x >= 1 << z || y >= 1 << z {
+            return Err(TravelError::NoSuchTile);
+        }
+        let folder = cfg.data_dir.join("tiles");
+        let kept = folder.join(format!("{z}-{x}-{y}.png"));
+        let at = kept.clone();
+        if let Some(picture) = crate::app::blocking(move || std::fs::read(at).ok()).await {
+            return Ok(picture);
+        }
+        let request = http.get(format!("{}/{z}/{x}/{y}.png", self.services.tiles)).header("User-Agent", WHO_ASKS);
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            return Err(TravelError::Refused(response.status().as_u16()));
+        }
+        let picture = response.bytes().await?.to_vec();
+        let keep = picture.clone();
+        crate::app::blocking(move || {
+            // Starting again when there are very many is simpler than choosing which to drop.
+            if std::fs::read_dir(&folder).is_ok_and(|squares| squares.count() >= MOST_TILES_KEPT) {
+                let _ = std::fs::remove_dir_all(&folder);
+            }
+            let _ = std::fs::create_dir_all(&folder);
+            let _ = crate::store::write_atomically(&kept, &keep);
+        })
+        .await;
+        Ok(picture)
     }
 
     /// When to leave for something that starts at `arrive`, making the trip as it says.
@@ -436,7 +550,9 @@ pub mod testing {
                 ("51.37,0.09", "51.5,-0.09", _) => axum::Json(json!({ "journeys": [
                     { "startDateTime": at("16:50"), "arrivalDateTime": at("17:27"), "legs": [] },
                     { "startDateTime": at("17:07"), "arrivalDateTime": at("17:44"), "legs": [
-                        leg("walking", 13, &at("17:07"), "Walk to Orpington Station"),
+                        json!({ "duration": 13, "departureTime": at("17:07"), "mode": { "id": "walking" },
+                            "instruction": { "summary": "Walk to Orpington Station" },
+                            "path": { "lineString": "[[51.37, 0.09],[51.372, 0.0895],[51.373, 0.089]]" } }),
                         leg("national-rail", 15, &at("17:20"), "Southeastern to London Bridge"),
                         leg("walking", 9, &at("17:35"), "Walk to SE1 9SG"),
                     ] },
@@ -458,22 +574,35 @@ pub mod testing {
                 return StatusCode::FORBIDDEN.into_response();
             }
             let seconds = if ends.ends_with(":51.373,0.089") { 8 * 60 } else { 43 * 60 };
-            axum::Json(
-                json!({ "routes": [{ "summary": { "travelTimeInSeconds": seconds, "arriveAt": asked["arriveAt"] } }] }),
-            )
+            let points = json!([{ "latitude": 51.37, "longitude": 0.09 }, { "latitude": 51.5, "longitude": -0.09 }]);
+            axum::Json(json!({ "routes": [{
+                "summary": { "travelTimeInSeconds": seconds, "arriveAt": asked["arriveAt"] },
+                "legs": [{ "points": points }],
+            }] }))
             .into_response()
         };
         let app = Router::new()
             .route("/postcodes/{code}", get(postcodes))
             .route("/addresses", get(addresses))
             .route("/journeys/{from}/to/{to}", get(journeys))
-            .route("/roads/{ends}/json", get(roads));
+            .route("/roads/{ends}/json", get(roads))
+            .route(
+                "/tiles/{z}/{x}/{y}",
+                get(|Path((z, _, _)): Path<(u32, u32, String)>| async move {
+                    if z == 9 {
+                        StatusCode::SERVICE_UNAVAILABLE.into_response()
+                    } else {
+                        "a picture".into_response()
+                    }
+                }),
+            );
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         Services {
             journeys: format!("{base}/journeys"),
             roads: format!("{base}/roads"),
             postcodes: format!("{base}/postcodes"),
             addresses: format!("{base}/addresses"),
+            tiles: format!("{base}/tiles"),
         }
     }
 }
@@ -508,6 +637,11 @@ mod tests {
         assert_eq!(plan.catch.as_deref(), Some("17:20 Southeastern to London Bridge"));
         assert_eq!(plan.steps[0], "Walk to Orpington Station (13 min)");
         assert_eq!(plan.steps.len(), 3);
+        // The way there for the map: the stretch the planner drew.
+        assert_eq!(plan.lines.len(), 1);
+        assert_eq!((plan.lines[0].kind.as_str(), plan.lines[0].points.len()), ("walking", 3));
+        assert_eq!(plan.modes, ["walking", "national-rail", "walking"], "one for each step");
+        assert_eq!(plan.view()["lines"][0]["points"][0], json!([51.37, 0.09]));
 
         let on_foot =
             travel.plan(&http, None, home.as_ref(), &trip("walk", "SE1 9SG", &json!({})), HALF_PAST_SIX).await;
@@ -528,7 +662,9 @@ mod tests {
         assert_eq!(refused, Err(TravelError::KeyRefused));
 
         let plan = travel.plan(&http, key.as_ref(), home.as_ref(), &by_car, HALF_PAST_SIX).await.unwrap();
-        assert_eq!((london(plan.leave), plan.steps), ("17:47".into(), vec!["Drive (43 min)".to_string()]));
+        assert_eq!((london(plan.leave), &plan.steps), ("17:47".into(), &vec!["Drive (43 min)".to_string()]));
+        assert_eq!(plan.lines, [Line { kind: "drive".into(), points: vec![[51.37, 0.09], [51.5, -0.09]] }]);
+        assert_eq!(plan.modes, ["drive"]);
 
         // To the station by car, five minutes to park, and on by the 16:30 train.
         let park = trip("park", "Wembley Stadium", &json!({ "via": "Orpington station" }));
@@ -536,6 +672,7 @@ mod tests {
         assert_eq!((london(plan.leave), london(plan.arrive)), ("16:07".into(), "17:50".into()));
         assert_eq!(plan.steps, ["Drive to Orpington station (8 min)", "Southeastern to Charing Cross (80 min)"]);
         assert_eq!(plan.catch.as_deref(), Some("16:30 Southeastern to Charing Cross"));
+        assert_eq!(plan.modes, ["drive", "national-rail"]);
     }
 
     #[tokio::test]
@@ -583,5 +720,37 @@ mod tests {
         assert!(matches!(stale, TravelError::Unreachable(_)), "{stale}");
         // Another time to arrive is another plan.
         assert!(gone.plan(&http, None, home.as_ref(), &to_town, HALF_PAST_SIX + 3600).await.is_err());
+    }
+
+    #[test]
+    fn a_long_line_is_thinned_but_keeps_both_its_ends() {
+        let long: Vec<[f64; 2]> = (0..1001).map(|n| [f64::from(n), 0.0]).collect();
+        let line = Line::through("drive", &long).unwrap();
+        assert!(line.points.len() <= MOST_POINTS + 1, "{}", line.points.len());
+        assert_eq!((line.points[0], line.points.last()), ([0.0, 0.0], Some(&[1000.0, 0.0])));
+        assert_eq!(Line::through("walk", &long[..3]).unwrap().points.len(), 3);
+        assert_eq!(Line::through("walk", &long[..1]), None);
+        assert_eq!(Line::through("walk", &[]), None);
+    }
+
+    #[tokio::test]
+    async fn a_square_of_the_map_is_fetched_once_and_kept() {
+        let frame = crate::store::testing::TempFrame::new("tiles");
+        let cfg = std::sync::Arc::new(crate::store::Config {
+            cloud_dir: frame.0.cloud_dir.clone(),
+            data_dir: frame.0.data_dir.clone(),
+        });
+        let services = testing::services().await;
+        let (travel, http) = (Travel::new(services.clone()), reqwest::Client::new());
+        assert_eq!(travel.tile(&http, &cfg, (10, 512, 341)).await.unwrap(), b"a picture");
+        assert!(cfg.data_dir.join("tiles/10-512-341.png").is_file());
+        // Kept: it is still had when the map's keepers cannot be reached.
+        let gone = Travel::new(Services { tiles: "http://127.0.0.1:1".into(), ..services });
+        assert_eq!(gone.tile(&http, &cfg, (10, 512, 341)).await.unwrap(), b"a picture");
+        assert!(matches!(gone.tile(&http, &cfg, (10, 0, 0)).await, Err(TravelError::Unreachable(_))));
+        assert_eq!(travel.tile(&http, &cfg, (9, 1, 1)).await, Err(TravelError::Refused(503)));
+        for nowhere in [(19, 0, 0), (2, 4, 0), (2, 0, 4)] {
+            assert_eq!(travel.tile(&http, &cfg, nowhere).await, Err(TravelError::NoSuchTile), "{nowhere:?}");
+        }
     }
 }
