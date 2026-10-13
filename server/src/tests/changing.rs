@@ -189,3 +189,42 @@ async fn sync_needs_album_links_and_refuses_to_run_twice() {
         (StatusCode::CONFLICT, Some("a sync is already running"))
     );
 }
+
+#[tokio::test]
+async fn a_photo_can_be_made_a_favourite_or_hidden_and_a_hidden_one_is_left_out_of_the_slideshow() {
+    let (app, frame) = app("marks");
+    let other = "frame-sync/fs_fedcba9876543210.jpg";
+    frame.put(SYNCED, b"x");
+    frame.put(other, b"y");
+    let slide = |slides: &Value, photo: &str| {
+        slides["photos"].as_array().unwrap().iter().find(|slide| slide[0] == photo).map(|slide| slide[4].clone())
+    };
+    let mark = |photo: &str, mark: &str| format!(r#"{{"photo":"{photo}","mark":{mark}}}"#);
+
+    let reply = post(&app, "/api/mark", &mark(SYNCED, r#""favourite""#)).await;
+    assert_eq!((reply.status, reply.json()), (StatusCode::OK, json!({ "photo": SYNCED, "mark": "favourite" })));
+    let slides = get(&app, "/api/slides").await.json();
+    assert_eq!((slide(&slides, SYNCED), slide(&slides, other)), (Some(json!(true)), Some(json!(false))));
+
+    // Hidden, it is off the frame's screen but still listed for whoever manages the photos.
+    post(&app, "/api/mark", &mark(SYNCED, r#""hidden""#)).await;
+    assert_eq!(slide(&get(&app, "/api/slides").await.json(), SYNCED), None);
+    let state = get(&app, "/api/state?full=1").await.json();
+    let listed = state["photos"].as_array().unwrap();
+    assert_eq!(listed.iter().find(|photo| photo[0] == SYNCED).unwrap()[4], "hidden");
+    assert_eq!(listed.iter().find(|photo| photo[0] == other).unwrap()[4], Value::Null);
+
+    post(&app, "/api/mark", &mark(SYNCED, "null")).await;
+    assert_eq!(slide(&get(&app, "/api/slides").await.json(), SYNCED), Some(json!(false)));
+
+    // A mark needs a photo that is there, and goes when its photo does.
+    assert_eq!(
+        post(&app, "/api/mark", &mark("frame-sync/fs_0000000000000000.jpg", "null")).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(post(&app, "/api/mark", &mark(SYNCED, r#""loved""#)).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(post(&app, "/api/mark", &mark("../settings.json", "null")).await.status, StatusCode::BAD_REQUEST);
+    post(&app, "/api/mark", &mark(other, r#""favourite""#)).await;
+    post(&app, "/api/delete", &format!(r#"{{"paths":["{other}"]}}"#)).await;
+    assert!(app.marks.all().is_empty());
+}

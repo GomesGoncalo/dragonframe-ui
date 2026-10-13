@@ -221,3 +221,40 @@ async fn recent_log_lines_are_served_as_text() {
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!((lines.len(), lines[0], lines[499]), (500, "line 101", "line 600"));
 }
+
+#[tokio::test]
+async fn reminder_rules_are_kept_and_each_event_says_which_rules_are_about_it() {
+    let (app, _frame) = app("reminders");
+    assert_eq!(get(&app, "/api/calendar").await.json()["reminders"], json!([]));
+    post(&app, "/api/events/add", r#"{"title":"Black bin","day":"2026-10-01","time":null,"repeat":"weekly"}"#).await;
+    post(&app, "/api/events/add", r#"{"title":"Robin's swimming","day":"2026-10-13","time":"16:00"}"#).await;
+
+    let rules = json!([
+        { "words": "bin, recycling", "when": { "days": 1, "at": "19:00" }, "say": "Put the bins out", "chime": true },
+        { "words": "Swimming", "when": { "minutes": 45 }, "say": null, "chime": false },
+    ]);
+    let saved = post(&app, "/api/reminders", &json!({ "rules": rules }).to_string()).await;
+    assert_eq!((saved.status, saved.json()), (StatusCode::OK, json!({ "reminders": 2 })));
+
+    let calendar = get(&app, &format!("/api/calendar?{OCTOBER_2026}")).await.json();
+    assert_eq!(calendar["reminders"], rules);
+    for event in calendar["events"].as_array().unwrap() {
+        let about = if event["title"] == "Black bin" { json!([0]) } else { json!([1]) };
+        assert_eq!(event["remind"], about, "{event}");
+    }
+    // The frame's screen is told the rules whenever it reports in.
+    assert_eq!(get(&app, "/api/alive").await.json()["reminders"], rules);
+    assert_eq!(get(&app, "/api/device").await.json()["reminders"], rules);
+
+    for bad in [
+        r#"{"rules":[{"words":"","when":{"minutes":5}}]}"#,
+        r#"{"rules":[{"words":"bin","when":{"days":1}}]}"#,
+        r#"{"rules":[{"words":"bin"}]}"#,
+        "{}",
+    ] {
+        assert_eq!(post(&app, "/api/reminders", bad).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    assert_eq!(get(&app, "/api/calendar").await.json()["reminders"], rules, "a refused change changes nothing");
+    post(&app, "/api/reminders", r#"{"rules":[]}"#).await;
+    assert_eq!(get(&app, "/api/calendar").await.json()["reminders"], json!([]));
+}

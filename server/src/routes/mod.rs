@@ -21,7 +21,7 @@ use tracing::{debug, warn};
 
 use crate::app::{blocking, Shared};
 use crate::routes::access::{change_pin, lock, unlock};
-use crate::routes::calendars::{add_event, calendar_view, delete_event, save_calendars};
+use crate::routes::calendars::{add_event, calendar_view, delete_event, save_calendars, save_reminders};
 use crate::routes::frame::{
     address_code, alive, device_view, forget_place, open_wifi_settings, set_chime, set_night, set_place, set_screen,
     set_slideshow, weather_view,
@@ -29,7 +29,7 @@ use crate::routes::frame::{
 use crate::routes::home::{forget_home, home_picture, home_report, home_view, keep_home_picture, new_home_key};
 use crate::routes::pages::{frame_screen, logs, page, simulator};
 use crate::routes::photos::{
-    add, analyse, delete, duplicates, empty_bin, file, forget_emptied, refresh_slideshow, restore, save_albums,
+    add, analyse, delete, duplicates, empty_bin, file, forget_emptied, mark, refresh_slideshow, restore, save_albums,
     set_daily_sync, slides, state, status, sync, thumb, watching,
 };
 use crate::{auth, store};
@@ -171,6 +171,7 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/calendars", post(save_calendars))
         .route("/api/events/add", post(add_event))
         .route("/api/events/delete", post(delete_event))
+        .route("/api/reminders", post(save_reminders))
         .route("/api/device", get(device_view))
         .route("/api/address.svg", get(address_code))
         .route("/api/alive", get(alive))
@@ -192,6 +193,7 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/watching", post(watching))
         .route("/api/add", post(add))
         .route("/api/delete", post(delete))
+        .route("/api/mark", post(mark))
         .route("/api/restore", post(restore))
         .route("/api/empty-bin", post(empty_bin))
         .route("/api/forget-emptied", post(forget_emptied))

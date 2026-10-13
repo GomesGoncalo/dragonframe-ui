@@ -679,6 +679,42 @@ pub enum Order {
     Newest,
 }
 
+/// Which photos the slideshow shows: all of them, the favourites, or those taken in one year.
+/// Written `"all"`, `"favourites"` or `{"year": 2023}`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Show {
+    #[default]
+    All,
+    Favourites,
+    Year(Year),
+}
+
+/// A year photos could have been taken in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Year(u16);
+
+impl<'de> Deserialize<'de> for Year {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let year = u64::deserialize(deserializer)?;
+        u16::try_from(year)
+            .ok()
+            .filter(|year| (1900..=2200).contains(year))
+            .map(Year)
+            .ok_or_else(|| de::Error::custom("not a year photos are from"))
+    }
+}
+
+/// What someone has said about a photo: that it is a favourite, or that the frame should
+/// not show it. A hidden photo stays on the frame and can be shown again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mark {
+    Favourite,
+    Hidden,
+}
+
 /// How long each screen of photos stays up: 5 seconds to an hour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
@@ -722,6 +758,9 @@ pub struct Slideshow {
     /// When the Calendar or Settings tab is left open, the screen goes back to Pictures.
     #[serde(default)]
     pub home_after: Rest,
+    /// Which of the photos are shown.
+    #[serde(default)]
+    pub show: Show,
 }
 
 /// How many minutes a tab other than Pictures may be left alone before the screen goes back
@@ -761,6 +800,7 @@ impl Default for Slideshow {
             morning: true,
             weather: true,
             home_after: Rest::default(),
+            show: Show::default(),
         }
     }
 }
@@ -827,6 +867,113 @@ impl<'de> Deserialize<'de> for Chime {
         }
     }
 }
+
+/// A rule that turns calendar events into reminders on the frame: every event whose name has
+/// one of the rule's words gets a note on the screen some time before it, which stays until
+/// it is touched away or the event is over.
+///
+/// "Bin day" is one use (words `bin, recycling`, the evening before at 19:00); anything else
+/// that comes round on a calendar is another rule.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Reminder {
+    pub words: Words,
+    pub when: Ahead,
+    /// What the note says; without it, the event's own name.
+    #[serde(default)]
+    pub say: Option<Title>,
+    /// Whether the note comes with a chime.
+    #[serde(default)]
+    pub chime: bool,
+}
+
+/// The words a reminder looks for in the names of events: one to eight words or phrases,
+/// written with commas between them. Capitals do not matter, and only whole words count,
+/// give or take a plural: `bin` finds "Black bin" and "Bins out" but not "Robin".
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Words(String);
+
+impl Words {
+    const MOST: usize = 8;
+
+    pub fn parse(text: &str) -> Option<Words> {
+        let words: Vec<&str> = text.split(',').map(str::trim).filter(|word| !word.is_empty()).collect();
+        let usable = (1..=Self::MOST).contains(&words.len())
+            && words.iter().all(|word| word.chars().count() <= 40 && !word.contains(char::is_control));
+        usable.then(|| Words(words.join(", ")))
+    }
+
+    /// Whether an event with this name is one the rule is about.
+    pub fn found_in(&self, title: &str) -> bool {
+        let title = title.to_lowercase();
+        let letter = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        self.0.split(", ").map(str::to_lowercase).any(|word| {
+            title.match_indices(&word).any(|(at, _)| {
+                let after = &title[at + word.len()..];
+                let after = after.strip_prefix("es").filter(|rest| !letter(rest.chars().next())).unwrap_or(after);
+                let after = after.strip_prefix('s').filter(|rest| !letter(rest.chars().next())).unwrap_or(after);
+                !letter(title[..at].chars().next_back()) && !letter(after.chars().next())
+            })
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Words {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Words::parse(&text).ok_or_else(|| {
+            de::Error::custom("a reminder needs one to eight words to look for, with commas between them")
+        })
+    }
+}
+
+/// How long before an event its reminder comes: so many minutes before it starts (at most a
+/// day), or at a time of day so many days before (0 for the day itself, at most 14).
+/// Written `{"minutes": 30}` or `{"days": 1, "at": "19:00"}`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ahead {
+    Minutes(u16),
+    Days { days: u8, at: ClockTime },
+}
+
+impl Ahead {
+    const MOST_MINUTES: u64 = 24 * 60;
+    const MOST_DAYS: u64 = 14;
+}
+
+impl Serialize for Ahead {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Ahead::Minutes(minutes) => serde_json::json!({ "minutes": minutes }).serialize(serializer),
+            Ahead::Days { days, at } => serde_json::json!({ "days": days, "at": at }).serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Ahead {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            minutes: Option<u64>,
+            days: Option<u64>,
+            at: Option<ClockTime>,
+        }
+        match Raw::deserialize(deserializer)? {
+            Raw { minutes: Some(minutes), days: None, at: None } if minutes <= Ahead::MOST_MINUTES => {
+                Ok(Ahead::Minutes(u16::try_from(minutes).unwrap_or(0)))
+            }
+            Raw { minutes: None, days: Some(days), at: Some(at) } if days <= Ahead::MOST_DAYS => {
+                Ok(Ahead::Days { days: u8::try_from(days).unwrap_or(0), at })
+            }
+            _ => Err(de::Error::custom(
+                "a reminder comes up to 1440 minutes before an event, or at a time of day up to 14 days before",
+            )),
+        }
+    }
+}
+
+/// The reminder rules: at most twenty.
+pub type Reminders = Bounded<Reminder, 0, 20>;
 
 /// A place on the map, for the weather.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1149,7 +1296,7 @@ mod tests {
         assert_eq!(from_value::<Screen>(json!("new")).unwrap(), Screen::New);
         assert_eq!(json!(Screen::Legacy), json!("legacy"));
         assert!(from_value::<Screen>(json!("shiny")).is_err());
-        let usual = json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5 });
+        let usual = json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5, "show": "all" });
         assert_eq!(json!(Slideshow::default()), usual);
         let chosen = from_value::<Slideshow>(json!({ "every": 60, "order": "newest", "memories": false })).unwrap();
         let expected =
@@ -1450,5 +1597,74 @@ mod tests {
         assert_eq!(Likeness::from_query(Some("99")).bits(), 10);
         assert_eq!(Likeness::from_query(Some("junk")).bits(), 0);
         assert_eq!(Likeness::from_query(Some("-1")).bits(), 0);
+    }
+
+    #[test]
+    fn what_the_slideshow_shows_is_all_favourites_or_a_year() {
+        assert_eq!(from_value::<Show>(json!("all")).unwrap(), Show::All);
+        assert_eq!(from_value::<Show>(json!("favourites")).unwrap(), Show::Favourites);
+        let year = from_value::<Show>(json!({ "year": 2023 })).unwrap();
+        assert_eq!(json!(year), json!({ "year": 2023 }));
+        for bad in [json!({ "year": 23 }), json!({ "year": "2023" }), json!("hidden"), json!({ "album": 1 })] {
+            assert!(from_value::<Show>(bad.clone()).is_err(), "{bad}");
+        }
+        // A slideshow saved before there was a choice shows everything.
+        assert_eq!(from_value::<Slideshow>(json!({ "every": 30 })).unwrap().show, Show::All);
+    }
+
+    #[test]
+    fn a_mark_is_favourite_or_hidden() {
+        assert_eq!(from_value::<Mark>(json!("favourite")).unwrap(), Mark::Favourite);
+        assert_eq!(json!(Mark::Hidden), json!("hidden"));
+        assert!(from_value::<Mark>(json!("loved")).is_err());
+    }
+
+    #[test]
+    fn reminder_words_are_whole_words_whatever_their_capitals() {
+        let words = Words::parse(" Bin ,recycling,, food waste ").unwrap();
+        assert_eq!(json!(words), json!("bin, recycling, food waste".replace("bin", "Bin")));
+        let found = ["Black bin", "BIN day", "bin", "Recycling (blue box)", "Garden and food waste today", "bin/box"];
+        for title in found.into_iter().chain(["Bins out", "Put out the bins!", "Food wastes"]) {
+            assert!(words.found_in(title), "{title:?}");
+        }
+        for title in ["Robin's party", "Cabinet meeting", "Binsy", "Bingo", "Food and waste", ""] {
+            assert!(!words.found_in(title), "{title:?}");
+        }
+        assert!(Words::parse("café").unwrap().found_in("CAFÉ with Ana"));
+        assert!(Words::parse("box").unwrap().found_in("Blue boxes"));
+
+        let too_many = ["word"; 9].join(",");
+        let too_long = "x".repeat(41);
+        for bad in ["", " , ,", too_many.as_str(), too_long.as_str(), "a\u{7}b"] {
+            assert_eq!(Words::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_reminder_comes_minutes_before_or_at_a_time_some_days_before() {
+        let minutes = from_value::<Ahead>(json!({ "minutes": 30 })).unwrap();
+        assert_eq!(minutes, Ahead::Minutes(30));
+        assert_eq!(json!(minutes), json!({ "minutes": 30 }));
+        let evening = from_value::<Ahead>(json!({ "days": 1, "at": "19:00" })).unwrap();
+        assert_eq!(json!(evening), json!({ "days": 1, "at": "19:00" }));
+        assert!(from_value::<Ahead>(json!({ "days": 0, "at": "07:30" })).is_ok());
+        for bad in [
+            json!({}),
+            json!({ "minutes": 1441 }),
+            json!({ "days": 15, "at": "19:00" }),
+            json!({ "days": 1 }),
+            json!({ "at": "19:00" }),
+            json!({ "minutes": 5, "days": 1, "at": "19:00" }),
+            json!({ "days": 1, "at": "7pm" }),
+        ] {
+            assert!(from_value::<Ahead>(bad.clone()).is_err(), "{bad}");
+        }
+
+        let rule = from_value::<Reminder>(json!({ "words": "bin", "when": { "minutes": 0 } })).unwrap();
+        assert_eq!((rule.say, rule.chime), (None, false));
+        assert!(from_value::<Reminder>(json!({ "words": "", "when": { "minutes": 0 } })).is_err());
+        assert!(from_value::<Reminder>(json!({ "words": "bin", "when": { "minutes": 0 }, "say": "" })).is_err());
+        let many: Vec<_> = (0..21).map(|_| json!({ "words": "bin", "when": { "minutes": 0 } })).collect();
+        assert!(from_value::<Reminders>(json!(many)).is_err());
     }
 }

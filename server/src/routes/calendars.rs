@@ -11,12 +11,17 @@ use tracing::info;
 
 use crate::app::{blocking, now_secs, Shared};
 use crate::routes::{header, ApiError, ApiResult, Parsed};
-use crate::types::{CalendarLinks, EventId, Window};
+use crate::types::{CalendarLinks, EventId, Reminders, Window};
 use crate::{auth, calendar, store};
 
 #[derive(Deserialize)]
 pub(crate) struct CalendarsRequest {
     pub(crate) links: CalendarLinks,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RemindersRequest {
+    pub(crate) rules: Reminders,
 }
 
 #[derive(Deserialize)]
@@ -37,11 +42,22 @@ pub(crate) async fn calendar_view(
     Json(
         blocking(move || {
             // Calendar links are secrets: only someone who may change them gets to read them.
-            let may_change = auth::allowed(&store::load_settings(&app.cfg), token.as_deref());
+            let settings = store::load_settings(&app.cfg);
+            let may_change = auth::allowed(&settings, token.as_deref());
+            // Each event says which reminder rules are about it, by their place in the list.
+            let mut events = app.calendars.between(window);
+            for event in &mut events {
+                let title = event["title"].as_str().unwrap_or_default();
+                let about: Vec<usize> = (0..settings.reminders.len())
+                    .filter(|&rule| settings.reminders[rule].words.found_in(title))
+                    .collect();
+                event["remind"] = json!(about);
+            }
             json!({
-                "events": app.calendars.between(window),
+                "events": events,
                 "feeds": app.calendars.feeds(may_change),
                 "added": app.calendars.added(),
+                "reminders": settings.reminders,
                 "unlocked": may_change,
             })
         })
@@ -77,4 +93,16 @@ pub(crate) async fn delete_event(
     Parsed(request): Parsed<DeleteEventRequest>,
 ) -> Json<Value> {
     Json(json!({ "deleted": blocking(move || app.calendars.remove(&request.id)).await }))
+}
+
+/// Keep exactly these reminder rules. The frame's screen picks them up within half a minute.
+pub(crate) async fn save_reminders(
+    State(app): State<Shared>,
+    Parsed(request): Parsed<RemindersRequest>,
+) -> Json<Value> {
+    let rules = request.rules.into_inner();
+    let count = rules.len();
+    blocking(move || app.update_settings(|settings| settings.reminders = rules)).await;
+    info!(rules = count, "reminder rules saved");
+    Json(json!({ "reminders": count }))
 }

@@ -132,6 +132,29 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
       <div class="rows" id="calAdded" style="margin-top: 14px"></div>
     </div>
     <div class="card narrow">
+      <h2>Reminders</h2>
+      <p class="muted">A reminder is a note the frame puts on its screen ahead of an event and keeps there until someone touches it. Each rule applies to every event, on any calendar, whose name has one of the rule's words: "bin, recycling" finds "Black bin", "Bins out" and "Recycling week" but not "Robin". Put the events on a calendar as usual (for the bins, an event that repeats every week or fortnight) and the rule does the rest.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="rmWords" maxlength="300" placeholder="Words in the event's name, e.g. bin, recycling" aria-label="Words to look for">
+        <select id="rmWhen" aria-label="When to remind">
+          <option value="m0">when it starts</option>
+          <option value="m15">15 minutes before</option>
+          <option value="m30">30 minutes before</option>
+          <option value="m60">an hour before</option>
+          <option value="m120">2 hours before</option>
+          <option value="d0">on the day at</option>
+          <option value="d1" selected>the day before at</option>
+          <option value="d2">2 days before at</option>
+          <option value="d7">a week before at</option>
+        </select>
+        <input type="time" id="rmAt" value="19:00" aria-label="Time of day">
+        <input type="text" id="rmSay" maxlength="120" placeholder="What the note says (optional)" aria-label="What the note says">
+        <label class="row" style="margin: 0"><input type="checkbox" id="rmChime" checked> <span>with a chime</span></label>
+        <button class="btn primary" id="rmAdd">Add rule</button>
+      </div>
+      <div class="rows" id="rmRules" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
       <h2>Coming up on the frame</h2>
       <p class="muted" id="calNone"></p>
       <div class="rows" id="calComing"></div>
@@ -186,6 +209,8 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
     </div>
     <div class="card narrow">
       <h2>Pictures</h2>
+      <label class="row"><span>Show</span> <select id="frShow"></select></label>
+      <p class="muted">Favourites are chosen on the frame (press and hold a photo) or here, by opening a photo under Photos. A choice with no photos to it shows them all.</p>
       <label class="row"><span>Change every</span>
         <select id="frEvery"><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">1 minute</option><option value="300">5 minutes</option></select>
         <span>in</span>
@@ -227,6 +252,8 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
     <div class="info" id="lbInfo"></div>
     <button class="btn" id="lbPrev" aria-label="Previous">‹</button>
     <button class="btn" id="lbNext" aria-label="Next">›</button>
+    <button class="btn hidden" id="lbFav">☆ Favourite</button>
+    <button class="btn hidden" id="lbHide">Hide from the frame</button>
     <button class="btn primary hidden" id="lbKeep">Keep this one</button>
     <button class="btn danger" id="lbDelete">Delete from frame</button>
     <button class="btn" id="lbClose">Close</button>

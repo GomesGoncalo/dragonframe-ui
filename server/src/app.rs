@@ -9,6 +9,7 @@ use crate::calendar::Calendars;
 use crate::device::Device;
 use crate::home::Home;
 use crate::index::Index;
+use crate::marks::Marks;
 use crate::store::{Config, Settings};
 use crate::types::Screen;
 use crate::weather::Weather;
@@ -19,6 +20,8 @@ pub(crate) const DAY: u64 = 24 * 60 * 60;
 pub(crate) struct App {
     pub(crate) cfg: Arc<Config>,
     pub(crate) index: Arc<Index>,
+    /// Which photos are favourites, and which are hidden from the slideshow.
+    pub(crate) marks: Marks,
     pub(crate) job: Arc<Mutex<gphotos::Job>>,
     pub(crate) guard: auth::Guard,
     pub(crate) http: reqwest::Client,
@@ -72,11 +75,13 @@ pub(crate) type Shared = Arc<App>;
 impl App {
     pub(crate) fn new(cfg: Config, device: Device, port: u16) -> Shared {
         let index = Index::load(&cfg);
+        let marks = Marks::load(&cfg);
         let calendars =
             Calendars::load(&cfg, &store::load_settings(&cfg).calendars).falling_back_to(gphotos::tolerant_client());
         Arc::new(App {
             cfg: Arc::new(cfg),
             index: Arc::new(index),
+            marks,
             job: Arc::default(),
             guard: auth::Guard::default(),
             http: gphotos::client(),

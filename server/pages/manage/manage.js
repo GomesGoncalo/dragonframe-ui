@@ -1,7 +1,7 @@
 // What the page for managing the frame does: photos, duplicates, syncing, the calendar and the frame's settings.
 "use strict";
 const PAGE_SIZE = 60, MAX_SIDE = 1920, BIN_PAGE = 60, TABS = ["photos", "duplicates", "sync", "calendar", "frame", "deleted", "status"];
-const KINDS = { all: "All", synced: "Synced", added: "Added here", phone: "From phone app" };
+const KINDS = { all: "All", synced: "Synced", added: "Added here", phone: "From phone app", favourite: "★ Favourites", hidden: "Hidden from the frame" };
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
 const saved = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
@@ -56,7 +56,7 @@ async function unlock() {
 function shown() {
   const key = `${filter}|${sortBy}|${photos.length}|${photos.length ? photos[0][0] : ""}`;
   if (key !== listKey) {
-    listCache = filter === "all" ? photos.slice() : photos.filter(p => p[1] === filter);
+    listCache = filter === "all" ? photos.slice() : photos.filter(p => p[1] === filter || p[4] === filter);
     if (sortBy === "newest") listCache.sort((a, b) => b[2] - a[2]);
     else if (sortBy === "oldest") listCache.sort((a, b) => a[2] - b[2]);
     else listCache.sort((a, b) => b[3] - a[3]);
@@ -64,10 +64,11 @@ function shown() {
   }
   return listCache;
 }
-function makeTile(rel, kind, taken) {
-  const tile = el("div", "tile" + (selected.has(rel) ? " sel" : ""));
+function makeTile(rel, kind, taken, mark) {
+  const tile = el("div", "tile" + (selected.has(rel) ? " sel" : "") + (mark === "hidden" ? " hid" : ""));
   tile.title = fmtWhen(taken);
   tile.append(image(thumb(rel)));
+  if (mark) tile.append(el("span", "tag mark", mark === "hidden" ? "Hidden" : "★"));
   if (kind !== "synced") tile.append(el("span", "tag", kind === "phone" ? "Phone app" : "Added here"));
   return tile;
 }
@@ -79,7 +80,7 @@ function renderSelection() {
 }
 function renderChips() {
   const counts = { all: photos.length };
-  for (const p of photos) counts[p[1]] = (counts[p[1]] || 0) + 1;
+  for (const p of photos) { counts[p[1]] = (counts[p[1]] || 0) + 1; if (p[4]) counts[p[4]] = (counts[p[4]] || 0) + 1; }
   if (!changed("chips", [counts, filter])) return;
   const chips = $("chips"); chips.textContent = "";
   for (const [kind, label] of Object.entries(KINDS)) {
@@ -112,12 +113,12 @@ function render() {
   $("prev").disabled = page === 0; $("next").disabled = page >= pages - 1;
   setText($("empty"), photos.length ? "" : "There are no photos on the frame yet. Add some with the button above.");
   const visible = list.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  if (changed("grid", [visible.map(p => p[0]), sortBy])) {
+  if (changed("grid", [visible.map(p => [p[0], p[4]]), sortBy])) {
     const grid = $("grid"); grid.textContent = "";
     let month = null;
-    visible.forEach(([rel, kind, taken], i) => {
+    visible.forEach(([rel, kind, taken, , mark], i) => {
       if (sortBy !== "added" && monthOf(taken) !== month) { month = monthOf(taken); grid.append(el("h2", "month", month)); }
-      const tile = makeTile(rel, kind, taken), pick = el("button", "pick", "✓");
+      const tile = makeTile(rel, kind, taken, mark), pick = el("button", "pick", "✓");
       pick.title = "Select"; pick.onclick = e => { e.stopPropagation(); toggle(rel, tile); };
       tile.onclick = () => openLightbox(page * PAGE_SIZE + i);
       tile.append(pick); grid.append(tile);
@@ -270,6 +271,12 @@ function openLightbox(i) {
   $("lbImg").src = full(rels[i]);
   const info = $("lbInfo"); info.textContent = `${i + 1} / ${rels.length}`;
   show($("lbKeep"), !!viewer); show($("lbDelete"), !viewer);
+  // In the photo list a photo can be made a favourite, or hidden from the frame without deleting it.
+  const mark = viewer ? null : markOf(rels[i]);
+  show($("lbFav"), !viewer); show($("lbHide"), !viewer);
+  setText($("lbFav"), mark === "favourite" ? "★ Favourite" : "☆ Favourite"); $("lbFav").classList.toggle("primary", mark === "favourite");
+  setText($("lbHide"), mark === "hidden" ? "Show on the frame again" : "Hide from the frame");
+  if (mark === "hidden") info.textContent += " · hidden from the frame";
   if (viewer) {
     const keeping = i === viewer.keep;
     info.textContent += ` · ${describe(viewer, i)}`;
@@ -277,6 +284,18 @@ function openLightbox(i) {
     $("lbKeep").disabled = keeping; setText($("lbKeep"), keeping ? "Keeping this one" : "Keep this one");
   }
   $("lightbox").classList.add("open");
+}
+const markOf = rel => (photos.find(p => p[0] === rel) || [])[4] || null;
+/// Make the photo in the viewer a favourite, hide it, or neither; the viewer stays on it if it is still listed.
+async function markPhoto(mark) {
+  const i = lb, rel = lbRels()[i];
+  try { await api("/api/mark", { photo: rel, mark }); } catch (e) { return toast(e.message); }
+  const photo = photos.find(p => p[0] === rel);
+  if (photo) photo[4] = mark;
+  listKey = ""; render();
+  const rels = lbRels(), still = rels.indexOf(rel);
+  if (!rels.length) closeLightbox(); else openLightbox(still >= 0 ? still : Math.min(i, rels.length - 1));
+  toast(mark === "hidden" ? "Hidden. The frame leaves it out within ten minutes." : mark === "favourite" ? "A favourite: it comes round more often." : "Back to an ordinary photo.");
 }
 function closeLightbox() { lb = -1; viewer = null; $("lightbox").classList.remove("open"); $("lbImg").removeAttribute("src"); }
 function stepLightbox(d) { const n = lbRels().length; if (lb < 0 || !n) return; openLightbox((lb + d + n) % n); }
@@ -436,6 +455,8 @@ async function loadCalendar() {
       box.append(calRow(e.time ? `${day} · ${e.time}` : day, e.title, REPEATS[e.repeat], remove));
     }
   }
+  rules = c.reminders || [];
+  renderRules(c.events);
   const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const coming = c.events.filter(e => e.all_day ? calWhen(e.end) > today : calWhen(e.end) >= now).slice(0, 40);
   setText($("calNone"), coming.length ? "" : "Nothing in the next five weeks.");
@@ -446,6 +467,42 @@ async function loadCalendar() {
       box.append(calRow(e.all_day ? calDay(start) : `${calDay(start)} · ${calTime(start)}`, e.place ? `${e.title} (${e.place})` : e.title, e.added ? "added here" : e.calendar || ""));
     }
   }
+}
+// --- reminders: rules that turn calendar events into notes on the frame ---------------------------
+let rules = [];
+const AHEAD = { m0: "when it starts", m15: "15 minutes before", m30: "30 minutes before", m60: "an hour before", m120: "2 hours before", d0: "on the day at", d1: "the day before at", d2: "2 days before at", d7: "a week before at" };
+const aheadText = when => typeof when.minutes === "number" ? (AHEAD["m" + when.minutes] || (when.minutes % 60 ? `${when.minutes} minutes before` : `${when.minutes / 60} hours before`)) : `${AHEAD["d" + when.days] || `${when.days} days before at`} ${when.at}`;
+/// When a rule's reminder for an event comes up (the frame's screen works it out the same way).
+function dueOf(event, when) {
+  const start = calWhen(event.start);
+  if (typeof when.minutes === "number") return new Date(start.getTime() - when.minutes * 60000);
+  const [hour, minute] = when.at.split(":").map(Number);
+  return new Date(start.getFullYear(), start.getMonth(), start.getDate() - when.days, hour, minute);
+}
+function renderRules(events) {
+  const now = new Date();
+  const next = rules.map((rule, i) => events.filter(e => (e.remind || []).includes(i)).filter(e => calWhen(e.end) > now || calWhen(e.start) > now).map(e => [dueOf(e, rule.when), e])[0]);
+  if (!changed("rules", [rules, next.map(n => n && [n[0].getTime(), n[1].title])])) return;
+  const box = $("rmRules"); box.textContent = "";
+  rules.forEach((rule, i) => {
+    const remove = el("button", "btn small danger", "Delete");
+    remove.onclick = () => saveRules(rules.filter((_, k) => k !== i), "Rule deleted.");
+    const coming = !next[i] ? "no event in the next five weeks has these words" : next[i][0] <= now ? `on the frame now, for “${next[i][1].title}”` : `next: ${calDay(next[i][0])} ${calTime(next[i][0])}, for “${next[i][1].title}”`;
+    const row = calRow(aheadText(rule.when) + (rule.chime ? " · chime" : ""), rule.say ? `${rule.words} → “${rule.say}”` : rule.words, coming, remove);
+    box.append(row);
+  });
+}
+async function saveRules(wanted, done) {
+  try { await api("/api/reminders", { rules: wanted }); toast(done); } catch (e) { toast(e.message); return false; }
+  loadCalendar();
+  return true;
+}
+async function addRule() {
+  const kind = $("rmWhen").value, amount = Number(kind.slice(1));
+  const when = kind[0] === "m" ? { minutes: amount } : { days: amount, at: $("rmAt").value || "19:00" };
+  const rule = { words: $("rmWords").value, when, say: $("rmSay").value.trim() || null, chime: $("rmChime").checked };
+  if (!rule.words.trim()) { toast("Say which words to look for in the names of events."); $("rmWords").focus(); return; }
+  if (await saveRules(rules.concat([rule]), "Rule added. The frame picks it up within half a minute.")) { $("rmWords").value = ""; $("rmSay").value = ""; }
 }
 async function addEvent() {
   const title = $("evTitle").value.trim();
@@ -479,10 +536,16 @@ async function loadFrame() {
   setText($("frPlace"), w.now ? `${place} Now ${Math.round(w.now.temp)}°.` : place);
   show($("frForget"), !!d.place);
   // What someone is in the middle of changing is left alone.
-  if (inFrameTab() || !changed("frame", [d.night, d.chime, d.slideshow])) return;
+  if (inFrameTab() || !changed("frame", [d.night, d.chime, d.slideshow, photos.length])) return;
   $("frNight").checked = d.night.on; $("frFrom").value = d.night.from; $("frUntil").value = d.night.until; $("frDark").checked = d.night.when_dark;
   $("frChime").value = d.chime === null ? "" : String(d.chime);
   $("frEvery").value = String(d.slideshow.every); $("frOrder").value = d.slideshow.order;
+  // Which photos: all, the favourites, or one of the years there are photos from.
+  const which = d.slideshow.show.year ? String(d.slideshow.show.year) : d.slideshow.show;
+  const years = [...new Set(photos.map(p => new Date(p[2] * 1000).getFullYear()).concat(d.slideshow.show.year || []))].sort();
+  const pick = $("frShow"); pick.textContent = "";
+  pick.append(new Option("all the photos", "all"), new Option("only the favourites", "favourites"), ...years.map(y => new Option(`only photos from ${y}`, String(y))));
+  pick.value = which;
   $("frHome").value = d.slideshow.home_after === null ? "" : String(d.slideshow.home_after);
   $("frMemories").checked = d.slideshow.memories; $("frWeather").checked = d.slideshow.weather; $("frMorning").checked = d.slideshow.morning;
 }
@@ -491,7 +554,8 @@ async function saveFrame(path, body, done) {
   drawn.delete("frame"); document.activeElement.blur(); loadFrame();
 }
 const saveNight = () => saveFrame("/api/night", { on: $("frNight").checked, from: $("frFrom").value, until: $("frUntil").value, when_dark: $("frDark").checked }, "Night settings saved.");
-const savePictures = () => saveFrame("/api/slideshow", { every: Number($("frEvery").value), order: $("frOrder").value, home_after: $("frHome").value === "" ? null : Number($("frHome").value), memories: $("frMemories").checked, weather: $("frWeather").checked, morning: $("frMorning").checked }, "Saved. The frame picks it up within half a minute.");
+const shownChoice = () => /^\d+$/.test($("frShow").value) ? { year: Number($("frShow").value) } : $("frShow").value;
+const savePictures = () => saveFrame("/api/slideshow", { show: shownChoice(), every: Number($("frEvery").value), order: $("frOrder").value, home_after: $("frHome").value === "" ? null : Number($("frHome").value), memories: $("frMemories").checked, weather: $("frWeather").checked, morning: $("frMorning").checked }, "Saved. The frame picks it up within half a minute.");
 async function findPlace() {
   const name = $("frTown").value.trim();
   if (!name) return toast("Type the name of a town or city.");
@@ -611,8 +675,11 @@ $("sources").onchange = () => api("/api/sources", { sources: $("sources").value.
 $("optAuto").onchange = e => api("/api/auto", { enabled: e.target.checked }).then(r => toast(r.auto ? "The frame will sync these albums once a day." : "Daily sync is off."), err => toast(err.message));
 $("calLinks").onchange = () => api("/api/calendars", { links: $("calLinks").value.split("\n") }).then(() => { toast("Calendars saved. The frame is fetching them."); drawn.delete("calLinks"); loadCalendar(); setTimeout(loadCalendar, 4000); }, e => toast(e.message));
 $("evAdd").onclick = addEvent;
+$("rmAdd").onclick = addRule;
+$("rmWhen").onchange = () => show($("rmAt"), $("rmWhen").value[0] === "d");
+for (const id of ["rmWords", "rmSay"]) $(id).onkeydown = e => { if (e.key === "Enter") addRule(); };
 for (const id of ["frNight", "frFrom", "frUntil", "frDark"]) $(id).onchange = saveNight;
-for (const id of ["frEvery", "frOrder", "frHome", "frMemories", "frWeather", "frMorning"]) $(id).onchange = savePictures;
+for (const id of ["frShow", "frEvery", "frOrder", "frHome", "frMemories", "frWeather", "frMorning"]) $(id).onchange = savePictures;
 $("frChime").onchange = e => saveFrame("/api/chime", { before: e.target.value === "" ? null : Number(e.target.value) }, "Chime saved.");
 $("frConnect").onclick = async () => {
   if (frame && frame.home && !confirm("Make a new key? The relay stops being listened to until the new key is put in its settings.")) return;
@@ -641,6 +708,8 @@ $("syncStart").onclick = async () => {
 
 $("lbClose").onclick = closeLightbox; $("lbPrev").onclick = () => stepLightbox(-1); $("lbNext").onclick = () => stepLightbox(1);
 $("lbDelete").onclick = async () => { const i = lb; if (await del([lbRels()[i]])) { const n = lbRels().length; n ? openLightbox(Math.min(i, n - 1)) : closeLightbox(); } };
+$("lbFav").onclick = () => markPhoto(markOf(lbRels()[lb]) === "favourite" ? null : "favourite");
+$("lbHide").onclick = () => markPhoto(markOf(lbRels()[lb]) === "hidden" ? null : "hidden");
 $("lbKeep").onclick = () => { if (viewer) { viewer.keep = lb; renderGroup(viewer); openLightbox(lb); } };
 $("stage").onclick = e => { if (e.target === $("stage")) closeLightbox(); };
 document.onkeydown = e => { if (lb < 0) return; if (e.key === "Escape") closeLightbox(); if (e.key === "ArrowLeft") stepLightbox(-1); if (e.key === "ArrowRight") stepLightbox(1); };

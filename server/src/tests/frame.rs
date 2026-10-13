@@ -28,7 +28,7 @@ async fn the_frame_reports_its_wifi_screen_and_slideshow() {
     assert_eq!(device["fell_back"], false);
     assert_eq!(
         device["slideshow"],
-        json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5 })
+        json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5, "show": "all" })
     );
     assert_eq!(device["night"], json!({ "on": false, "from": "23:00", "until": "07:00", "when_dark": false }));
     assert_eq!((&device["chime"], &device["place"], &device["asleep"]), (&Value::Null, &Value::Null, &json!(false)));
@@ -85,15 +85,14 @@ async fn the_slideshow_can_be_set_and_the_screen_learns_of_it_when_it_says_it_is
     assert!(app.watch().heard.is_none());
     assert_eq!(
         get(&app, "/api/alive").await.json()["slideshow"],
-        json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5 })
+        json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5, "show": "all" })
     );
     assert!(app.watch().heard.is_some(), "the server heard from the screen");
 
     let set = post(&app, "/api/slideshow", r#"{"every":60,"order":"newest"}"#).await;
     assert_eq!(set.status, StatusCode::OK);
     let alive = get(&app, "/api/alive").await.json();
-    let expected =
-        json!({ "every": 60, "order": "newest", "memories": true, "morning": true, "weather": true, "home_after": 5 });
+    let expected = json!({ "every": 60, "order": "newest", "memories": true, "morning": true, "weather": true, "home_after": 5, "show": "all" });
     assert_eq!((&alive["slideshow"], &alive["chime"], &alive["asleep"]), (&expected, &Value::Null, &json!(false)));
     post(&app, "/api/slideshow", r#"{"every":60,"order":"newest","memories":false,"morning":false,"weather":false}"#)
         .await;

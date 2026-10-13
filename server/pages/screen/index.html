@@ -2,7 +2,9 @@
 <!--
   The frame's own screen, shown full screen by the frame's screen app. It has five tabs:
 
-  Pictures  a slideshow with a clock and the weather. Each photo carries the date it was
+  Pictures  a slideshow with a clock and the weather. Pressing and holding a photo offers
+            to make it a favourite or to hide it (extras.js), after the PIN if one is set.
+            Each photo carries the date it was
             taken for its first five seconds, and whenever the tabs are up. Every photo
             is shown whole, never
             cropped. A photo the shape of the screen is shown alone; one that is not is
@@ -17,6 +19,9 @@
   Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css).
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
             asked for each time Settings is opened, on a keypad on the screen.
+
+  Reminders (extras.js) are notes that calendar events bring up some time before they
+  happen, by rules made on the phone or computer page. A note stays until it is touched.
 
   Calendar and Settings go back to Pictures when left alone for a while (a setting).
 
@@ -44,6 +49,7 @@
 <link rel="stylesheet" href="screen.css">
 <link rel="stylesheet" href="utilities.css">
 <link rel="stylesheet" href="home.css">
+<link rel="stylesheet" href="extras.css">
 </head>
 <body class="no-home" data-tab="pictures" data-view="month" data-part="pictures">
 
@@ -88,6 +94,8 @@
   </div>
 
   <div class="part" id="part-pictures">
+    <div class="row"><span class="label">Show</span><span id="shows"></span></div>
+    <p id="shows-note"></p>
     <div class="row"><span class="label">Change every</span><span id="paces"></span></div>
     <div class="columns">
       <div class="row"><span class="label">Order</span><span id="orders"></span></div>
@@ -189,6 +197,8 @@
 
 <div class="soon" id="soon"><div class="when" id="soon-when"></div><div class="what" id="soon-what"></div></div>
 
+<div class="reminders" id="reminders"></div>
+
 <div class="tabs" id="tabs">
   <button data-tab="pictures" data-icon="pictures">Pictures</button>
   <button data-tab="calendar" data-icon="calendar">Calendar</button>
@@ -211,6 +221,24 @@
   <button class="press on" id="bell-close">Close</button>
 </div>
 
+<div class="menu" id="menu">
+  <img id="menu-picture" alt="">
+  <div class="panel">
+    <h2 id="menu-said"></h2>
+    <div class="ask">
+      <div class="dots" id="menu-dots"></div>
+      <p id="menu-note"></p>
+      <div class="keys" id="menu-keys"></div>
+    </div>
+    <div class="acts">
+      <button class="press" id="menu-favourite"></button>
+      <button class="press warn" id="menu-hide">Hide it from the frame</button>
+      <p>A hidden photo is not deleted. It can be shown again from a phone or computer, under Photos.</p>
+    </div>
+    <button class="press" id="menu-close">Cancel</button>
+  </div>
+</div>
+
 <div class="ring" id="ring">
   <div class="what" id="ring-what"></div>
   <div class="more" id="ring-more"></div>
@@ -222,5 +250,6 @@
 <script src="screen.js"></script>
 <script src="utilities.js"></script>
 <script src="home.js"></script>
+<script src="extras.js"></script>
 </body>
 </html>

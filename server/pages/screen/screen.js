@@ -70,16 +70,17 @@ const $ = (id) => document.getElementById(id);
 const slides = [$('a'), $('b')];
 let tab = 'pictures';
 // How things are set. The server keeps these; ?every= and ?order= in the address win, for trying things out.
-let slideshow = { every: 15, order: 'shuffled', memories: true, morning: true, weather: true, home_after: 5 };
+let slideshow = { every: 15, order: 'shuffled', memories: true, morning: true, weather: true, home_after: 5, show: 'all' };
 let night = { on: false, from: '23:00', until: '07:00', when_dark: false };
 let chime = null;   // minutes before an event to sound, or null for no chime
-let photos = [];    // every photo, as [path, taken, width, height]
+let photos = [];    // every photo the frame shows, as [path, taken, width, height, favourite]
 let queue = [];     // the photos still to come this time round
 let shown = [];     // the screens shown so far, for stepping back
 let at = -1;        // which of them is on screen
 let front = 0;      // which slide element is on screen
 let timer = 0;
 let paused = false;
+let over = false;   // something is open over the pictures (a photo's menu), so they wait
 let busy = false;
 let asleep = false;
 let events = [];    // the calendar around today: { title, place, allDay, start, end, colour, from }
@@ -89,8 +90,11 @@ let cursor = null, browsed = [], picked = null;
 let weather = null; // { now: { temp, code, day }, days: [{ date, code, max, min, rain }] }
 let barTimer = 0, leaveTimer = 0, deviceTimer = 0, soonTimer = 0, datedTimer = 0;
 // With a PIN set, Settings asks for it each time it is opened; the token is what the PIN bought.
-let token = null, typed = '';
+let token = null, pinSet = false;
 let heard = false;  // whether the server has said how things are set yet
+let rulesKnown = [];  // the reminder rules the calendar was last fetched with
+// What reminders.js does with the events each time they are looked at.
+let remind = () => {};
 // Two things the Utilities tab (utilities.js) has a say in: what is asked of the display each
 // time the page reports in, and whether its tab may be left for Pictures by itself.
 let aliveNeeds = () => '';
@@ -100,6 +104,17 @@ const url = (kind, path) => '/' + kind + '?p=' + encodeURIComponent(path);
 const shape = (photo) => (photo[2] && photo[3] ? photo[2] / photo[3] : 0);
 const everyMs = () => Math.max(3, Number(params.get('every')) || slideshow.every) * 1000;
 const newestFirst = () => (params.get('order') || slideshow.order) === 'newest';
+const yearOf = (photo) => new Date(photo[1] * 1000).getFullYear();
+const sameChoice = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/// The photos the slideshow is set to show: all of them, the favourites, or one year's.
+/// A choice that no photo answers to shows them all, rather than an empty screen.
+function chosen() {
+  const show = slideshow.show;
+  const some = show === 'favourites' ? photos.filter((p) => p[4])
+    : show && show.year ? photos.filter((p) => yearOf(p) === show.year) : photos;
+  return some.length ? some : photos;
+}
 
 function shuffle(list) {
   for (let i = list.length - 1; i > 0; i--) {
@@ -147,6 +162,7 @@ async function refreshPhotos() {
       // Photos still in line keep their place; ones deleted since are dropped.
       const known = new Map(photos.map((p) => [p[0], p]));
       queue = queue.map((p) => known.get(p[0])).filter(Boolean);
+      drawSettings();  // the years there are photos from may have changed
     }
     setTimeout(refreshPhotos, RELOAD_PHOTOS_MS);
   } catch (error) {
@@ -240,9 +256,10 @@ function arrange(head, others, screen) {
 /// The next screen: the photo at the head of the line and whatever goes well beside it.
 async function nextScreen() {
   if (!queue.length) {
-    queue = photos.slice();
+    queue = chosen().slice();
     if (newestFirst()) queue.sort((x, y) => y[1] - x[1]);
-    else shuffle(queue);
+    // Shuffled, a favourite comes round twice as often as the rest.
+    else shuffle(queue = queue.concat(queue.filter((p) => p[4])));
     memoriesFirst();
   }
   const head = queue.shift();
@@ -252,13 +269,16 @@ async function nextScreen() {
     head[2] = image.naturalWidth;
     head[3] = image.naturalHeight;
   }
-  let others = queue.slice(0, LOOK_AHEAD).filter(shape);
+  let others = queue.slice(0, LOOK_AHEAD).filter((p, i, list) => shape(p) && p !== head && list.indexOf(p) === i);
   // A memory shares the screen with other memories while there are any, so the year means something.
   const together = slideshow.memories && isMemory(head) ? others.filter(isMemory) : [];
   if (together.length) others = together;
   const screen = arrange(head, others, window.innerWidth / window.innerHeight);
-  const used = new Set(screen.cells.map((cell) => cell.photo));
-  queue = queue.filter((p) => !used.has(p));
+  // Each photo beside the head leaves the line once; a favourite's second turn stays in it.
+  screen.cells.forEach((cell) => {
+    const place = queue.indexOf(cell.photo);
+    if (cell.photo !== head && place >= 0) queue.splice(place, 1);
+  });
   return screen;
 }
 
@@ -315,9 +335,9 @@ async function draw(screen) {
     div.style.height = 100 * cell.h + '%';
     // When it was taken; for a memory, that it is one and from which year.
     const taken = new Date(cell.photo[1] * 1000);
-    div.appendChild(element('div', 'taken', slideshow.memories && isMemory(cell.photo)
+    div.appendChild(element('div', 'taken', (cell.photo[4] ? '★  ' : '') + (slideshow.memories && isMemory(cell.photo)
       ? 'On this day  ·  ' + taken.getFullYear()
-      : taken.toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' })));
+      : taken.toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' }))));
     box.appendChild(div);
   });
   next.appendChild(box);
@@ -333,7 +353,7 @@ async function draw(screen) {
 /// Show the next screen of photos in a while, if the slideshow is running and in view.
 function schedule() {
   clearTimeout(timer);
-  if (!paused && !asleep && tab === 'pictures') timer = setTimeout(() => step(1), everyMs());
+  if (!paused && !asleep && !over && tab === 'pictures') timer = setTimeout(() => step(1), everyMs());
 }
 
 /// Move one screen on (or back). A screen with a photo that will not load is skipped.
@@ -428,11 +448,14 @@ async function fetchEvents(first, days) {
   const from = Math.floor(first.getTime() / 1000);
   const reply = await fetch('/api/calendar?from=' + from + '&to=' + (from + days * 24 * 60 * 60), { cache: 'no-store' });
   if (!reply.ok) throw new Error('calendar ' + reply.status);
-  return ((await reply.json()).events || []).map((e) => ({
+  const found = await reply.json();
+  return (found.events || []).map((e) => ({
     title: e.title, place: e.place, allDay: e.all_day, start: when(e.start), end: when(e.end),
     colour: typeof e.feed === 'number' ? COLOURS[e.feed % COLOURS.length] : ADDED_COLOUR,
     // Which calendar it is on, to say so beside it.
     from: e.added ? 'Added here' : e.calendar || '',
+    // The reminder rules that are about it (see reminders.js).
+    rules: (e.remind || []).map((rule) => (found.reminders || [])[rule]).filter(Boolean),
   }));
 }
 
@@ -440,15 +463,20 @@ async function fetchEvents(first, days) {
 /// whichever is earlier, so that both views are whole.
 const viewStart = (date) => new Date(Math.min(new Date(date.getFullYear(), date.getMonth(), 1), weekStart(date)));
 
+let calendarTimer = 0;
 async function refreshCalendar() {
+  clearTimeout(calendarTimer);
+  let again = RELOAD_CALENDAR_MS;
   try {
     events = await fetchEvents(viewStart(new Date()), CALENDAR_DAYS);
     if (!cursor) browsed = events;
     drawCalendar(new Date(), true);
-    setTimeout(refreshCalendar, RELOAD_CALENDAR_MS);
+    remind(Date.now());
   } catch (error) {
-    setTimeout(refreshCalendar, RETRY_MS);
+    again = RETRY_MS;
   }
+  clearTimeout(calendarTimer);
+  calendarTimer = setTimeout(refreshCalendar, again);
 }
 
 /// Show the month or week the calendar has been moved to, fetching its events.
@@ -701,7 +729,7 @@ function tick() {
   drawCalendar(now, now.getMinutes() === 0);
   setTimeout(tick, 1000 * (60 - now.getSeconds()) + 50);
 }
-setInterval(() => announceEvents(Date.now()), 10 * 1000);
+setInterval(() => { announceEvents(Date.now()); remind(Date.now()); }, 10 * 1000);
 
 // --- settings ------------------------------------------------------------------------
 
@@ -716,9 +744,10 @@ function choices(box, list, chosen, choose) {
 
 function drawSettings() {
   const show = (change) => {
-    const before = slideshow.order;
+    const before = slideshow;
     slideshow = Object.assign({}, slideshow, change);
-    if (slideshow.order !== before) queue = [];  // start the line again in the new order
+    // Start the line again in the new order, or with the photos now chosen.
+    if (slideshow.order !== before.order || !sameChoice(slideshow.show, before.show)) queue = [];
     if (change.memories) memoriesFirst();
     drawSettings();
     drawWeather();
@@ -726,6 +755,18 @@ function drawSettings() {
     touched();
     send('/api/slideshow', slideshow).catch(() => {});
   };
+  // Which photos: all, the favourites, or one of the years there are photos from.
+  const years = [];
+  photos.forEach((p) => { if (years.indexOf(yearOf(p)) < 0) years.push(yearOf(p)); });
+  const favourites = photos.filter((p) => p[4]).length;
+  const which = [['all', 'Everything'], ['favourites', '★ Favourites']].concat(years.sort().map((year) => [year, String(year)]));
+  choices($('shows'), which, slideshow.show && slideshow.show.year ? slideshow.show.year : slideshow.show,
+    (choice) => show({ show: typeof choice === 'number' ? { year: choice } : choice }));
+  $('shows-note').textContent = slideshow.show === 'favourites' && !favourites
+    ? 'There are no favourites yet, so everything is shown. Press and hold a photo to make it one.'
+    : slideshow.show && slideshow.show.year && years.indexOf(slideshow.show.year) < 0
+      ? 'There are no photos from ' + slideshow.show.year + ', so everything is shown.'
+      : 'Press and hold a photo on Pictures to make it a favourite (★ ' + favourites + ' so far) or to hide it.';
   choices($('paces'), PACES, slideshow.every, (every) => show({ every: every }));
   choices($('orders'), ORDERS, slideshow.order, (order) => show({ order: order }));
   choices($('rests'), RESTS, slideshow.home_after, (minutes) => show({ home_after: minutes }));
@@ -839,11 +880,47 @@ $('use-original').onclick = async () => {
 
 // --- the PIN -------------------------------------------------------------------------
 
+/// A keypad for the PIN in `keys`, with the dots typed so far in `dots` and what went wrong in
+/// `note`. `entered` is given the token a right PIN bought. Returns what clears the keypad.
+function keypad(keys, dots, note, entered) {
+  let typed = '';
+  const show = () => { dots.textContent = '•'.repeat(typed.length); };
+  const tryPin = async () => {
+    const pin = typed;
+    typed = '';
+    show();
+    if (!pin) return;
+    try {
+      const bought = (await send('/api/unlock', { pin: pin })).token;
+      note.textContent = '';
+      entered(bought);
+    } catch (error) {
+      note.textContent = error.message;
+    }
+  };
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK'].forEach((key) => {
+    const button = element('button', key === 'OK' ? 'go' : '', key);
+    button.onclick = () => {
+      if (key === 'OK') return tryPin();
+      typed = key === '⌫' ? typed.slice(0, -1) : (typed + key).slice(0, 8);
+      note.textContent = '';
+      show();
+    };
+    keys.appendChild(button);
+  });
+  return () => { typed = ''; note.textContent = ''; show(); };
+}
+
+const clearPin = keypad($('keys'), $('pin-dots'), $('pin-note'), (bought) => {
+  token = bought;
+  document.body.classList.remove('locked');
+  refreshDevice();
+});
+
 /// Hide the settings behind the keypad.
 function askForPin() {
   token = null;
-  typed = '';
-  $('pin-dots').textContent = '';
+  clearPin();
   document.body.classList.add('locked');
 }
 
@@ -851,34 +928,8 @@ function askForPin() {
 function lockSettings() {
   if (token) send('/api/lock').catch(() => {});
   token = null;
-  $('pin-note').textContent = '';
+  clearPin();
 }
-
-async function tryPin() {
-  const pin = typed;
-  typed = '';
-  $('pin-dots').textContent = '';
-  if (!pin) return;
-  try {
-    token = (await send('/api/unlock', { pin: pin })).token;
-    $('pin-note').textContent = '';
-    document.body.classList.remove('locked');
-    refreshDevice();
-  } catch (error) {
-    $('pin-note').textContent = error.message;
-  }
-}
-
-['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK'].forEach((key) => {
-  const button = element('button', key === 'OK' ? 'go' : '', key);
-  button.onclick = () => {
-    if (key === 'OK') return tryPin();
-    typed = key === '⌫' ? typed.slice(0, -1) : (typed + key).slice(0, 8);
-    $('pin-dots').textContent = '•'.repeat(typed.length);
-    $('pin-note').textContent = '';
-  };
-  $('keys').appendChild(button);
-});
 
 /// Tell the server this screen is running, and learn how things are set.
 async function sayAlive() {
@@ -886,7 +937,7 @@ async function sayAlive() {
     const reply = await (await fetch('/api/alive' + aliveNeeds(), { cache: 'no-store' })).json();
     const wanted = reply.slideshow;
     if (wanted && JSON.stringify(wanted) !== JSON.stringify(slideshow)) {
-      if (wanted.order !== slideshow.order) queue = [];
+      if (wanted.order !== slideshow.order || !sameChoice(wanted.show, slideshow.show)) queue = [];
       slideshow = wanted;
       drawSettings();
       drawWeather();
@@ -899,6 +950,12 @@ async function sayAlive() {
     if (reply.chime !== chime) {
       chime = reply.chime;
       drawSettings();
+    }
+    pinSet = !!reply.pin;
+    // Reminder rules changed from a phone take effect now, not at the calendar's next turn.
+    if (!sameChoice(reply.reminders || [], rulesKnown)) {
+      rulesKnown = reply.reminders || [];
+      refreshCalendar();
     }
     // A place chosen a moment ago, or a fresh forecast, shows without waiting for the next turn.
     if ((reply.weather || null) !== (weather ? weather.fetched : null)) refreshWeather();

@@ -21,7 +21,9 @@ use crate::gphotos::Phase;
 use crate::index::Index;
 use crate::routes::{header, ApiError, ApiResult, Parsed, KEEP_FOREVER};
 use crate::store::LastSync;
-use crate::types::{percent_decode, AlbumLinks, Bounded, Likeness, NonEmpty, PhotoPath, Restore, Source, SyncedName};
+use crate::types::{
+    percent_decode, AlbumLinks, Bounded, Likeness, Mark, NonEmpty, PhotoPath, Restore, Source, SyncedName,
+};
 use crate::{auth, faces, gphotos, index, store};
 
 /// Deleted synced photos can be restored for this long; after that they leave the bin for good.
@@ -36,6 +38,13 @@ pub(crate) const MAX_WATCHED_GROUPS: usize = 12;
 #[derive(Deserialize)]
 pub(crate) struct DeleteRequest {
     pub(crate) paths: NonEmpty<PhotoPath>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct MarkRequest {
+    pub(crate) photo: PhotoPath,
+    /// What to call it, or null to take its mark away.
+    pub(crate) mark: Option<Mark>,
 }
 
 /// The photos of one group of look-alikes.
@@ -113,10 +122,14 @@ pub(crate) async fn state(
             "unlocked": auth::allowed(&settings, token.as_deref()),
         });
         if full {
-            // [path, kind, taken, added]; "taken" falls back to when the photo arrived.
+            // [path, kind, taken, added, mark]; "taken" falls back to when the photo arrived.
+            let marks = shared.marks.all();
             out["photos"] = store::list_photos(cfg)
                 .into_iter()
-                .map(|p| json!([p.path, p.source, shared.index.get(&p.path).taken.unwrap_or(p.mtime), p.mtime]))
+                .map(|p| {
+                    let shot = shared.index.get(&p.path).taken.unwrap_or(p.mtime);
+                    json!([p.path, p.source, shot, p.mtime, marks.get(&p.path)])
+                })
                 .collect();
             out["disk"] = json!(store::disk_space());
             out["sources"] = json!(settings.albums);
@@ -133,18 +146,35 @@ pub(crate) async fn state(
 pub(crate) async fn slides(State(app): State<Shared>) -> Json<Value> {
     Json(
         blocking(move || {
+            let marks = app.marks.all();
             let photos: Vec<Value> = store::list_photos(&app.cfg)
                 .into_iter()
+                .filter(|photo| marks.get(&photo.path) != Some(&Mark::Hidden))
                 .map(|photo| {
                     let meta = app.index.get(&photo.path);
                     let (width, height) = meta.size.unzip();
-                    json!([photo.path, meta.taken.unwrap_or(photo.mtime), width, height])
+                    let favourite = marks.contains_key(&photo.path);
+                    json!([photo.path, meta.taken.unwrap_or(photo.mtime), width, height, favourite])
                 })
                 .collect();
             json!({ "photos": photos })
         })
         .await,
     )
+}
+
+/// Call a photo a favourite, hide it from the slideshow, or (with no mark) neither.
+pub(crate) async fn mark(State(app): State<Shared>, Parsed(request): Parsed<MarkRequest>) -> ApiResult {
+    let MarkRequest { photo, mark } = request;
+    blocking(move || {
+        if !app.cfg.cloud_dir.join(photo.as_str()).is_file() {
+            return Err(ApiError::not_found());
+        }
+        app.marks.set(&photo, mark);
+        info!(%photo, ?mark, "photo marked");
+        Ok(Json(json!({ "photo": photo, "mark": mark })))
+    })
+    .await
 }
 
 /// Storage, sync health and server facts for the status page.
@@ -369,6 +399,7 @@ pub(crate) async fn delete(State(app): State<Shared>, Parsed(request): Parsed<De
     blocking(move || {
         store::delete(&app.cfg, &photos);
         app.index.forget(&photos);
+        app.marks.forget(&photos);
         app.index.save();
         let paths = photos.iter().map(PhotoPath::as_str).collect::<Vec<_>>().join(" ");
         info!(count = photos.len(), paths, "photos deleted");

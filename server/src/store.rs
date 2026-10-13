@@ -16,8 +16,8 @@ use sha1::{Digest as _, Sha1};
 use tracing::{debug, info, warn};
 
 use crate::types::{
-    hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Restore, Screen, Slideshow, Source,
-    SyncedName, SYNC_SUBDIR,
+    hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Reminder, Restore, Screen,
+    Slideshow, Source, SyncedName, SYNC_SUBDIR,
 };
 
 const MEDIA_URI: &str = "content://media/external/images/media";
@@ -534,6 +534,8 @@ pub struct Settings {
     pub place: Option<Place>,
     /// The key the house's relay proves itself with, once the house is connected.
     pub home_key: Option<HomeKey>,
+    /// The rules that turn calendar events into reminders.
+    pub reminders: Vec<Reminder>,
 }
 
 /// How the most recent sync went.
@@ -583,6 +585,13 @@ impl Settings {
             chime: serde_json::from_value(saved["chime"].clone()).unwrap_or_default(),
             place: serde_json::from_value(saved["place"].clone()).ok(),
             home_key: saved["home_key"].as_str().and_then(HomeKey::parse),
+            // One rule that no longer reads does not cost the others.
+            reminders: saved["reminders"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|rule| serde_json::from_value(rule.clone()).ok())
+                .collect(),
         }
     }
 
@@ -604,6 +613,7 @@ impl Settings {
             "chime": self.chime,
             "place": self.place,
             "home_key": self.home_key,
+            "reminders": self.reminders,
         })
     }
 }
@@ -977,12 +987,18 @@ mod tests {
             }),
             calendars: vec![CalendarLink::parse("webcal://calendar.example/family.ics").unwrap()],
             screen: Screen::New,
-            slideshow: serde_json::from_value(json!({ "every": 30, "order": "newest" })).unwrap(),
+            slideshow: serde_json::from_value(json!({ "every": 30, "order": "newest", "show": { "year": 2023 } }))
+                .unwrap(),
             night: serde_json::from_value(json!({ "on": true, "from": "22:00", "until": "06:30", "when_dark": true }))
                 .unwrap(),
             chime: serde_json::from_value(json!(10)).unwrap(),
             place: Place::new("Lisbon", 38.72, -9.14),
             home_key: HomeKey::parse("0123456789abcdef0123456789abcdef"),
+            reminders: serde_json::from_value(json!([
+                { "words": "bin, recycling", "when": { "days": 1, "at": "19:00" }, "say": "Bins out", "chime": true },
+                { "words": "swimming", "when": { "minutes": 45 } },
+            ]))
+            .unwrap(),
         };
         save_settings(&frame.0, &settings);
         assert_eq!(load_settings(&frame.0), settings);

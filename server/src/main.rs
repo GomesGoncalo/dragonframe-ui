@@ -34,6 +34,7 @@ mod gphotos;
 mod home;
 mod ical;
 mod index;
+mod marks;
 mod night;
 mod plain;
 mod routes;

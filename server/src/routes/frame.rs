@@ -52,6 +52,7 @@ pub(crate) async fn device_view(State(app): State<Shared>) -> Json<Value> {
             json!({
                 "simulated": app.device.is_simulated(),
                 "pin": settings.protection.is_some(),
+                "reminders": settings.reminders,
                 // Whether the house is connected (a key was given out), and whether its relay is in touch.
                 "home": settings.home_key.is_some(),
                 "home_in_touch": app.home.view()["connected"],
@@ -117,6 +118,9 @@ pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap
         "asleep": asleep,
         "weather": weather,
         "home": settings.home_key.is_some(),
+        // Whether changing anything, a photo's mark included, takes the PIN.
+        "pin": settings.protection.is_some(),
+        "reminders": settings.reminders,
     }))
 }
 

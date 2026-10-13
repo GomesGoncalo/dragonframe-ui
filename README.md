@@ -43,6 +43,10 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   taken on today's date in earlier years come first, marked "On this day" with the year.
   In the morning (06:00 to 10:00) today's events are listed under the clock. Tap the
   left or right quarter to step back or forward. The tab bar has a Pause button.
+  Press and hold a photo to make it a favourite (★ beside its date, and it comes round
+  twice as often in shuffled order) or to hide it. With a PIN set the keypad comes
+  first, so a child cannot hide photos. A hidden photo is not deleted: it stays on the
+  frame and is shown again from the management page (Photos, "Hidden from the frame").
 - **Calendar.** A Month view (dots on days with events, and "Coming up" grouped by day
   with each event's time and calendar) and a Week view (seven days with their events
   and the forecast). Each subscribed calendar has its own colour; events added by hand
@@ -64,8 +68,10 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   itself and need no PIN.
 - **Settings**, in five parts. If a PIN is set, a keypad asks for it each time Settings
   is opened, and nothing is shown until it is right:
-  - Pictures: how often they change, the order, how long before the screen goes back to
-    Pictures, and whether to show memories first, the weather, and the morning list.
+  - Pictures: which photos to show (everything, only the favourites, or one of the
+    years there are photos from), how often they change, the order, how long before the
+    screen goes back to Pictures, and whether to show memories first, the weather, and
+    the morning list. A choice no photo answers to shows everything.
   - Night: switch the screen off between two times, and optionally whenever the room
     has been dark for two minutes. See [Night mode](#night-mode).
   - Sound: a chime for calendar events, at the time or 5 to 30 minutes before, with a
@@ -80,6 +86,25 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
 
 When an event with a time is about to start, a note appears at the top of whichever tab
 is showing, with the chime if one is set.
+
+### Reminders
+
+A reminder is a note on Pictures that a calendar event brings up ahead of time, by a
+rule made on the management page (Calendar, then Reminders). A rule has:
+
+- the words to look for in the names of events, with commas between them. Capitals do
+  not matter and only whole words count, give or take a plural: `bin, recycling` finds
+  "Black bin", "Bins out" and "Recycling week" but not "Robin";
+- when to remind: so many minutes before the event starts, or at a time of day on the
+  day itself or up to 14 days before ("the day before at 19:00");
+- optionally what the note should say (otherwise the event's name) and a chime.
+
+Rules apply to every calendar the frame follows and to events added by hand, so the way
+to be reminded of anything is to put it on a calendar and make a rule for its name: the
+bins (a repeating event, "the day before at 19:00", "Put the bins out"), a swimming kit
+(45 minutes before "Swimming"), a card to buy (a week before anything named
+"birthday"). The note stays until someone touches it or the event is over. It does not
+chime while the screen is off for the night, but it is there in the morning.
 
 ### Night mode
 
@@ -133,7 +158,9 @@ image", and anything that reports "ringing".
 Open `http://<frame address>:8080` from a phone or computer on the same Wi-Fi.
 
 - **Photos, Duplicates, Google Photos sync, Bin**: see, add and delete photos, find
-  look-alikes, and sync shared Google Photos albums.
+  look-alikes, and sync shared Google Photos albums. Opening a photo offers "Favourite"
+  and "Hide from the frame"; the chips above the photos list the favourites and the
+  hidden ones.
 - **Calendar**:
   - Calendars the frame follows: one link per line. For a public Google calendar its
     ordinary sharing or embedding link will do (it is turned into the calendar's public
@@ -147,6 +174,8 @@ Open `http://<frame address>:8080` from a phone or computer on the same Wi-Fi.
     that is only tried when the usual one cannot connect.
   - Add an event: title, date, optional time, and once, weekly, monthly or yearly.
     These are stored on the frame.
+  - Reminders: the rules described under [Reminders](#reminders). Each rule shows the
+    next event it will fire for, which is the quick way to check its words.
 - **Frame**: everything the frame's own Settings tab has, plus what needs a keyboard:
   which screen the frame shows, night mode, the chime, the place for the weather (type
   a town; the forecast comes from Open-Meteo, which needs no account), and the
@@ -247,13 +276,14 @@ a value it would still have to check.
 | `app.rs` | The state every part shares |
 | `routes/mod.rs` | The table of routes, the PIN guard, how refusals are answered |
 | `routes/photos.rs` | Listing, serving, adding and deleting photos; the bin; look-alikes; album syncs |
-| `routes/calendars.rs` | What is on the calendar, subscribed calendars, added events |
+| `routes/calendars.rs` | What is on the calendar, subscribed calendars, added events, reminder rules |
 | `routes/frame.rs` | The frame's Wi-Fi, screen, slideshow, night, chime and weather |
 | `routes/access.rs` | Unlocking with the PIN, locking, changing it |
 | `routes/pages.rs` | Handing out the pages in `pages/` |
 | `tasks.rs` | Background work: daily syncs, face checks, the bin, night mode, watching the screen |
 | `store.rs` | Photos on disk, thumbnails, settings, Android commands for photos |
 | `index.rs` | What is known about each photo: date, size, fingerprint, quality |
+| `marks.rs` | Which photos are favourites and which are hidden from the slideshow |
 | `gphotos.rs` | Syncing Google Photos shared albums |
 | `faces.rs` | Face checks used to rank look-alike photos |
 | `ical.rs` | Reading iCalendar text and working out when events happen, repeats and time zones included |
@@ -269,7 +299,8 @@ a value it would still have to check.
 
 Each page in `server/pages/` is an ordinary `index.html` with its stylesheets and scripts
 beside it (the screen's Utilities tab has its own pair, `utilities.css` and
-`utilities.js`). The server sends a page as one document with those put inside it, so a
+`utilities.js`; the Home tab has `home.*`; a photo's menu and the reminders are in
+`extras.*`). The server sends a page as one document with those put inside it, so a
 page arrives in one request and is never half old and half new. Changing a page means
 editing those files and rebuilding.
 
@@ -287,7 +318,9 @@ Routes added for the screen and calendar:
 | --- | --- |
 | `GET /frame` | The frame's screen |
 | `GET /simulator` | The screen in a frame-sized box |
-| `GET /api/slides` | Photos as `[path, taken, width, height]` |
+| `GET /api/slides` | Photos the screen shows (hidden ones left out) as `[path, taken, width, height, favourite]` |
+| `POST /api/mark` | Make a photo a `favourite`, `hidden`, or neither (`null`) |
+| `POST /api/reminders` | Keep exactly these reminder rules |
 | `GET /api/calendar?from=&to=` | Events in a window (seconds since 1970), feed status, added events |
 | `POST /api/calendars` | Set the subscribed calendar links |
 | `POST /api/events/add`, `/api/events/delete` | Events added by hand |
@@ -302,7 +335,7 @@ Routes added for the screen and calendar:
 | `GET /api/alive` | The screen saying it is running; `?busy=<seconds>` keeps the display on, `?wake=<seconds since 1970>` has it on then |
 | `POST /api/screen`, `/api/slideshow`, `/api/wifi/settings` | Choose the screen, set the slideshow, open the Wi-Fi list |
 
-On the frame, data lives in `/data/local/frameserver`: `settings.json`, `events.json`,
+On the frame, data lives in `/data/local/frameserver`: `settings.json` (the reminder rules among it), `events.json`, `marks.json`,
 `calendars/` (kept copies of subscribed calendars), `index.json`, `thumbs/`, `logs/`.
 
 Environment variables: `FRAME_CLOUD_DIR` (photo folder), `FRAME_DATA_DIR`,

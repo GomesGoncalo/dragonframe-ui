@@ -34,7 +34,7 @@ async fn slides_list_each_photo_with_its_date_and_size() {
     let listed = slides["photos"].as_array().unwrap();
     assert_eq!(listed.len(), 2);
     let synced = listed.iter().find(|photo| photo[0] == SYNCED).unwrap();
-    assert_eq!(synced, &json!([SYNCED, 1_700_000_000, 40, 30]));
+    assert_eq!(synced, &json!([SYNCED, 1_700_000_000, 40, 30, false]));
     let unreadable = listed.iter().find(|photo| photo[0] != SYNCED).unwrap();
     assert_eq!((&unreadable[2], &unreadable[3]), (&Value::Null, &Value::Null), "not measured: the screen works it out");
     assert!(unreadable[1].as_u64().unwrap() > 1_700_000_000, "undated photos use their arrival time");

@@ -38,6 +38,8 @@ async fn with_a_pin_changes_need_an_unlocked_session_but_viewing_does_not() {
         ("/api/sync", "{}"),
         ("/api/pin", r#"{"pin":""}"#),
         ("/api/auto", "{}"),
+        ("/api/mark", r#"{"photo":"frame-sync/fs_0123456789abcdef.jpg","mark":"hidden"}"#),
+        ("/api/reminders", r#"{"rules":[]}"#),
     ] {
         let reply = post(&app, path, body).await;
         assert_eq!(
