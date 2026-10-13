@@ -95,6 +95,11 @@ let heard = false;  // whether the server has said how things are set yet
 let rulesKnown = [];  // the reminder rules the calendar was last fetched with
 // What reminders.js does with the events each time they are looked at.
 let remind = () => {};
+// What extras.js has to say about leaving for an event that is travelled to, for the lists.
+let leaving = () => '';
+// And what it shows when an event in a list is touched.
+let showEvent = () => {};
+let calendarKnown = null;  // the server's count of changes to the calendar, as last heard
 // Two things the Utilities tab (utilities.js) has a say in: what is asked of the display each
 // time the page reports in, and whether its tab may be left for Pictures by itself.
 let aliveNeeds = () => '';
@@ -570,6 +575,14 @@ function listed(event, day) {
     about.appendChild(element('span', 'from', event.from)).style.color = event.colour;
   }
   node.appendChild(about);
+  const leave = leaving(event);
+  if (leave) node.appendChild(element('div', 'when leave', leave));
+  // A touch shows all there is to say about it.
+  node.onclick = (touch) => {
+    touch.stopPropagation();
+    showEvent(event);
+    touched();
+  };
   return node;
 }
 
@@ -954,6 +967,9 @@ async function sayAlive() {
       drawSettings();
     }
     pinSet = !!reply.pin;
+    // An event added, a calendar or a trip changed: shown now, not at the calendar's next turn.
+    if (calendarKnown !== null && reply.calendar !== calendarKnown) refreshCalendar();
+    calendarKnown = reply.calendar;
     // Reminder rules changed from a phone take effect now, not at the calendar's next turn.
     if (!sameChoice(reply.reminders || [], rulesKnown)) {
       rulesKnown = reply.reminders || [];

@@ -25,7 +25,10 @@ async fn a_trip_is_set_up_for_an_event_and_says_when_to_leave() {
     post(&app, "/api/events/add", r#"{"title":"Dentist","day":"2026-10-14","time":"18:30"}"#).await;
     post(&app, "/api/events/add", r#"{"title":"Swimming","day":"2026-10-15","time":"10:00"}"#).await;
     let trips = json!({ "home": "BR6 0AA", "trips": [{ "title": "Dentist", "to": "SE1 9SG", "how": "transit" }] });
+    let before = get(&app, "/api/alive").await.json()["calendar"].as_u64().unwrap();
     let saved = post(&app, "/api/travel", &trips.to_string()).await;
+    let after = get(&app, "/api/alive").await.json()["calendar"].as_u64().unwrap();
+    assert!(after > before, "the screen is told the calendar has news");
     assert_eq!((saved.status, saved.json()), (StatusCode::OK, json!({ "trips": 1 })));
 
     let calendar = get(&app, "/api/calendar?from=1791936000&to=1792195200").await.json();

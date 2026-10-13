@@ -1,7 +1,7 @@
 //! What every part of the server shares: where things are kept, what is known about the
 //! photos, the sync job, the calendars, the weather, and the frame itself.
 
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -49,6 +49,9 @@ pub(crate) struct App {
     pub(crate) home: Home,
     /// Working out when to leave for events.
     pub(crate) travel: Travel,
+    /// How many times the calendar has been changed from the page (an event, a calendar, a
+    /// rule, a trip), so the screen can tell there is something new to fetch.
+    pub(crate) calendar_changes: AtomicU64,
 }
 
 /// A moment on the clock that waiting is measured by (tokio's, which tests can move forward).
@@ -101,6 +104,7 @@ impl App {
             weather: Arc::new(Weather::new(weather::FORECAST_URL, weather::PLACES_URL)),
             home: Home::default(),
             travel: Travel::default(),
+            calendar_changes: AtomicU64::new(0),
         })
     }
 
@@ -111,6 +115,11 @@ impl App {
         let result = change(&mut settings);
         store::save_settings(&self.cfg, &settings);
         result
+    }
+
+    /// Note that what the calendar shows has changed.
+    pub(crate) fn calendar_changed(&self) {
+        self.calendar_changes.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn watch(&self) -> std::sync::MutexGuard<'_, ScreenWatch> {

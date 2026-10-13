@@ -14,6 +14,19 @@
 .menu.asking .ask { display: block; }
 .menu.asking .acts { display: none; }
 
+/* When to leave for an event, under it in the calendar's lists. */
+.item .leave { color: #7ee0a1; }
+
+/* --- an event looked at closely: what it is, and the way there step by step --- */
+.detail { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: rgba(8, 9, 10, .97); padding: 9vmin 12vmin 0; box-sizing: border-box; }
+.detail.on { display: block; }
+.detail h2 { margin: 0 0 1vmin; font-size: 6vmin; font-weight: 300; }
+.detail .about { font-size: 3vmin; color: #a9adb5; margin-bottom: 5vmin; }
+.detail .leave { font-size: 7vmin; font-weight: 500; color: #7ee0a1; }
+.detail .more { font-size: 3vmin; color: #c9ccd1; margin: 1vmin 0 3vmin; }
+.detail ol { margin: 0; padding-left: 4vmin; font-size: 3.4vmin; line-height: 1.6; }
+.detail .press { position: absolute; bottom: 4vmin; left: 50%; transform: translateX(-50%); margin: 0; font-size: 3.2vmin; padding: 2vmin 6vmin; }
+
 /* --- reminders: notes at the side of the pictures, each until it is touched --- */
 .reminders { position: absolute; top: 16vmin; right: 3vmin; width: 76vmin; max-width: 80%; display: none; }
 body[data-tab="pictures"] .reminders { display: block; }

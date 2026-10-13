@@ -95,6 +95,7 @@ pub(crate) async fn save_calendars(
     blocking(move || {
         app.update_settings(|settings| settings.calendars.clone_from(&links));
         app.calendars.set_links(&links);
+        app.calendar_changed();
     })
     .await;
     info!(calendars = count, "calendar links saved");
@@ -102,9 +103,12 @@ pub(crate) async fn save_calendars(
 }
 
 pub(crate) async fn add_event(State(app): State<Shared>, Parsed(new): Parsed<calendar::NewEvent>) -> ApiResult {
-    let added = blocking(move || app.calendars.add(new))
-        .await
-        .map_err(|e| ApiError::new(StatusCode::CONFLICT, e.to_string()))?;
+    let added = blocking(move || {
+        app.calendar_changed();
+        app.calendars.add(new)
+    })
+    .await
+    .map_err(|e| ApiError::new(StatusCode::CONFLICT, e.to_string()))?;
     Ok(Json(json!({ "event": added })))
 }
 
@@ -112,7 +116,12 @@ pub(crate) async fn delete_event(
     State(app): State<Shared>,
     Parsed(request): Parsed<DeleteEventRequest>,
 ) -> Json<Value> {
-    Json(json!({ "deleted": blocking(move || app.calendars.remove(&request.id)).await }))
+    let deleted = blocking(move || {
+        app.calendar_changed();
+        app.calendars.remove(&request.id)
+    })
+    .await;
+    Json(json!({ "deleted": deleted }))
 }
 
 /// Keep exactly these reminder rules. The frame's screen picks them up within half a minute.
@@ -140,7 +149,9 @@ pub(crate) async fn save_travel(State(app): State<Shared>, Parsed(request): Pars
             settings.home = home;
             settings.trips = trips;
             Ok(())
-        })
+        })?;
+        app.calendar_changed();
+        Ok(())
     })
     .await?;
     info!(trips = count, "trips saved");
@@ -150,7 +161,11 @@ pub(crate) async fn save_travel(State(app): State<Shared>, Parsed(request): Pars
 /// Keep the key for the driving service, or with null forget it. It is never handed back.
 pub(crate) async fn save_roads_key(State(app): State<Shared>, Parsed(request): Parsed<RoadsKeyRequest>) -> Json<Value> {
     let driving = request.key.is_some();
-    blocking(move || app.update_settings(|settings| settings.roads_key = request.key)).await;
+    blocking(move || {
+        app.update_settings(|settings| settings.roads_key = request.key);
+        app.calendar_changed();
+    })
+    .await;
     info!(driving, "driving key changed");
     Json(json!({ "driving": driving, "ways": How::available(driving) }))
 }

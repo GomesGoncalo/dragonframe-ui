@@ -184,6 +184,7 @@ const LEAVE_NOTE_MS = 30 * 60 * 1000;
 // journey planner knows about disruptions only near the time).
 const PLAN_AHEAD_MS = 24 * 60 * 60 * 1000, PLAN_AGAIN_MS = 10 * 60 * 1000;
 const plans = {};       // by trip and start: { leave, catch, steps, asked }
+const listedPlans = {}; // the plans the calendar's lists want, however far off their events are
 let planning = false;
 
 const planKey = (event) => event.trip + '|' + event.start.getTime();
@@ -191,9 +192,12 @@ const planKey = (event) => event.trip + '|' + event.start.getTime();
 /// Ask the server when to leave for the events coming up that have a trip, one at a time.
 async function refreshPlans(now) {
   if (planning) return;
-  const next = events.filter((event) => {
+  const next = events.concat(browsed === events ? [] : browsed).filter((event) => {
     const away = event.start.getTime() - now, plan = plans[planKey(event)];
-    return event.trip !== null && !event.allDay && away > 0 && away < PLAN_AHEAD_MS && (!plan || now - plan.asked > PLAN_AGAIN_MS);
+    // Asked again often when it is near; a plan for next week, shown in a list, keeps for an hour.
+    const again = away < PLAN_AHEAD_MS ? PLAN_AGAIN_MS : 6 * PLAN_AGAIN_MS;
+    return event.trip !== null && !event.allDay && away > 0 && (away < PLAN_AHEAD_MS || listedPlans[planKey(event)])
+      && (!plan || now - plan.asked > again);
   })[0];
   if (!next) return;
   planning = true;
@@ -202,13 +206,85 @@ async function refreshPlans(now) {
   plans[key] = Object.assign({}, before, { asked: now });
   try {
     const reply = await fetch('/api/travel?trip=' + next.trip + '&arrive=' + Math.floor(next.start.getTime() / 1000), { cache: 'no-store' });
-    if (reply.ok) plans[key] = Object.assign(await reply.json(), { asked: now });
+    const said = await reply.json();
+    plans[key] = reply.ok ? Object.assign(said, { asked: now }) : Object.assign({}, before, { asked: now, error: said.error });
   } catch (error) {
     // The plan we had, if any, stands.
   }
   planning = false;
+  if (tab === 'calendar') drawCalendar(new Date(), true);
+  drawDetail();
   remind(Date.now());
 }
+
+// --- an event looked at closely ---------------------------------------------------------
+
+const BY = { transit: 'by public transport', walk: 'on foot', cycle: 'by bicycle', car: 'by car', park: 'by car, then public transport' };
+let detailed = null;    // the event being looked at
+let detailTimer = 0;
+
+function drawDetail() {
+  const event = detailed;
+  if (!event) return;
+  const day = event.start.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
+  $('detail-what').textContent = event.title;
+  $('detail-about').textContent = day + (event.allDay ? '' : '  ·  ' + clockText(event.start))
+    + (event.place ? '  ·  ' + event.place : '') + (event.from ? '  ·  ' + event.from : '');
+  const plan = event.trip === null || event.allDay ? null : plans[planKey(event)];
+  const steps = $('detail-steps');
+  steps.textContent = '';
+  let leave = '', more = '';
+  if (event.trip === null || event.allDay) {
+    more = event.allDay ? '' : 'No trip is set up for this. Trips are set up from a phone or computer, under Calendar, then Getting there.';
+  } else if (event.start <= Date.now()) {
+    more = 'It has started.';
+  } else if (plan && typeof plan.leave === 'number') {
+    leave = 'Leave by ' + clockText(new Date(plan.leave * 1000));
+    more = 'Arriving ' + clockText(new Date(plan.arrive * 1000)) + '  ·  ' + (BY[plan.how] || '')
+      + (plan.margin ? '  ·  ' + plan.margin + ' min to spare' : '');
+    (plan.steps || []).forEach((step) => steps.appendChild(element('li', '', step)));
+  } else if (plan && plan.error) {
+    more = 'The way there could not be worked out: ' + plan.error;
+  } else {
+    more = 'Working out when to leave…';
+    listedPlans[planKey(event)] = true;
+    refreshPlans(Date.now());
+  }
+  $('detail-leave').textContent = leave;
+  $('detail-more').textContent = more;
+}
+
+showEvent = (event) => {
+  detailed = event;
+  drawDetail();
+  $('detail').classList.add('on');
+  clearTimeout(detailTimer);
+  detailTimer = setTimeout(closeDetail, 2 * 60 * 1000);
+};
+function closeDetail() {
+  detailed = null;
+  clearTimeout(detailTimer);
+  $('detail').classList.remove('on');
+}
+$('detail-close').onclick = closeDetail;
+$('detail').addEventListener('click', (event) => {
+  event.stopPropagation();
+  touched();
+});
+
+/// For the calendar's lists: when to leave for an event and how, once that is known.
+leaving = (event) => {
+  if (event.trip === null || event.allDay || event.start <= Date.now()) return '';
+  listedPlans[planKey(event)] = true;
+  const plan = plans[planKey(event)];
+  if (!plan) {
+    refreshPlans(Date.now());
+    return 'Working out when to leave…';
+  }
+  if (typeof plan.leave !== 'number') return plan.error ? 'No way there was worked out' : '';
+  const how = plan.catch || (plan.steps || [])[0] || '';
+  return 'Leave by ' + clockText(new Date(plan.leave * 1000)) + (how ? '  ·  ' + how : '');
+};
 
 /// The notes about leaving that are up at a moment.
 function leavingAt(now) {
@@ -264,6 +340,7 @@ function dismiss(reminder) {
 }
 
 remind = (now) => {
+  if (detailed && tab !== 'calendar') closeDetail();  // the screen went back to Pictures by itself
   refreshPlans(now);
   const up = remindersAt(now);
   up.forEach((r) => {

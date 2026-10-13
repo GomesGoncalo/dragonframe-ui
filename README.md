@@ -120,6 +120,11 @@ it is time to go, and stays until touched or until the event starts. Plans are m
 events in the next 24 hours and asked for again every ten minutes, so a disruption
 changes the time.
 
+On the Calendar tab, an event with a trip carries its "Leave by" line in the lists,
+however far off it is. Touching any event in a list opens it large, with the whole way
+there step by step. An event, calendar or trip changed from the management page reaches
+the frame's screen within half a minute.
+
 - **Public transport, on foot, by bicycle**: from Transport for London's journey
   planner, which needs no account. It plans to arrive by the event's start and takes
   the journey that leaves latest. It only knows London and the railways around it.

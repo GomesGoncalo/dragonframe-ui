@@ -121,6 +121,8 @@ pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap
         // Whether changing anything, a photo's mark included, takes the PIN.
         "pin": settings.protection.is_some(),
         "reminders": settings.reminders,
+        // Counts changes to the calendar, so the screen fetches it when there is news.
+        "calendar": app.calendar_changes.load(std::sync::atomic::Ordering::Relaxed),
     }))
 }
 
