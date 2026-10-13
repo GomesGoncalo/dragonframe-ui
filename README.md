@@ -30,7 +30,7 @@ data), `android/build/`, `server/target/` and `server/models/`.
 
 ## The frame's screen
 
-Five tabs, each with an icon (Home only once the house is connected). On Pictures the tab bar is hidden until you tap the middle
+Six tabs, each with an icon (Home only once the house is connected). On Pictures the tab bar is hidden until you tap the middle
 of the screen; on the other two it stays visible. The frame can stand either way up: the
 screen turns with it and lays itself out for a wide or a tall display. Calendar and
 Settings go back to Pictures when left alone (5 minutes unless set otherwise).
@@ -58,6 +58,9 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   the frame chimes and shows who is there over whatever tab is open, switching the
   screen on if night mode has it off. The frame only shows these things; it cannot arm
   or disarm anything. See [The house](#the-house).
+- **To do.** A column for each person with today's tasks and the points they have, a
+  column for tasks that are anyone's, and the rewards points buy. See
+  [Things to do](#things-to-do).
 - **Utilities.** Timers (up to four at once, from preset lengths or one set by hand),
   alarms (once, every day, weekdays or weekends, with a five-minute snooze) and a
   pomodoro clock (focus and break lengths can be chosen; a long break after four
@@ -105,6 +108,29 @@ bins (a repeating event, "the day before at 19:00", "Put the bins out"), a swimm
 (45 minutes before "Swimming"), a card to buy (a week before anything named
 "birthday"). The note stays until someone touches it or the event is over. It does not
 chime while the screen is off for the night, but it is there in the morning.
+
+### Things to do
+
+People, tasks, points and rewards are set up on the management page's To do tab and
+kept on the frame, so a task added from a phone or computer is on the frame's screen
+within half a minute, and a tick made on the frame shows on the page.
+
+- A **task** is somebody's or anyone's, is worth some points (or none), and is either
+  done once (on a day, or whenever) or comes round on chosen days of the week. A task
+  for a day that has passed shows as late until it is done. A task done once stays
+  ticked for that day and is gone the next.
+- **Ticking** a task on the frame gives its points to its person; a task that is
+  anyone's asks who did it. Touching it again the same day takes the tick and the
+  points back. Ticking needs no PIN: it is what the list is for.
+- A **reward** costs points. Touching one on the frame and choosing who it is for
+  spends their points, after the PIN if one is set. People short of points are shown
+  how many they still need.
+- Points can also be given or taken by hand on the management page, with a reason.
+  Everything that happens to anyone's points is listed there.
+
+With a PIN set, only ticking is open: people, tasks, rewards, spending and giving
+points all need it. Since a child can tick a task that was not done, the list of what
+happened is the check; undo a tick the same day, or take the points back by hand.
 
 ### Getting there
 
@@ -331,6 +357,7 @@ a value it would still have to check.
 | `device.rs` | The frame itself: Wi-Fi status, which screen is in front, room light, screen on and off. Has a stand-in for the simulator |
 | `night.rs` | Deciding when the screen should be off |
 | `weather.rs` | Finding a place by name and fetching its forecast from Open-Meteo |
+| `todo.rs`, `routes/todo.rs` | Things to do: people, tasks that come round or are done once, points and rewards |
 | `travel.rs` | When to leave for an event: journeys from TfL, driving times from TomTom, places looked up by name |
 | `home.rs`, `routes/home.rs` | What the house's relay reports (alarm, sensors, cameras, doorbell), kept in memory |
 | `plain.rs` | Listening for plain http, and resetting https attempts |
@@ -341,7 +368,7 @@ a value it would still have to check.
 Each page in `server/pages/` is an ordinary `index.html` with its stylesheets and scripts
 beside it (the screen's Utilities tab has its own pair, `utilities.css` and
 `utilities.js`; the Home tab has `home.*`; a photo's menu and the reminders are in
-`extras.*`). The server sends a page as one document with those put inside it, so a
+`extras.*`; the To do tab is `todo.*`). The server sends a page as one document with those put inside it, so a
 page arrives in one request and is never half old and half new. Changing a page means
 editing those files and rebuilding.
 
@@ -364,6 +391,10 @@ Routes added for the screen and calendar:
 | `POST /api/reminders` | Keep exactly these reminder rules |
 | `GET /api/travel?trip=&arrive=` | When to leave for an event that starts at `arrive`, by the trip at that place in the list; `&how=` works it out another way |
 | `POST /api/travel`, `/api/travel/key` | Keep home and the trips; keep or forget the driving key |
+| `GET /api/todo?day=` | Things to do: people, tasks, rewards, and the list for the day it is for whoever asks |
+| `POST /api/todo/done` | Tick a task for a day, or take the tick away (no PIN) |
+| `POST /api/todo/people`, `/tasks`, `/rewards` | Keep exactly these people, tasks or rewards |
+| `POST /api/todo/redeem`, `/points` | Spend someone's points on a reward; give or take points by hand |
 | `GET /api/map/{z}/{x}/{y}` | A square of the map, fetched from OpenStreetMap once and kept |
 | `GET /api/calendar?from=&to=` | Events in a window (seconds since 1970), feed status, added events |
 | `POST /api/calendars` | Set the subscribed calendar links |
@@ -379,7 +410,7 @@ Routes added for the screen and calendar:
 | `GET /api/alive` | The screen saying it is running; `?busy=<seconds>` keeps the display on, `?wake=<seconds since 1970>` has it on then |
 | `POST /api/screen`, `/api/slideshow`, `/api/wifi/settings` | Choose the screen, set the slideshow, open the Wi-Fi list |
 
-On the frame, data lives in `/data/local/frameserver`: `settings.json` (the reminder rules among it), `events.json`, `marks.json`,
+On the frame, data lives in `/data/local/frameserver`: `settings.json` (the reminder rules among it), `events.json`, `marks.json`, `todo.json`,
 `calendars/` (kept copies of subscribed calendars), `index.json`, `thumbs/`, `logs/`.
 
 Environment variables: `FRAME_CLOUD_DIR` (photo folder), `FRAME_DATA_DIR`,

@@ -89,6 +89,7 @@ mod house;
 mod protection;
 mod reading;
 mod syncing;
+mod todos;
 mod trips;
 
 #[test]

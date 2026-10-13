@@ -53,10 +53,12 @@ static SCREEN: LazyLock<String> = LazyLock::new(|| {
             ("utilities.css", include_str!("../../pages/screen/utilities.css")),
             ("home.css", include_str!("../../pages/screen/home.css")),
             ("extras.css", include_str!("../../pages/screen/extras.css")),
+            ("todo.css", include_str!("../../pages/screen/todo.css")),
             ("screen.js", include_str!("../../pages/screen/screen.js")),
             ("utilities.js", include_str!("../../pages/screen/utilities.js")),
             ("home.js", include_str!("../../pages/screen/home.js")),
             ("extras.js", include_str!("../../pages/screen/extras.js")),
+            ("todo.js", include_str!("../../pages/screen/todo.js")),
         ],
     )
 });

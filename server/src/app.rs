@@ -11,6 +11,7 @@ use crate::home::Home;
 use crate::index::Index;
 use crate::marks::Marks;
 use crate::store::{Config, Settings};
+use crate::todo::Todo;
 use crate::travel::Travel;
 use crate::types::Screen;
 use crate::weather::Weather;
@@ -49,9 +50,13 @@ pub(crate) struct App {
     pub(crate) home: Home,
     /// Working out when to leave for events.
     pub(crate) travel: Travel,
+    /// Things to do, who does them, and the points they earn.
+    pub(crate) todo: Todo,
     /// How many times the calendar has been changed from the page (an event, a calendar, a
     /// rule, a trip), so the screen can tell there is something new to fetch.
     pub(crate) calendar_changes: AtomicU64,
+    /// The same for the things to do.
+    pub(crate) todo_changes: AtomicU64,
 }
 
 /// A moment on the clock that waiting is measured by (tokio's, which tests can move forward).
@@ -82,6 +87,7 @@ impl App {
     pub(crate) fn new(cfg: Config, device: Device, port: u16) -> Shared {
         let index = Index::load(&cfg);
         let marks = Marks::load(&cfg);
+        let todo = Todo::load(&cfg);
         let calendars =
             Calendars::load(&cfg, &store::load_settings(&cfg).calendars).falling_back_to(gphotos::tolerant_client());
         Arc::new(App {
@@ -104,7 +110,9 @@ impl App {
             weather: Arc::new(Weather::new(weather::FORECAST_URL, weather::PLACES_URL)),
             home: Home::default(),
             travel: Travel::default(),
+            todo,
             calendar_changes: AtomicU64::new(0),
+            todo_changes: AtomicU64::new(0),
         })
     }
 
@@ -120,6 +128,11 @@ impl App {
     /// Note that what the calendar shows has changed.
     pub(crate) fn calendar_changed(&self) {
         self.calendar_changes.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Note that the things to do have changed.
+    pub(crate) fn todo_changed(&self) {
+        self.todo_changes.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn watch(&self) -> std::sync::MutexGuard<'_, ScreenWatch> {

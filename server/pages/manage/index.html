@@ -30,6 +30,7 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
     <button data-tab="duplicates">Duplicates</button>
     <button data-tab="sync">Google Photos sync</button>
     <button data-tab="calendar">Calendar</button>
+    <button data-tab="todo">To do</button>
     <button data-tab="frame">Frame</button>
     <button data-tab="deleted">Bin <span class="count" id="exCount"></span></button>
     <button data-tab="status">Status</button>
@@ -170,6 +171,53 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
       <h2>Coming up on the frame</h2>
       <p class="muted" id="calNone"></p>
       <div class="rows" id="calComing"></div>
+    </div>
+  </section>
+
+  <section id="tab-todo" class="hidden">
+    <div class="card narrow">
+      <h2>People</h2>
+      <p class="muted">Whoever does tasks and collects points. The frame's To do tab gives each person a column. Removing someone removes their points too.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="tdName" maxlength="30" placeholder="Name" aria-label="Name">
+        <button class="btn primary" id="tdAddPerson">Add person</button>
+      </div>
+      <div class="rows" id="tdPeople" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
+      <h2>Tasks</h2>
+      <p class="muted">A task is somebody's, or anyone's (whoever ticks it on the frame says who they are). It is done once, on a day or whenever, or comes round on the days of the week you choose. Ticking it on the frame gives its points. A task done once leaves the list the day after it is done.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="tdTitle" maxlength="120" placeholder="What is to be done" aria-label="Task">
+        <select id="tdWho" aria-label="Whose it is"></select>
+        <input type="number" id="tdPoints" min="0" max="10000" value="1" title="Points" aria-label="Points"> <span class="muted">points</span>
+        <select id="tdRepeat" aria-label="When">
+          <option value="once">once, whenever</option>
+          <option value="day">once, on</option>
+          <option value="daily">every day</option>
+          <option value="weekdays">Monday to Friday</option>
+          <option value="days">on these days</option>
+        </select>
+        <input type="date" id="tdDay" class="hidden" aria-label="Day">
+        <span id="tdDays" class="hidden days"></span>
+        <button class="btn primary" id="tdAddTask">Add task</button>
+      </div>
+      <div class="rows" id="tdTasks" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
+      <h2>Rewards</h2>
+      <p class="muted">What points can be spent on. On the frame, touching a reward and choosing who it is for spends their points; with a PIN set, that takes the PIN.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="tdReward" maxlength="120" placeholder="Reward, for example Film night" aria-label="Reward">
+        <input type="number" id="tdCost" min="0" max="10000" value="20" title="Points it costs" aria-label="Points it costs"> <span class="muted">points</span>
+        <button class="btn primary" id="tdAddReward">Add reward</button>
+      </div>
+      <div class="rows" id="tdRewards" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
+      <h2>What has happened</h2>
+      <p class="muted" id="tdNoHistory"></p>
+      <div class="rows" id="tdHistory"></div>
     </div>
   </section>
 

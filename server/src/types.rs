@@ -975,6 +975,82 @@ impl<'de> Deserialize<'de> for Ahead {
 /// The reminder rules: at most twenty.
 pub type Reminders = Bounded<Reminder, 0, 20>;
 
+// --- things to do --------------------------------------------------------------------------------
+
+/// What someone who does tasks is called: one line of 1 to 30 characters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct PersonName(String);
+
+impl PersonName {
+    pub fn parse(text: &str) -> Option<PersonName> {
+        let text = text.trim();
+        let usable = (1..=30).contains(&text.chars().count()) && !text.contains(char::is_control);
+        usable.then(|| PersonName(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PersonName {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        PersonName::parse(&text).ok_or_else(|| de::Error::custom("a person needs a name of 1 to 30 characters"))
+    }
+}
+
+/// What a task earns or a reward costs: nothing to ten thousand points.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Points(u32);
+
+impl Points {
+    const MOST: u64 = 10_000;
+
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Points {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let points = u64::deserialize(deserializer)?;
+        u32::try_from(points)
+            .ok()
+            .filter(|_| points <= Points::MOST)
+            .map(Points)
+            .ok_or_else(|| de::Error::custom("points go from 0 to 10000"))
+    }
+}
+
+/// Days of the week, at least one: written as a list of numbers, 1 for Monday to 7 for Sunday.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Weekdays(u8);
+
+impl Weekdays {
+    pub fn has(self, day: chrono::Weekday) -> bool {
+        self.0 & (1 << day.num_days_from_monday()) != 0
+    }
+}
+
+impl Serialize for Weekdays {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq((1..=7u8).filter(|day| self.0 & (1 << (day - 1)) != 0))
+    }
+}
+
+impl<'de> Deserialize<'de> for Weekdays {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let days = Vec::<u8>::deserialize(deserializer)?;
+        if days.is_empty() || days.iter().any(|day| !(1..=7).contains(day)) {
+            return Err(de::Error::custom("days of the week are 1 (Monday) to 7 (Sunday), and at least one"));
+        }
+        Ok(Weekdays(days.iter().fold(0, |set, day| set | (1 << (day - 1)))))
+    }
+}
+
 // --- getting to events ------------------------------------------------------------------------
 
 /// Somewhere a trip starts, ends or changes: a postcode, an address or the name of a station,
@@ -1913,6 +1989,26 @@ mod tests {
         assert_eq!(format!("{key:?}"), "RoadsKey(****)");
         for bad in ["", "short", "has spaces in the middle of it", "semi;colon;semi;colon;semi"] {
             assert_eq!(RoadsKey::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn names_points_and_days_of_the_week_for_things_to_do() {
+        assert_eq!(PersonName::parse("  Ana ").unwrap().as_str(), "Ana");
+        let too_long = "x".repeat(31);
+        for bad in ["", "  ", too_long.as_str()] {
+            assert_eq!(PersonName::parse(bad), None, "{bad:?}");
+        }
+        assert_eq!(from_value::<Points>(json!(10000)).unwrap().get(), 10_000);
+        assert_eq!(Points::default().get(), 0);
+        for bad in [json!(10001), json!(-1), json!(1.5), json!("5")] {
+            assert!(from_value::<Points>(bad.clone()).is_err(), "{bad}");
+        }
+        let days = from_value::<Weekdays>(json!([7, 1, 1, 3])).unwrap();
+        assert_eq!(json!(days), json!([1, 3, 7]));
+        assert!(days.has(chrono::Weekday::Mon) && days.has(chrono::Weekday::Sun) && !days.has(chrono::Weekday::Tue));
+        for bad in [json!([]), json!([0]), json!([8]), json!([1, 9])] {
+            assert!(from_value::<Weekdays>(bad.clone()).is_err(), "{bad}");
         }
     }
 }

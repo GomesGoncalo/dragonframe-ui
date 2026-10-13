@@ -61,6 +61,7 @@ const ICONS = {
   wifi: '<path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9 16.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r=".6"/>',
   frame: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/>',
   home: '<path d="M3.5 11L12 3.5l8.5 7.5M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>',
+  todo: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12.5l3 3 5.5-6.5"/>',
   utilities: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2.5M9.5 2.5h5"/>',
   alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.3 2.3M5.5 3.5L2.5 6.5M18.5 3.5l3 3"/>',
   pomodoro: '<circle cx="12" cy="14" r="7"/><path d="M12 7c0-2 1-3.5 3-3.5M8.5 6.5l3.5 1.2 3.5-1.2"/>',
@@ -99,6 +100,9 @@ let remind = () => {};
 let leaving = () => '';
 // And what it shows when an event in a list is touched.
 let showEvent = () => {};
+// What todo.js does when the server says the things to do have changed.
+let todoNews = () => {};
+let todoKnown = null;
 let calendarKnown = null;  // the server's count of changes to the calendar, as last heard
 // Two things the Utilities tab (utilities.js) has a say in: what is asked of the display each
 // time the page reports in, and whether its tab may be left for Pictures by itself.
@@ -970,6 +974,8 @@ async function sayAlive() {
     // An event added, a calendar or a trip changed: shown now, not at the calendar's next turn.
     if (calendarKnown !== null && reply.calendar !== calendarKnown) refreshCalendar();
     calendarKnown = reply.calendar;
+    if (todoKnown !== null && reply.todo !== todoKnown) todoNews();
+    todoKnown = reply.todo;
     // Reminder rules changed from a phone take effect now, not at the calendar's next turn.
     if (!sameChoice(reply.reminders || [], rulesKnown)) {
       rulesKnown = reply.reminders || [];
@@ -1020,6 +1026,7 @@ function showTab(name) {
   // The calendar opens on today. ("Coming up" is also measured to see what fits, which
   // cannot be done while it is out of sight.)
   if (name === 'calendar') showToday();
+  if (name === 'todo') todoNews();
   touched();
   schedule();
 }
@@ -1107,8 +1114,9 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === '1') showTab('pictures');
   else if (event.key === '2') showTab('calendar');
   else if (event.key === '3') showTab('home');
-  else if (event.key === '4') showTab('utilities');
-  else if (event.key === '5') showTab('settings');
+  else if (event.key === '4') showTab('todo');
+  else if (event.key === '5') showTab('utilities');
+  else if (event.key === '6') showTab('settings');
 });
 
 // Every tab gets its drawing.

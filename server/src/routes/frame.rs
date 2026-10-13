@@ -123,6 +123,7 @@ pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap
         "reminders": settings.reminders,
         // Counts changes to the calendar, so the screen fetches it when there is news.
         "calendar": app.calendar_changes.load(std::sync::atomic::Ordering::Relaxed),
+        "todo": crate::routes::todo::changes(&app),
     }))
 }
 

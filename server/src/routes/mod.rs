@@ -35,6 +35,7 @@ use crate::routes::photos::{
     add, analyse, delete, duplicates, empty_bin, file, forget_emptied, mark, refresh_slideshow, restore, save_albums,
     set_daily_sync, slides, state, status, sync, thumb, watching,
 };
+use crate::routes::todo::{adjust_points, redeem, save_people, save_rewards, save_tasks, tick_task, todo_view};
 use crate::{auth, store};
 
 pub(crate) mod access;
@@ -43,6 +44,7 @@ pub(crate) mod frame;
 pub(crate) mod home;
 pub(crate) mod pages;
 pub(crate) mod photos;
+pub(crate) mod todo;
 
 pub(crate) const MAX_BODY: usize = 60 * 1024 * 1024;
 pub(crate) const NO_STORE: HeaderValue = HeaderValue::from_static("no-store");
@@ -130,8 +132,9 @@ pub(crate) async fn protect(State(app): State<Shared>, request: Request, next: N
             return ApiError::new(StatusCode::FORBIDDEN, "forbidden").into_response();
         }
         // Unlocking is how a session starts, and analysing photos changes nothing on the frame.
+        // Ticking a task off is what the list of things to do is there for, whoever does it.
         // Everything else needs the PIN, from the frame's own screen as much as from a phone.
-        if !matches!(request.uri().path(), "/api/unlock" | "/api/analyse" | "/api/watching") {
+        if !matches!(request.uri().path(), "/api/unlock" | "/api/analyse" | "/api/watching" | "/api/todo/done") {
             let token = header(request.headers(), "x-frame-token").map(str::to_string);
             let cfg = Arc::clone(&app.cfg);
             let allowed = blocking(move || auth::allowed(&store::load_settings(&cfg), token.as_deref())).await;
@@ -178,6 +181,13 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/travel", get(travel_plan).post(save_travel))
         .route("/api/travel/key", post(save_roads_key))
         .route("/api/map/{z}/{x}/{y}", get(map_tile))
+        .route("/api/todo", get(todo_view))
+        .route("/api/todo/done", post(tick_task))
+        .route("/api/todo/people", post(save_people))
+        .route("/api/todo/tasks", post(save_tasks))
+        .route("/api/todo/rewards", post(save_rewards))
+        .route("/api/todo/redeem", post(redeem))
+        .route("/api/todo/points", post(adjust_points))
         .route("/api/device", get(device_view))
         .route("/api/address.svg", get(address_code))
         .route("/api/alive", get(alive))

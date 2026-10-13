@@ -1,6 +1,6 @@
 // What the page for managing the frame does: photos, duplicates, syncing, the calendar and the frame's settings.
 "use strict";
-const PAGE_SIZE = 60, MAX_SIDE = 1920, BIN_PAGE = 60, TABS = ["photos", "duplicates", "sync", "calendar", "frame", "deleted", "status"];
+const PAGE_SIZE = 60, MAX_SIDE = 1920, BIN_PAGE = 60, TABS = ["photos", "duplicates", "sync", "calendar", "todo", "frame", "deleted", "status"];
 const KINDS = { all: "All", synced: "Synced", added: "Added here", phone: "From phone app", favourite: "★ Favourites", hidden: "Hidden from the frame" };
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
@@ -506,6 +506,91 @@ async function addRule() {
   if (!rule.words.trim()) { toast("Say which words to look for in the names of events."); $("rmWords").focus(); return; }
   if (await saveRules(rules.concat([rule]), "Rule added. The frame picks it up within half a minute.")) { $("rmWords").value = ""; $("rmSay").value = ""; }
 }
+// --- things to do: people, tasks, points and rewards -------------------------------------------
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+let todo = null;
+const todayText = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const nameOf = id => { const p = todo.people.find(p => p.id === id); return p ? p.name : "Anyone"; };
+function repeatText(repeat) {
+  if ("once" in repeat) return repeat.once ? `once, on ${calWhen(repeat.once).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}` : "once";
+  if (repeat.days.length === 7) return "every day";
+  if (repeat.days.join() === "1,2,3,4,5") return "Monday to Friday";
+  return repeat.days.map(d => DAY_NAMES[d - 1]).join(", ");
+}
+async function loadTodo() {
+  try { todo = await api(`/api/todo?day=${todayText()}`); } catch (e) { return; }
+  if (changed("tdWho", todo.people.map(p => [p.id, p.name]))) {
+    const who = $("tdWho"), was = who.value; who.textContent = "";
+    who.append(new Option("Anyone", ""), ...todo.people.map(p => new Option(p.name, p.id)));
+    if ([...who.options].some(o => o.value === was)) who.value = was;
+  }
+  if (changed("tdPeople", todo.people)) {
+    const box = $("tdPeople"); box.textContent = "";
+    for (const person of todo.people) {
+      const give = el("button", "btn small", "Give or take points"), remove = el("button", "btn small danger", "Remove");
+      give.onclick = async () => {
+        const amount = Number(prompt(`Points to give ${person.name} (a number below zero takes points away):`, "5"));
+        if (!Number.isInteger(amount) || !amount) return;
+        const why = prompt("What for?", amount > 0 ? "Well done" : "");
+        if (why === null) return;
+        saveTodo("/api/todo/points", { who: person.id, change: amount, why: why.trim() || (amount > 0 ? "Points given" : "Points taken") }, "Done.");
+      };
+      remove.onclick = () => { if (confirm(`Remove ${person.name}? Their ${person.points} points go too, and their tasks become anyone's.`)) saveTodo("/api/todo/people", { people: todo.people.filter(p => p.id !== person.id).map(p => ({ id: p.id, name: p.name })) }, "Removed."); };
+      box.append(calRow(`★ ${person.points}`, person.name, "", give)); box.lastChild.append(remove);
+    }
+  }
+  if (changed("tdTasks", [todo.tasks, todo.today, todo.people])) {
+    const box = $("tdTasks"); box.textContent = "";
+    for (const task of todo.tasks) {
+      const today = todo.today.find(t => t.id === task.id);
+      const state = !today ? "" : today.done ? `done today by ${nameOf(today.by)}` : today.late ? "late" : "to do today";
+      const remove = el("button", "btn small danger", "Delete");
+      remove.onclick = () => { if (confirm(`Delete "${task.title}"?`)) saveTodo("/api/todo/tasks", { tasks: todo.tasks.filter(t => t.id !== task.id) }, "Task deleted."); };
+      box.append(calRow(`${nameOf(task.who)} · ${task.points} pts`, task.title, `${repeatText(task.repeat)}${state ? ` · ${state}` : ""}`, remove));
+    }
+    if (!todo.tasks.length) box.append(el("p", "muted", "No tasks yet."));
+  }
+  if (changed("tdRewards", todo.rewards)) {
+    const box = $("tdRewards"); box.textContent = "";
+    for (const reward of todo.rewards) {
+      const remove = el("button", "btn small danger", "Delete");
+      remove.onclick = () => saveTodo("/api/todo/rewards", { rewards: todo.rewards.filter(r => r.id !== reward.id) }, "Reward deleted.");
+      box.append(calRow(`★ ${reward.cost}`, reward.title, "", remove));
+    }
+  }
+  setText($("tdNoHistory"), todo.history.length ? "" : "Nothing yet. Points earned, spent, given and taken are listed here.");
+  if (changed("tdHistory", todo.history)) {
+    const box = $("tdHistory"); box.textContent = "";
+    for (const entry of todo.history) box.append(calRow(fmtWhen(entry.at), `${entry.who}: ${entry.what}`, `${entry.change > 0 ? "+" : ""}${entry.change}`, null));
+  }
+}
+async function saveTodo(path, body, done) {
+  try { await api(path, body); if (done) toast(done); } catch (e) { toast(e.message); return false; }
+  await loadTodo();
+  return true;
+}
+async function addPerson() {
+  const name = $("tdName").value.trim();
+  if (!name) { $("tdName").focus(); return; }
+  if (!todo) await loadTodo();
+  if (await saveTodo("/api/todo/people", { people: todo.people.map(p => ({ id: p.id, name: p.name })).concat([{ name }]) }, `${name} added.`)) $("tdName").value = "";
+}
+async function addTask() {
+  const title = $("tdTitle").value.trim(), kind = $("tdRepeat").value;
+  if (!title) { toast("Say what is to be done."); $("tdTitle").focus(); return; }
+  const chosen = [...$("tdDays").querySelectorAll("input")].filter(i => i.checked).map(i => Number(i.value));
+  if (kind === "days" && !chosen.length) { toast("Choose at least one day of the week."); return; }
+  if (kind === "day" && !$("tdDay").value) { toast("Choose the day."); $("tdDay").focus(); return; }
+  const repeat = kind === "once" ? { once: null } : kind === "day" ? { once: $("tdDay").value } : { days: kind === "daily" ? [1, 2, 3, 4, 5, 6, 7] : kind === "weekdays" ? [1, 2, 3, 4, 5] : chosen };
+  const task = { title, who: $("tdWho").value || null, points: Number($("tdPoints").value) || 0, repeat };
+  if (await saveTodo("/api/todo/tasks", { tasks: todo.tasks.concat([task]) }, "Task added. It is on the frame within half a minute.")) $("tdTitle").value = "";
+}
+async function addReward() {
+  const title = $("tdReward").value.trim();
+  if (!title) { $("tdReward").focus(); return; }
+  if (await saveTodo("/api/todo/rewards", { rewards: todo.rewards.concat([{ title, cost: Number($("tdCost").value) || 0 }]) }, "Reward added.")) $("tdReward").value = "";
+}
+
 // --- getting there: how the events that are travelled to are reached ------------------------------
 const WAYS = { transit: "public transport", walk: "on foot", cycle: "by bicycle", car: "by car", park: "by car to a station, then public transport" };
 let travel = null, ways = [], tripPlans = {}, editing = null, tripEvents = [];
@@ -733,6 +818,7 @@ function showTab(tab) {
   if (tab === "status") loadStatus();
   if (tab === "calendar") loadCalendar();
   if (tab === "frame") loadFrame();
+  if (tab === "todo") loadTodo();
   if (tab === "duplicates" && !$("dupGroups").childElementCount) findDuplicates();
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => { location.hash = b.dataset.tab; });
@@ -771,6 +857,13 @@ $("optAuto").onchange = e => api("/api/auto", { enabled: e.target.checked }).the
 $("calLinks").onchange = () => api("/api/calendars", { links: $("calLinks").value.split("\n") }).then(() => { toast("Calendars saved. The frame is fetching them."); drawn.delete("calLinks"); loadCalendar(); setTimeout(loadCalendar, 4000); }, e => toast(e.message));
 $("evAdd").onclick = addEvent;
 $("rmAdd").onclick = addRule;
+$("tdAddPerson").onclick = addPerson; $("tdAddTask").onclick = addTask; $("tdAddReward").onclick = addReward;
+$("tdName").onkeydown = e => { if (e.key === "Enter") addPerson(); };
+$("tdTitle").onkeydown = e => { if (e.key === "Enter") addTask(); };
+$("tdReward").onkeydown = e => { if (e.key === "Enter") addReward(); };
+$("tdRepeat").onchange = () => { show($("tdDay"), $("tdRepeat").value === "day"); show($("tdDays"), $("tdRepeat").value === "days"); };
+DAY_NAMES.forEach((name, i) => { const label = el("label"), box = el("input"); box.type = "checkbox"; box.value = i + 1; label.append(box, ` ${name}`); $("tdDays").append(label); });
+$("tdDay").value = todayText();
 $("trHome").onchange = () => { if (travel) { tripPlans = {}; saveTravel($("trHome").value.trim(), travel.trips, "Home saved."); } };
 $("trKeySave").onclick = () => { if ($("trKey").value.trim()) saveRoadsKey($("trKey").value.trim()); else { toast("Paste the key first."); $("trKey").focus(); } };
 $("trKeyForget").onclick = () => { if (confirm("Forget the key? Trips by car stay listed but can no longer be worked out.")) saveRoadsKey(null); };
@@ -830,3 +923,4 @@ setInterval(reportWatching, 5000);
 setInterval(() => { if (!$("tab-status").classList.contains("hidden") && !document.hidden) loadStatus(); }, 10000);
 setInterval(() => { if (!$("tab-calendar").classList.contains("hidden") && !document.hidden) loadCalendar(); }, 15000);
 setInterval(() => { if (!$("tab-frame").classList.contains("hidden") && !document.hidden) loadFrame(); }, 10000);
+setInterval(() => { if (!$("tab-todo").classList.contains("hidden") && !document.hidden) loadTodo(); }, 8000);
