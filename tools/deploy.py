@@ -1,11 +1,24 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Build frameserver and install it on the frame (the only step that uses adb).
 
-    ./deploy.py           # build, install, (re)start, and set it to start at boot
-    ./deploy.py --remove  # stop it and remove it from the frame
-    ./deploy.py --reset-pin  # forgot the PIN: remove it (photos and settings are kept)
+    tools/deploy.py            # build, install, (re)start, set it to start at boot,
+                               # install the screen app, and put the new screen on the frame
+    tools/deploy.py --keep-screen  # the same, but leave whichever screen the frame shows
+    tools/deploy.py --original-ui  # go back to the screen the frame came with (no build)
+    tools/deploy.py --new-ui       # put the new screen back, without building or installing
+    tools/deploy.py --previous     # put back the server that the last deploy replaced
+    tools/deploy.py --remove       # stop it and remove it from the frame
+    tools/deploy.py --reset-pin    # forgot the PIN: remove it (photos and settings are kept)
 
 Nothing is deployed unless formatting, clippy (warnings are errors) and the tests pass.
+
+The frame's original screen is never removed or changed: the new one is a page shown
+full screen by a small app (android/, built by android/build.py) on top of it. --original-ui
+closes that app and works through adb alone, so it does not depend on the server or its
+page working. --remove also uninstalls the app.
+
+Run with the system Python (the shebang): macOS blocks Homebrew's Python from the local
+network.
 
 Needs: rustup target add armv7-unknown-linux-musleabihf, and cargo-zigbuild.
 """
@@ -19,9 +32,13 @@ import time
 import urllib.request
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-import frame_sync as fs  # noqa: E402
+TOOLS = Path(__file__).resolve().parent
+REPO = TOOLS.parent
+HERE = REPO / "server"  # the Rust crate: where cargo runs and where build output goes
+import frame_sync as fs  # noqa: E402  (beside this file)
+
+sys.path.insert(0, str(REPO / "android"))
+import build as screen_app  # noqa: E402
 
 TARGET = "armv7-unknown-linux-musleabihf"
 BINARY = HERE / "target" / TARGET / "release" / "frameserver"
@@ -31,6 +48,10 @@ INSTALL_DIR = "/data/local/frameserver"
 RC_FILE = "/vendor/etc/init/frameserver.rc"
 OLD_RC_FILE = "/system/etc/init/frameserver.rc"  # where earlier versions put it; never took effect
 PORT = 8080
+# What shows the new screen: our app, or the browser that comes with the frame when the
+# app is not installed. `device.rs` starts them; here they only ever need closing.
+BROWSER = "org.chromium.webview_shell"
+SETTINGS = f"{INSTALL_DIR}/settings.json"
 # Started by Android's init once the system is up, and restarted by it if it ever exits.
 # init must launch the system shell rather than the binary itself: /data is mounted
 # nosuid, and the kernel refuses to exec a program from there under a new SELinux label.
@@ -117,22 +138,73 @@ def run_checks():
             fs.die(f"`{' '.join(command)}` failed; not deploying")
 
 
-def reset_pin(frame):
-    path = f"{INSTALL_DIR}/settings.json"
+def read_settings(frame):
     try:
-        settings = json.loads(frame.shell(f"cat {path}", check=False) or "{}")
+        return json.loads(frame.shell(f"cat {SETTINGS} 2>/dev/null", check=False) or "{}")
     except ValueError:
-        fs.die(f"could not read {path} on the frame")
+        fs.die(f"could not read {SETTINGS} on the frame")
+
+
+def write_settings(frame, settings):
+    local = HERE / "target" / "settings.json"
+    local.write_text(json.dumps(settings))
+    frame.adb("push", str(local), SETTINGS)
+    local.unlink()
+
+
+def reset_pin(frame):
+    settings = read_settings(frame)
     if "pin" not in settings:
         print("No PIN is set.")
         return
     settings.pop("pin", None)
     settings.pop("sessions", None)
-    local = HERE / "target" / "settings.json"
-    local.write_text(json.dumps(settings))
-    frame.adb("push", str(local), path)
-    local.unlink()
+    write_settings(frame, settings)
     print("PIN removed. Set a new one from the Status tab.")
+
+
+def choose_screen(frame, screen):
+    """Record which screen the frame is to show ("new" or "legacy"). The server must be stopped."""
+    settings = read_settings(frame)
+    settings["screen"] = screen
+    write_settings(frame, settings)
+
+
+def show_original_screen(frame):
+    """Close whatever shows the new screen and bring the frame's own screen to the front."""
+    frame.shell(f"am force-stop {screen_app.PACKAGE}; am force-stop {BROWSER}", check=False)
+    frame.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME", check=False)
+
+
+def start(frame):
+    """Start the server now and wait until it answers. After a reboot, init starts it instead."""
+    # In the background and in its own session, so it outlives this adb connection. adb still
+    # does not return while it runs, so do not wait for it: drop the adb client once it answers.
+    starter = subprocess.Popen(
+        ["adb", "-s", frame.host, "shell", f"cd {INSTALL_DIR} && setsid ./frameserver >/dev/null 2>&1 < /dev/null &"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    url = f"http://{frame.target[0]}:{PORT}/"
+    for _ in range(40):
+        time.sleep(0.5)
+        try:
+            urllib.request.urlopen(url + "api/state", timeout=3).read()
+            starter.terminate()
+            return url
+        except OSError:
+            pass
+    starter.terminate()
+    fs.die(f"installed, but {url} is not answering; see {INSTALL_DIR}/logs/ on the frame")
+
+
+def restart_showing(frame, screen):
+    """Restart the server with the frame set to show `screen`."""
+    stop(frame)
+    choose_screen(frame, screen)
+    if screen == "legacy":
+        show_original_screen(frame)
+    return start(frame)
 
 
 def stop(frame):
@@ -163,12 +235,43 @@ def main():
     p.add_argument("--no-boot", action="store_true", help="do not set it to start when the frame boots")
     p.add_argument("--reset-pin", action="store_true", help="remove a forgotten PIN")
     p.add_argument("--skip-checks", action="store_true", help="deploy without running fmt, clippy and tests")
+    p.add_argument("--keep-screen", action="store_true", help="deploy without changing which screen the frame shows")
+    p.add_argument("--original-ui", action="store_true", help="go back to the screen the frame came with")
+    p.add_argument("--new-ui", action="store_true", help="put the new screen on the frame, without building")
+    p.add_argument("--previous", action="store_true", help="put back the server the last deploy replaced")
     args = p.parse_args()
     frame = fs.Frame(args.host)
+
+    if args.original_ui:
+        frame.connect()
+        restart_showing(frame, "legacy")
+        print("The frame is back on its original screen. `tools/deploy.py --new-ui` puts the new one back.")
+        return
+
+    if args.new_ui:
+        frame.connect()
+        url = restart_showing(frame, "new")
+        print(f"The frame is showing the new screen. Manage it at {url}")
+        return
+
+    if args.previous:
+        frame.connect()
+        if not frame.shell(f"ls {INSTALL_DIR}/frameserver.previous 2>/dev/null", check=False).strip():
+            fs.die("there is no previous server on the frame")
+        stop(frame)
+        # The earlier server knows nothing of the new screen, so the frame goes back to its own.
+        choose_screen(frame, "legacy")
+        show_original_screen(frame)
+        frame.shell(f"cd {INSTALL_DIR} && mv frameserver frameserver.undone && mv frameserver.previous frameserver")
+        url = start(frame)
+        print(f"The previous server is running again, and the frame shows its original screen. Open {url}")
+        return
 
     if args.remove:
         frame.connect()
         stop(frame)
+        show_original_screen(frame)
+        frame.shell(f"pm uninstall {screen_app.PACKAGE}; settings delete global policy_control", check=False)
         remove_file(frame, RC_FILE)
         remove_file(frame, OLD_RC_FILE)
         frame.shell(f"rm -rf {INSTALL_DIR}")
@@ -184,36 +287,28 @@ def main():
     if not args.skip_checks:
         run_checks()
     subprocess.run(["cargo", "zigbuild", "--release", "--target", TARGET], cwd=HERE, check=True)
+    apk = screen_app.build()
     frame.connect()
     stop(frame)
     frame.shell(f"mkdir -p {INSTALL_DIR}")
     frame.adb("push", str(BINARY), f"{INSTALL_DIR}/frameserver.new")
+    # Keep the server being replaced, so `--previous` can put it back.
+    frame.shell(f"cd {INSTALL_DIR} && [ -e frameserver ] && cp -p frameserver frameserver.previous; true", check=False)
     frame.shell(f"cd {INSTALL_DIR} && mv frameserver.new frameserver && chmod 755 frameserver")
     install_models(frame)
+    # The app that shows the new screen full screen. The setting cleared after it was only
+    # needed while the frame's own browser showed the page.
+    frame.adb("install", "-r", str(apk))
+    frame.shell("settings delete global policy_control", check=False)
     if not args.no_boot:
         write_file(frame, RC_FILE, RC)
         remove_file(frame, OLD_RC_FILE)
-    # Start it now, in the background and in its own session so it outlives this adb
-    # connection. adb still does not return while it runs, so do not wait for it: drop the
-    # adb client once the server answers. After a reboot, init starts it instead.
-    starter = subprocess.Popen(
-        ["adb", "-s", frame.host, "shell", f"cd {INSTALL_DIR} && setsid ./frameserver >/dev/null 2>&1 < /dev/null &"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    url = f"http://{frame.target[0]}:{PORT}/"
-    for _ in range(20):
-        time.sleep(0.5)
-        try:
-            urllib.request.urlopen(url + "api/state", timeout=3).read()
-            starter.terminate()
-            print(f"frameserver is running. Open {url}")
-            return
-        except OSError:
-            pass
-    starter.terminate()
-    fs.die(f"installed, but {url} is not answering; see {INSTALL_DIR}/logs/ on the frame")
+    if not args.keep_screen:
+        choose_screen(frame, "new")
+    url = start(frame)
+    print(f"frameserver is running. Open {url}")
+    if not args.keep_screen:
+        print("The frame is switching to the new screen. `tools/deploy.py --original-ui` goes back to the one it came with.")
 
 
 if __name__ == "__main__":

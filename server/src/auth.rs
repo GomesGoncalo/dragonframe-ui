@@ -55,6 +55,17 @@ impl Protection {
     }
 }
 
+/// End the session `token` belongs to, so the token unlocks nothing any more. Returns
+/// whether there was one. The frame's own screen does this when its settings are left,
+/// so that the next person to open them is asked for the PIN again.
+pub fn end_session(settings: &mut Settings, token: &str) -> bool {
+    let Some(protection) = settings.protection.as_mut() else { return false };
+    let ended = digest("session", token);
+    let before = protection.sessions.len();
+    protection.sessions.retain(|session| *session != ended);
+    protection.sessions.len() < before
+}
+
 /// Set or change the PIN. Everyone else is signed out; the caller gets a fresh session token.
 pub fn set_pin(settings: &mut Settings, pin: &Pin) -> String {
     settings.protection.insert(Protection::new(pin)).start_session()
@@ -139,6 +150,18 @@ mod tests {
 
     fn pin(text: &str) -> Pin {
         Pin::parse(text).unwrap()
+    }
+
+    #[test]
+    fn ending_a_session_locks_only_that_one() {
+        let mut settings = Settings::default();
+        assert!(!end_session(&mut settings, "anything"), "nothing to end without a PIN");
+        let first = set_pin(&mut settings, &Pin::parse("2468").unwrap());
+        let second = Guard::default().unlock(&mut settings, "2468").unwrap();
+        assert!(end_session(&mut settings, &second));
+        assert!(!allowed(&settings, Some(&second)));
+        assert!(allowed(&settings, Some(&first)), "other sessions carry on");
+        assert!(!end_session(&mut settings, &second), "it is gone already");
     }
 
     #[test]

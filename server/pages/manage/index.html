@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<script>
+// Apply the chosen theme before anything is drawn, so the page never flashes the other one.
+try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<title>Photo Frame</title>
+<meta name="theme-color" content="#0f766e">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='8' width='56' height='48' rx='10' fill='%230f766e'/%3E%3Crect x='11' y='15' width='42' height='34' rx='5' fill='%23e9fbf7'/%3E%3Ccircle cx='24' cy='27' r='5' fill='%23f5b942'/%3E%3Cpath d='M11 44l12-11 9 8 8-10 13 13v0a5 5 0 0 1-5 5H16a5 5 0 0 1-5-5z' fill='%232dd4bf'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="manage.css">
+</head>
+<body>
+<header id="header">
+  <div class="top">
+    <h1>Photo Frame</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+    <button class="btn small hidden" id="lockBtn" title="A PIN is needed to make changes">Unlock</button>
+    <select id="theme" class="small" title="Colour theme" aria-label="Colour theme">
+      <option value="system">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </div>
+  <nav>
+    <button data-tab="photos" class="active">Photos</button>
+    <button data-tab="duplicates">Duplicates</button>
+    <button data-tab="sync">Google Photos sync</button>
+    <button data-tab="calendar">Calendar</button>
+    <button data-tab="frame">Frame</button>
+    <button data-tab="deleted">Bin <span class="count" id="exCount"></span></button>
+    <button data-tab="status">Status</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-photos">
+    <div class="card banner hidden" id="adding"><span id="addText"></span><div class="progress"><div id="addFill"></div></div></div>
+    <div class="card now hidden" id="now">
+      <img id="nowImg" alt="Photo on the frame right now">
+      <div class="grow"><div class="label">Showing on the frame now</div><div id="nowText" class="muted"></div></div>
+      <button class="btn danger" id="nowDelete">Delete</button>
+    </div>
+    <div class="bar">
+      <button class="btn primary" id="addBtn">Add photos…</button>
+      <input type="file" id="addInput" accept="image/*,.heic,.heif" multiple class="hidden">
+      <span class="muted desktop-only">or drop them anywhere on this page</span>
+      <span class="spacer"></span>
+      <button class="btn" id="reloadShow" title="Closes the slideshow on the frame so it restarts with the current photos">Refresh frame slideshow</button>
+    </div>
+    <div class="bar toolbar">
+      <div class="chips" id="chips"></div>
+      <select id="sort" title="Order">
+        <option value="newest">Date taken, newest first</option>
+        <option value="oldest">Date taken, oldest first</option>
+        <option value="added">Recently added to the frame</option>
+      </select>
+      <select id="jump" title="Jump to a month"></select>
+      <span class="spacer"></span>
+      <span id="selInfo" class="hidden"><b id="selCount"></b> selected</span>
+      <button class="btn hidden" id="selClear">Clear</button>
+      <button class="btn danger hidden" id="selDelete">Delete selected</button>
+      <div class="pager">
+        <button class="btn" id="prev" aria-label="Previous page">‹</button>
+        <span id="pageInfo" class="muted"></span>
+        <button class="btn" id="next" aria-label="Next page">›</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="muted" id="empty"></p>
+  </section>
+
+  <section id="tab-duplicates" class="hidden">
+    <div class="bar">
+      <select id="dupLevel" title="How alike photos must be">
+        <option value="0">Look identical</option>
+        <option value="3">Very similar</option>
+        <option value="8">Similar (bursts and retakes)</option>
+      </select>
+      <button class="btn primary" id="dupFind">Find</button>
+      <span id="dupInfo" class="muted"></span>
+      <span class="spacer"></span>
+      <button class="btn danger hidden" id="dupDeleteAll">Delete the others in every group</button>
+    </div>
+    <details class="hint"><summary>How suggestions work</summary><p>Each group keeps one photo, outlined and marked <b>Keeping</b>. It starts as the suggestion: the sharpest, best exposed shot. The frame also looks at faces, slowly, taking the groups on your screen first; once a group has been looked at, its suggestion favours open eyes and smiles, with sharpness as the tie-breaker. Tap a photo to see it large and compare, and choose "Keep this one" to change the choice. Nothing is deleted until you press a Delete button and confirm. Groups are by appearance, not identical files, and the suggestions come from small automatic models that can be wrong.</p></details>
+    <div id="dupGroups"></div>
+  </section>
+
+  <section id="tab-sync" class="hidden">
+    <div class="card narrow">
+      <h2>Sync a Google Photos album to the frame</h2>
+      <p class="muted">One shared-album link per line (in Google Photos: Share, then Create link). The frame downloads the photos itself, and never downloads a photo it already has.</p>
+      <label class="row"><textarea id="sources" placeholder="https://photos.app.goo.gl/…" spellcheck="false"></textarea></label>
+      <label class="row"><input type="checkbox" id="optDelete"> <span>Also remove synced photos that are no longer in these albums</span></label>
+      <label class="row"><input type="checkbox" id="optRefresh" checked> <span>Refresh the frame slideshow when done</span></label>
+      <label class="row" style="align-items:center; flex-wrap:wrap"><span>Download at most</span> <input type="number" id="optLimit" min="1" placeholder="no limit"> <span>new photos this run</span></label>
+      <div class="bar" style="margin: 16px 0 0"><button class="btn primary" id="syncStart">Start sync</button></div>
+      <label class="row" style="margin-top:16px"><input type="checkbox" id="optAuto"> <span>Sync these albums automatically once a day</span></label>
+      <div id="syncLive" class="hidden">
+        <div class="progress"><div id="progFill"></div></div>
+        <div id="progText" class="muted"></div>
+        <pre class="log hidden" id="log"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-calendar" class="hidden">
+    <div class="card narrow">
+      <h2>Calendars the frame follows</h2>
+      <p class="muted">One calendar link per line. For a public Google calendar, its ordinary sharing or embedding link will do. For a private one, use its "Secret address in iCal format" (in Google Calendar: Settings, then the calendar). Any address that ends in .ics or starts with webcal:// works too; in Apple Calendar, share the calendar as a public calendar and copy its link. The frame fetches each calendar itself every 15 minutes. It only reads them: nothing is ever written back.</p>
+      <label class="row"><textarea id="calLinks" spellcheck="false"></textarea></label>
+      <div class="rows" id="calFeeds"></div>
+    </div>
+    <div class="card narrow">
+      <h2>Add an event</h2>
+      <p class="muted">Events added here are kept on the frame and shown with the others. Leave the time empty for something that takes the whole day.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="evTitle" maxlength="120" placeholder="What is happening" aria-label="Title">
+        <input type="date" id="evDay" aria-label="Date">
+        <input type="time" id="evTime" aria-label="Time (optional)">
+        <select id="evRepeat" aria-label="Repeats">
+          <option value="never">Once</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+          <option value="yearly">Every year</option>
+        </select>
+        <button class="btn primary" id="evAdd">Add</button>
+      </div>
+      <div class="rows" id="calAdded" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
+      <h2>Coming up on the frame</h2>
+      <p class="muted" id="calNone"></p>
+      <div class="rows" id="calComing"></div>
+    </div>
+  </section>
+
+  <section id="tab-frame" class="hidden">
+    <div class="card narrow">
+      <h2>Screen</h2>
+      <p class="muted" id="frScreen"></p>
+      <div class="bar" style="margin: 14px 0 0">
+        <button class="btn" id="frSwap"></button>
+        <button class="btn" id="frWifi">Open Wi-Fi settings on the frame</button>
+      </div>
+    </div>
+    <div class="card narrow">
+      <h2>Night</h2>
+      <p class="muted">The frame switches its screen off for the night and back on in the morning. It can also go dark whenever the room does. A frame that was touched in the last five minutes stays on.</p>
+      <label class="row"><input type="checkbox" id="frNight"> <span>Switch the screen off at night</span></label>
+      <label class="row"><span>From</span> <input type="time" id="frFrom"> <span>until</span> <input type="time" id="frUntil"></label>
+      <label class="row"><input type="checkbox" id="frDark"> <span>Also off whenever the room has been dark for two minutes</span></label>
+      <p class="muted" id="frLight"></p>
+    </div>
+    <div class="card narrow">
+      <h2>Sound</h2>
+      <label class="row"><span>Chime for calendar events</span>
+        <select id="frChime">
+          <option value="">Off</option><option value="0">At the time</option><option value="5">5 minutes before</option>
+          <option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option>
+        </select></label>
+      <p class="muted">Events with a time are announced with a soft chime and a note on the screen. Nothing sounds while the screen is off for the night.</p>
+    </div>
+    <div class="card narrow">
+      <h2>Weather</h2>
+      <p class="muted" id="frPlace"></p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="frTown" maxlength="100" placeholder="Town or city, for example Lisbon" aria-label="Town or city">
+        <button class="btn primary" id="frFind">Use this place</button>
+        <button class="btn hidden" id="frForget">Stop showing the weather</button>
+      </div>
+      <p class="muted" style="margin-top: 10px">The forecast comes from Open-Meteo, which is sent only the place's position on the map.</p>
+    </div>
+    <div class="card narrow">
+      <h2>Pictures</h2>
+      <label class="row"><span>Change every</span>
+        <select id="frEvery"><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">1 minute</option><option value="300">5 minutes</option></select>
+        <span>in</span>
+        <select id="frOrder"><option value="shuffled">shuffled order</option><option value="newest">newest first</option></select></label>
+      <label class="row"><span>Go back to Pictures when the Calendar or Settings is left alone for</span>
+        <select id="frHome"><option value="1">1 minute</option><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="">never</option></select></label>
+      <label class="row"><input type="checkbox" id="frMemories"> <span>Show photos taken on this day in earlier years first</span></label>
+      <label class="row"><input type="checkbox" id="frWeather"> <span>Show the weather beside the clock</span></label>
+      <label class="row"><input type="checkbox" id="frMorning"> <span>List today's events under the clock in the morning</span></label>
+    </div>
+  </section>
+
+  <section id="tab-deleted" class="hidden">
+    <div class="card">
+      <h2>Bin</h2>
+      <p class="muted" id="binNote"></p>
+      <div class="bar" style="margin: 14px 0">
+        <button class="btn" id="restoreAll">Restore all</button>
+        <button class="btn danger" id="emptyBin">Empty the bin now</button>
+        <span class="spacer"></span>
+        <span class="muted" id="goneInfo"></span>
+        <button class="btn hidden" id="forgetGone">Let them sync again</button>
+      </div>
+      <p class="muted" id="exEmpty"></p>
+      <div class="grid" id="exList"></div>
+      <div class="bar" style="margin: 14px 0 0; justify-content: center"><button class="btn hidden" id="exMore"></button></div>
+    </div>
+  </section>
+
+  <section id="tab-status" class="hidden">
+    <div class="cards" id="statusCards"></div>
+  </section>
+</main>
+
+<div class="drop" id="drop">Drop photos to add them to the frame</div>
+<div class="lightbox" id="lightbox" role="dialog" aria-label="Photo viewer">
+  <div class="stage" id="stage"><img id="lbImg" alt=""></div>
+  <div class="controls">
+    <div class="info" id="lbInfo"></div>
+    <button class="btn" id="lbPrev" aria-label="Previous">‹</button>
+    <button class="btn" id="lbNext" aria-label="Next">›</button>
+    <button class="btn primary hidden" id="lbKeep">Keep this one</button>
+    <button class="btn danger" id="lbDelete">Delete from frame</button>
+    <button class="btn" id="lbClose">Close</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="manage.js"></script>
+</body>
+</html>

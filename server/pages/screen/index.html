@@ -1,0 +1,151 @@
+<!doctype html>
+<!--
+  The frame's own screen, shown full screen by the frame's screen app. It has three tabs:
+
+  Pictures  a slideshow with a clock and the weather. Each photo carries the date it was
+            taken for its first five seconds, and whenever the tabs are up. Every photo
+            is shown whole, never
+            cropped. A photo the shape of the screen is shown alone; one that is not is
+            laid out with others from the next few in line, side by side and one above
+            the other, in whichever arrangement leaves the least of the screen empty.
+            Photos taken on today's date in earlier years come first.
+  Calendar  the month or the week, and what is coming up, each calendar in its own colour.
+            Arrows or a swipe move to other months and weeks; a touch on a day shows
+            what is on it.
+  Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
+            asked for each time Settings is opened, on a keypad on the screen.
+
+  Calendar and Settings go back to Pictures when left alone for a while (a setting).
+
+  Touch: on Pictures the left and right quarters step through photos and the middle
+  brings up the tabs. The frame's WebView is Chromium 74, so this file stays within
+  what that engine has: no optional chaining or `??`, no flex `gap`, `inset`,
+  `aspect-ratio`, `clamp()` or `backdrop-filter`.
+
+  The frame can stand either way up. Sizes are in vmin (hundredths of the screen's
+  shorter side), so everything is the same size both ways; where things sit when the
+  screen is tall is set at the end of the styles, and the photos are arranged for
+  whichever shape the screen has.
+
+  For trying things out, the address may carry ?tab=calendar|settings, ?part=night (and
+  so on, for a part of Settings), ?view=week, ?every=<seconds> and ?order=newest.
+
+  While it runs, the page tells the server so every half minute (/api/alive). If
+  that stops, the server puts the frame back on its original screen.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Frame</title>
+<link rel="stylesheet" href="screen.css">
+</head>
+<body data-tab="pictures" data-view="month" data-part="pictures">
+
+<div class="view" id="pictures">
+  <div class="slide" id="a"></div>
+  <div class="slide" id="b"></div>
+  <div class="scrim"></div>
+  <div class="paused">Paused</div>
+  <div class="clock">
+    <div class="time" id="time"></div>
+    <div class="date"><span id="date"></span><span class="weather" id="sky"></span></div>
+    <div class="morning" id="morning"></div>
+  </div>
+  <div class="notice" id="notice">Looking for photos…</div>
+</div>
+
+<div class="view" id="calendar">
+  <div class="top"><h1 id="today"></h1><div class="now"><span class="weather" id="sky-now"></span><span id="now"></span></div></div>
+  <div class="switch" id="views">
+    <button data-view="month" data-icon="month">Month</button><button data-view="week" data-icon="week">Week</button>
+    <button class="only step" data-move="-1" data-icon="back" aria-label="Earlier"></button><button class="only" data-move="1" data-icon="on" aria-label="Later"></button>
+    <button id="to-today">Today</button><span class="period" id="period"></span>
+  </div>
+  <div id="month-view">
+    <div class="month"><h2 id="month-name"></h2><div class="grid" id="grid"></div></div>
+    <div class="agenda"><h2 id="agenda-title">Coming up</h2><div id="agenda"></div></div>
+  </div>
+  <div id="week-view"><div class="week" id="week"></div></div>
+</div>
+
+<div class="view" id="settings">
+  <div class="top"><h1>Settings</h1></div>
+  <div class="switch" id="parts">
+    <button data-part="pictures" data-icon="pictures">Pictures</button><button data-part="night" data-icon="night">Night</button><button data-part="sound" data-icon="sound">Sound</button><button data-part="wifi" data-icon="wifi">Wi-Fi</button><button data-part="frame" data-icon="frame">Frame</button>
+  </div>
+  <div class="lock">
+    <h2>Enter the PIN to change settings</h2>
+    <div class="dots" id="pin-dots"></div>
+    <p id="pin-note"></p>
+    <div class="keys" id="keys"></div>
+  </div>
+
+  <div class="part" id="part-pictures">
+    <div class="row"><span class="label">Change every</span><span id="paces"></span></div>
+    <div class="columns">
+      <div class="row"><span class="label">Order</span><span id="orders"></span></div>
+      <div class="row"><span class="label">Go back to Pictures when left alone for</span><span id="rests"></span></div>
+    </div>
+    <div class="columns">
+      <div class="row"><span class="label">Photos from this day in earlier years first</span><span id="memories"></span></div>
+      <div class="row"><span class="label">Weather beside the clock</span><span id="show-weather"></span></div>
+      <div class="row"><span class="label">Today's events under the clock in the morning</span><span id="morning-on"></span></div>
+    </div>
+  </div>
+
+  <div class="part" id="part-night">
+    <div class="row"><span class="label">Switch the screen off at night</span><span id="night-on"></span></div>
+    <div class="columns">
+      <div class="row"><span class="label">From</span><button class="press" data-hours="from" data-by="-30">−</button><span class="hours" id="night-from"></span><button class="press" data-hours="from" data-by="30">+</button></div>
+      <div class="row"><span class="label">Until</span><button class="press" data-hours="until" data-by="-30">−</button><span class="hours" id="night-until"></span><button class="press" data-hours="until" data-by="30">+</button></div>
+    </div>
+    <div class="row"><span class="label">Also off whenever the room is dark</span><span id="night-dark"></span></div>
+    <p id="night-note"></p>
+  </div>
+
+  <div class="part" id="part-sound">
+    <div class="row"><span class="label">Sound a chime for calendar events</span><span id="chimes"></span></div>
+    <div class="row"><button class="press" id="chime-test">Play the chime</button></div>
+    <p>The chime is for events with a time; a note appears on the screen as well. Nothing sounds while the screen is off for the night.</p>
+  </div>
+
+  <div class="part" id="part-wifi">
+    <div class="columns">
+      <div>
+        <div class="big" id="wifi-name">Checking…</div>
+        <p id="wifi-detail"></p>
+        <div class="row"><button class="press" id="wifi-change">Choose a network</button></div>
+        <p id="wifi-note" style="max-width: 70vmin">Opens the frame's list of networks. The frame comes back here a minute after the last touch.</p>
+      </div>
+      <div>
+        <p style="max-width: 60vmin">Photos, calendars and events are managed from a phone or computer on the same Wi-Fi. Point a phone's camera at the code, or open:</p>
+        <div class="big" id="address">…</div>
+        <img class="code" id="code" alt="QR code of that address">
+      </div>
+    </div>
+  </div>
+
+  <div class="part" id="part-frame">
+    <div class="row"><span class="label">Weather for</span><div class="big" id="place">…</div></div>
+    <p>The place is chosen on the phone or computer page (the Frame tab), where there is a keyboard.</p>
+    <div class="row"><span class="label">Original screen</span>
+      <button class="press warn" id="use-original">Use the original screen</button></div>
+    <p>Goes back to the screen the frame came with. To return to this one, open the address shown under Wi-Fi from a phone or computer, then choose Frame and "Show the new screen".</p>
+  </div>
+</div>
+
+<div class="soon" id="soon"><div class="when" id="soon-when"></div><div class="what" id="soon-what"></div></div>
+
+<div class="tabs" id="tabs">
+  <button data-tab="pictures" data-icon="pictures">Pictures</button>
+  <button data-tab="calendar" data-icon="calendar">Calendar</button>
+  <button data-tab="settings" data-icon="settings">Settings</button>
+  <button class="pause" id="pause" data-icon="pause">Pause</button>
+</div>
+
+<div class="asleep">The screen is off (night mode). On the frame this is a dark screen.</div>
+
+<script src="screen.js"></script>
+</body>
+</html>

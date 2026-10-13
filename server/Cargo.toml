@@ -6,19 +6,26 @@ description = "Photo manager web app that runs on the Dragon Touch frame itself"
 
 [dependencies]
 axum = "0.8"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+chrono-tz = "0.10.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "native-tls-vendored"] }
+rrule = "0.14.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"
+socket2 = "0.6.5"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 tract-onnx = "0.21"
+webpki-root-certs = "1.0.9"
 
 [dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
 
 [profile.release]

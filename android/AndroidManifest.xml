@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The frame's new screen as an app: one full-screen page, served by frameserver on the
+  frame itself. It is an ordinary app, not the home screen: the frame's own screen stays
+  underneath, and closing or uninstalling this app brings it back.
+
+  It turns with the frame (fullSensor) and handles the turn itself (configChanges), so
+  the page is resized rather than loaded again.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="frame.screen"
+    android:versionCode="2"
+    android:versionName="1.1">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="29" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The page comes from this same device over plain http. -->
+    <application
+        android:label="Frame screen"
+        android:hardwareAccelerated="true"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+        android:usesCleartextTraffic="true">
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="fullSensor">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

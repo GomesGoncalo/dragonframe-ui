@@ -15,7 +15,10 @@ use serde_json::{json, Value};
 use sha1::{Digest as _, Sha1};
 use tracing::{debug, info, warn};
 
-use crate::types::{hex, AlbumLink, Digest, PhotoPath, Restore, Source, SyncedName, SYNC_SUBDIR};
+use crate::types::{
+    hex, AlbumLink, CalendarLink, Chime, Digest, Night, PhotoPath, Place, Restore, Screen, Slideshow, Source,
+    SyncedName, SYNC_SUBDIR,
+};
 
 const MEDIA_URI: &str = "content://media/external/images/media";
 const APP_PREFS: &str = "/data/data/com.fujia.calendar/shared_prefs/spUtils.xml";
@@ -113,7 +116,7 @@ pub fn synced_names(cfg: &Config) -> Vec<SyncedName> {
 
 // --- Android side ------------------------------------------------------------
 
-fn run(program: &str, args: &[&str]) -> Option<String> {
+pub fn run(program: &str, args: &[&str]) -> Option<String> {
     let out = match Command::new(program).args(args).output() {
         Ok(out) => out,
         Err(e) => {
@@ -382,6 +385,11 @@ pub fn load_photo(cfg: &Config, photo: &PhotoPath) -> Result<DynamicImage, Photo
     decode(&data)
 }
 
+/// A photo's width and height in pixels, read from the start of the file without decoding it.
+pub fn dimensions(cfg: &Config, photo: &PhotoPath) -> Option<(u32, u32)> {
+    ImageReader::open(photo.within(&cfg.cloud_dir)).ok()?.with_guessed_format().ok()?.into_dimensions().ok()
+}
+
 pub fn thumbnail_exists(cfg: &Config, photo: &PhotoPath) -> bool {
     thumb_path(cfg, photo).exists()
 }
@@ -512,6 +520,18 @@ pub struct Settings {
     pub last_sync: Option<LastSync>,
     /// The PIN, when one is set, together with the sessions it has unlocked.
     pub protection: Option<Protection>,
+    /// The calendars the frame subscribes to.
+    pub calendars: Vec<CalendarLink>,
+    /// Which screen the frame shows.
+    pub screen: Screen,
+    /// How the slideshow on the frame's own screen runs.
+    pub slideshow: Slideshow,
+    /// When the screen is switched off.
+    pub night: Night,
+    /// Whether calendar events are announced with a chime.
+    pub chime: Chime,
+    /// Where the frame is, for the weather.
+    pub place: Option<Place>,
 }
 
 /// How the most recent sync went.
@@ -554,6 +574,12 @@ impl Settings {
                 }
                 _ => None,
             },
+            calendars: strings(&saved["calendars"]).iter().filter_map(|link| CalendarLink::parse(link)).collect(),
+            screen: serde_json::from_value(saved["screen"].clone()).unwrap_or_default(),
+            slideshow: serde_json::from_value(saved["slideshow"].clone()).unwrap_or_default(),
+            night: serde_json::from_value(saved["night"].clone()).unwrap_or_default(),
+            chime: serde_json::from_value(saved["chime"].clone()).unwrap_or_default(),
+            place: serde_json::from_value(saved["place"].clone()).ok(),
         }
     }
 
@@ -568,6 +594,12 @@ impl Settings {
             "last_sync_summary": last.and_then(|l| l.summary.as_deref()),
             "pin": protection.map(|p| json!({ "salt": p.salt, "hash": p.hash })),
             "sessions": protection.map_or(&[][..], |p| &p.sessions),
+            "calendars": self.calendars,
+            "screen": self.screen,
+            "slideshow": self.slideshow,
+            "night": self.night,
+            "chime": self.chime,
+            "place": self.place,
         })
     }
 }
@@ -939,6 +971,13 @@ mod tests {
                 hash: "h".into(),
                 sessions: vec!["t1".into(), "t2".into()],
             }),
+            calendars: vec![CalendarLink::parse("webcal://calendar.example/family.ics").unwrap()],
+            screen: Screen::New,
+            slideshow: serde_json::from_value(json!({ "every": 30, "order": "newest" })).unwrap(),
+            night: serde_json::from_value(json!({ "on": true, "from": "22:00", "until": "06:30", "when_dark": true }))
+                .unwrap(),
+            chime: serde_json::from_value(json!(10)).unwrap(),
+            place: Place::new("Lisbon", 38.72, -9.14),
         };
         save_settings(&frame.0, &settings);
         assert_eq!(load_settings(&frame.0), settings);

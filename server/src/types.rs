@@ -1,0 +1,1290 @@
+//! Values that are checked once, where they enter the program, and carry that
+//! proof in their type.
+//!
+//! A `PhotoPath` can only be made from text that is safe to join onto the
+//! photo folder and pass to commands; a `Pin` is always 4 to 8 digits; a
+//! `Bounded` list always has an allowed length. Code that receives one of
+//! these never has to check again, and cannot be handed something unchecked.
+//! Each type parses itself out of JSON, so request bodies are valid by the
+//! time a handler sees them.
+
+use std::fmt;
+use std::marker::PhantomData;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+
+use chrono::{Datelike, NaiveDate, NaiveTime};
+use serde::de::{self, Deserialize, Deserializer};
+use serde::Serialize;
+
+/// Folder (inside the photo folder) that holds everything this app and `frame_sync.py` put on the frame.
+pub const SYNC_SUBDIR: &str = "frame-sync";
+const IMAGE_EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "webp"];
+/// Characters of a digest used in a file name.
+const ID_LENGTH: usize = 16;
+
+/// A SHA-1 digest.
+pub type Digest = [u8; 20];
+
+/// Lower-case hexadecimal.
+pub fn hex(bytes: &[u8]) -> String {
+    use fmt::Write as _;
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(out, "{byte:02x}"); // writing to a String cannot fail
+    }
+    out
+}
+
+/// The part of a digest that goes into a file name.
+fn id(digest: &Digest) -> String {
+    hex(digest)[..ID_LENGTH].to_string()
+}
+
+fn is_id(text: &str) -> bool {
+    text.len() == ID_LENGTH && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Text with its `%xx` escapes undone. An escape that is not one is left as it is.
+pub fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex =
+            (bytes[i] == b'%').then(|| text.get(i + 1..i + 3)).flatten().and_then(|h| u8::from_str_radix(h, 16).ok());
+        if let Some(byte) = hex {
+            out.push(byte);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Text with everything but letters, digits and `-._~` written as `%xx`, for use in an address.
+fn percent_encode(text: &str) -> String {
+    use fmt::Write as _;
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "%{byte:02X}"); // writing to a String cannot fail
+        }
+    }
+    out
+}
+
+/// Decode base64 text, in either of its alphabets and with or without padding.
+fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut bits, mut held) = (0u32, 0u8);
+    for byte in text.trim_end_matches('=').bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => return None,
+        };
+        bits = (bits << 6) | u32::from(value);
+        held += 6;
+        if held >= 8 {
+            held -= 8;
+            out.push(u8::try_from((bits >> held) & 0xff).ok()?);
+        }
+    }
+    Some(out)
+}
+
+/// Deserialize a string and parse it, turning a failed parse into a readable error.
+fn parsed<'de, D: Deserializer<'de>, T>(
+    deserializer: D,
+    parse: impl Fn(&str) -> Option<T>,
+    what: &str,
+) -> Result<T, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    parse(&text).ok_or_else(|| de::Error::custom(format!("{what}: {text:?}")))
+}
+
+// --- photos -----------------------------------------------------------------------
+
+/// Where a photo on the frame came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    /// Put there by an album sync.
+    Synced,
+    /// Added by hand through this app.
+    Added,
+    /// Sent with the vendor's phone app.
+    Phone,
+}
+
+impl Source {
+    pub const ALL: [Source; 3] = [Source::Synced, Source::Added, Source::Phone];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Synced => "synced",
+            Source::Added => "added",
+            Source::Phone => "phone",
+        }
+    }
+}
+
+/// The file name of a synced photo: `fs_<16 hex digits>.jpg`. The digits identify the
+/// album item, so the same item always gets the same name.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct SyncedName(String);
+
+impl SyncedName {
+    pub fn parse(name: &str) -> Option<SyncedName> {
+        let id = name.strip_prefix("fs_")?.strip_suffix(".jpg")?;
+        is_id(id).then(|| SyncedName(name.to_string()))
+    }
+
+    /// The name for the album item whose identity hashes to `digest`.
+    pub fn from_digest(digest: &Digest) -> SyncedName {
+        SyncedName(format!("fs_{}.jpg", id(digest)))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Where the photo lives, relative to the photo folder.
+    pub fn path(&self) -> PhotoPath {
+        PhotoPath(format!("{SYNC_SUBDIR}/{}", self.0))
+    }
+}
+
+impl fmt::Display for SyncedName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for SyncedName {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, SyncedName::parse, "not the name of a synced photo")
+    }
+}
+
+/// The path of a photo relative to the frame's photo folder.
+///
+/// Having one proves the text is safe: it stays inside the folder, contains nothing a shell
+/// or SQL filter could misread, is not hidden, and names an image file.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct PhotoPath(String);
+
+impl PhotoPath {
+    pub fn parse(rel: &str) -> Option<PhotoPath> {
+        let safe = !rel.is_empty()
+            && !rel.starts_with(['/', '.', '-'])
+            && !rel.contains("..")
+            && rel.chars().all(|c| c.is_ascii_alphanumeric() || "._/-".contains(c))
+            && Path::new(rel)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| IMAGE_EXTENSIONS.iter().any(|known| ext.eq_ignore_ascii_case(known)));
+        safe.then(|| PhotoPath(rel.to_string()))
+    }
+
+    /// The path for a photo added by hand whose content hashes to `digest`.
+    pub fn added(digest: &Digest) -> PhotoPath {
+        PhotoPath(format!("{SYNC_SUBDIR}/up_{}.jpg", id(digest)))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The synced-photo name, if this is a synced photo.
+    pub fn synced_name(&self) -> Option<SyncedName> {
+        let name = self.0.strip_prefix(SYNC_SUBDIR)?.strip_prefix('/')?;
+        SyncedName::parse(name)
+    }
+
+    pub fn source(&self) -> Source {
+        match self.0.rsplit_once('/') {
+            Some((SYNC_SUBDIR, name)) if SyncedName::parse(name).is_some() => Source::Synced,
+            Some((SYNC_SUBDIR, _)) => Source::Added,
+            _ => Source::Phone,
+        }
+    }
+
+    /// The photo's location under `dir`.
+    pub fn within(&self, dir: &Path) -> PathBuf {
+        dir.join(&self.0)
+    }
+}
+
+impl fmt::Display for PhotoPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhotoPath {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, PhotoPath::parse, "not a photo path")
+    }
+}
+
+// --- lists with an allowed length -----------------------------------------------------
+
+/// A list with between `MIN` and `MAX` items.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bounded<T, const MIN: usize, const MAX: usize>(Vec<T>);
+
+/// A list with at least one item.
+pub type NonEmpty<T> = Bounded<T, 1, { usize::MAX }>;
+
+impl<T, const MIN: usize, const MAX: usize> Bounded<T, MIN, MAX> {
+    pub fn new(items: Vec<T>) -> Option<Self> {
+        (MIN..=MAX).contains(&items.len()).then_some(Bounded(items))
+    }
+
+    pub fn into_inner(self) -> Vec<T> {
+        self.0
+    }
+}
+
+impl<T, const MIN: usize, const MAX: usize> Deref for Bounded<T, MIN, MAX> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<'de, T: Deserialize<'de>, const MIN: usize, const MAX: usize> Deserialize<'de> for Bounded<T, MIN, MAX> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let items = Vec::<T>::deserialize(deserializer)?;
+        let count = items.len();
+        Bounded::new(items).ok_or_else(|| {
+            let allowed = if MAX == usize::MAX { format!("at least {MIN}") } else { format!("{MIN} to {MAX}") };
+            de::Error::custom(format!("expected {allowed} items, got {count}"))
+        })
+    }
+}
+
+// --- the PIN --------------------------------------------------------------------------------
+
+/// A PIN: 4 to 8 digits.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Pin(String);
+
+impl Pin {
+    pub fn parse(text: &str) -> Option<Pin> {
+        ((4..=8).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_digit())).then(|| Pin(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A PIN never appears in logs or debug output.
+impl fmt::Debug for Pin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Pin(****)")
+    }
+}
+
+/// What a request to change the PIN asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PinChange {
+    Set(Pin),
+    /// An empty PIN means "remove it".
+    Remove,
+}
+
+impl<'de> Deserialize<'de> for PinChange {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text.is_empty() {
+            return Ok(PinChange::Remove);
+        }
+        Pin::parse(&text).map(PinChange::Set).ok_or_else(|| de::Error::custom("A PIN is 4 to 8 digits."))
+    }
+}
+
+// --- albums ------------------------------------------------------------------------------------
+
+/// A link to a shared album: an https address.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct AlbumLink(String);
+
+impl AlbumLink {
+    pub fn parse(text: &str) -> Option<AlbumLink> {
+        let text = text.trim();
+        let rest = text.strip_prefix("https://")?;
+        (!rest.is_empty() && !text.contains(char::is_whitespace)).then(|| AlbumLink(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl AlbumLink {
+    /// A link to a server inside a test, which cannot offer https.
+    pub fn local(url: &str) -> AlbumLink {
+        AlbumLink(url.to_string())
+    }
+}
+
+impl fmt::Display for AlbumLink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// The album links typed into the page: one per line, blank lines ignored.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AlbumLinks(pub Vec<AlbumLink>);
+
+impl<'de> Deserialize<'de> for AlbumLinks {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<String>::deserialize(deserializer)?
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| AlbumLink::parse(line).ok_or_else(|| de::Error::custom("album links must start with https://")))
+            .collect::<Result<_, _>>()
+            .map(AlbumLinks)
+    }
+}
+
+/// Which photos in the bin to restore.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Restore {
+    /// Everything in the bin.
+    All,
+    These(Vec<SyncedName>),
+}
+
+impl<'de> Deserialize<'de> for Restore {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor(PhantomData<()>);
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = Restore;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("\"all\" or a list of synced photo names")
+            }
+
+            fn visit_str<E: de::Error>(self, text: &str) -> Result<Restore, E> {
+                if text == "all" {
+                    Ok(Restore::All)
+                } else {
+                    Err(E::invalid_value(de::Unexpected::Str(text), &self))
+                }
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(self, seq: A) -> Result<Restore, A::Error> {
+                Vec::<SyncedName>::deserialize(de::value::SeqAccessDeserializer::new(seq)).map(Restore::These)
+            }
+        }
+        deserializer.deserialize_any(Visitor(PhantomData))
+    }
+}
+
+/// How alike two photos must look to be grouped: the number of fingerprint bits (of 64)
+/// that may differ, from 0 (identical-looking) to 10.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Likeness(u32);
+
+impl Likeness {
+    pub const IDENTICAL: Likeness = Likeness(0);
+    const LOOSEST: u32 = 10;
+
+    /// From a query parameter; anything unreadable means identical, anything larger is capped.
+    pub fn from_query(text: Option<&str>) -> Likeness {
+        text.and_then(|t| t.parse::<u32>().ok()).map_or(Likeness::IDENTICAL, |bits| Likeness(bits.min(Self::LOOSEST)))
+    }
+
+    pub fn bits(self) -> u32 {
+        self.0
+    }
+}
+
+// --- the calendar ----------------------------------------------------------------------------
+
+/// Most calendars the frame subscribes to.
+pub const MAX_CALENDARS: usize = 10;
+const MAX_LINK_LENGTH: usize = 2000;
+const MAX_TITLE_LENGTH: usize = 120;
+const DAY_SECS: i64 = 24 * 60 * 60;
+
+/// The address of a calendar to subscribe to: an https link to an iCalendar (.ics) feed.
+/// A `webcal://` link, which is how calendars are often shared, means the same thing.
+///
+/// Such a link is usually a secret that gives access to the whole calendar, so it is never
+/// printed in full: logs and debug output show only the host.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct CalendarLink(String);
+
+impl CalendarLink {
+    pub fn parse(text: &str) -> Option<CalendarLink> {
+        let text = text.trim();
+        let rest = text.strip_prefix("https://").or_else(|| text.strip_prefix("webcal://"))?;
+        let usable = !rest.is_empty() && text.len() <= MAX_LINK_LENGTH && !text.contains(char::is_whitespace);
+        let link = format!("https://{rest}");
+        usable.then(|| CalendarLink(google_feed(&link).unwrap_or(link)))
+    }
+
+    /// Whether this is one of Google Calendar's public feeds, which only public calendars have.
+    pub fn is_google_public_feed(&self) -> bool {
+        self.host() == GOOGLE_CALENDAR && self.0.ends_with("/public/basic.ics")
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The server the calendar comes from, which is safe to show.
+    pub fn host(&self) -> &str {
+        let rest = self.0.split_once("://").map_or(self.0.as_str(), |(_, rest)| rest);
+        rest.split(['/', '?', '#']).next().unwrap_or(rest)
+    }
+}
+
+const GOOGLE_CALENDAR: &str = "calendar.google.com";
+
+/// The feed behind one of Google Calendar's ordinary links: the one for sharing a calendar
+/// (`...?cid=<the calendar's id, encoded>`) or for embedding it in a page (`...embed?src=<id>`).
+/// None for any other address, including Google's own feed addresses, which are used as they are.
+/// The feed this gives only works for a calendar that is public; a private one has a secret
+/// feed address instead, which only its owner can look up.
+fn google_feed(link: &str) -> Option<String> {
+    let (host, path) = link.strip_prefix("https://")?.split_once('/')?;
+    let calendar_page = match host {
+        GOOGLE_CALENDAR => true,
+        "www.google.com" => path.starts_with("calendar/"),
+        _ => false,
+    };
+    if !calendar_page || path.contains("ical/") {
+        return None;
+    }
+    let query = path.split_once('?')?.1.split('#').next()?;
+    let named = |name: &str| {
+        query
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| percent_decode(value))
+    };
+    let plausible = |id: &String| id.contains('@') && !id.contains(|c: char| c.is_whitespace() || c.is_control());
+    // The sharing link carries the id in base64; a few carry it as it is.
+    let shared = named("cid")
+        .map(|cid| base64_decode(&cid).and_then(|id| String::from_utf8(id).ok()).filter(plausible).unwrap_or(cid));
+    let id = named("src").or(shared).filter(plausible)?;
+    Some(format!("https://{GOOGLE_CALENDAR}/calendar/ical/{}/public/basic.ics", percent_encode(&id)))
+}
+
+#[cfg(test)]
+impl CalendarLink {
+    /// A link to a server inside a test, which cannot offer https.
+    pub fn local(url: &str) -> CalendarLink {
+        CalendarLink(url.to_string())
+    }
+}
+
+impl fmt::Debug for CalendarLink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CalendarLink({}/…)", self.host())
+    }
+}
+
+impl<'de> Deserialize<'de> for CalendarLink {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        CalendarLink::parse(&text)
+            .ok_or_else(|| de::Error::custom("calendar links must start with https:// or webcal://"))
+    }
+}
+
+/// The calendar links typed into the page: one per line, blank lines ignored.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CalendarLinks(pub Vec<CalendarLink>);
+
+impl<'de> Deserialize<'de> for CalendarLinks {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut links: Vec<CalendarLink> = Vec::new();
+        for line in Vec::<String>::deserialize(deserializer)?.iter().filter(|line| !line.trim().is_empty()) {
+            let link = CalendarLink::parse(line)
+                .ok_or_else(|| de::Error::custom("calendar links must start with https:// or webcal://"))?;
+            if !links.contains(&link) {
+                links.push(link);
+            }
+        }
+        if links.len() > MAX_CALENDARS {
+            return Err(de::Error::custom(format!("at most {MAX_CALENDARS} calendars")));
+        }
+        Ok(CalendarLinks(links))
+    }
+}
+
+/// What an event is called: one line of 1 to 120 characters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Title(String);
+
+impl Title {
+    pub fn parse(text: &str) -> Option<Title> {
+        let text = text.trim();
+        let length = text.chars().count();
+        ((1..=MAX_TITLE_LENGTH).contains(&length) && !text.contains(char::is_control)).then(|| Title(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Title {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Title::parse(&text)
+            .ok_or_else(|| de::Error::custom(format!("an event needs a title of 1 to {MAX_TITLE_LENGTH} characters")))
+    }
+}
+
+/// Identifies an event that was added through this app.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct EventId(String);
+
+impl EventId {
+    pub fn parse(text: &str) -> Option<EventId> {
+        is_id(text).then(|| EventId(text.to_string()))
+    }
+
+    pub fn from_digest(digest: &Digest) -> EventId {
+        EventId(id(digest))
+    }
+}
+
+impl<'de> Deserialize<'de> for EventId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, EventId::parse, "not an event id")
+    }
+}
+
+/// A date on the calendar, written `YYYY-MM-DD`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Day(pub NaiveDate);
+
+impl Day {
+    pub fn parse(text: &str) -> Option<Day> {
+        let date = NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()?;
+        // Four-digit years only, so the text form always reads back.
+        (text.len() == 10 && (1900..=2200).contains(&date.year())).then_some(Day(date))
+    }
+}
+
+impl fmt::Display for Day {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.format("%Y-%m-%d"))
+    }
+}
+
+impl Serialize for Day {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Day {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, Day::parse, "not a date (YYYY-MM-DD)")
+    }
+}
+
+/// A time of day to the minute, written `HH:MM`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ClockTime(pub NaiveTime);
+
+impl ClockTime {
+    pub fn parse(text: &str) -> Option<ClockTime> {
+        (text.len() == 5).then(|| NaiveTime::parse_from_str(text, "%H:%M").ok()).flatten().map(ClockTime)
+    }
+}
+
+impl fmt::Display for ClockTime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.format("%H:%M"))
+    }
+}
+
+impl Serialize for ClockTime {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for ClockTime {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, ClockTime::parse, "not a time (HH:MM)")
+    }
+}
+
+/// How often an event that was added here comes round again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Repeat {
+    #[default]
+    Never,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+// --- the frame's own screen ---------------------------------------------------------------------
+
+/// What the frame shows: the screen it came with, or the one this app serves at `/frame`.
+/// It stays the one it came with until someone chooses otherwise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Screen {
+    #[default]
+    Legacy,
+    New,
+}
+
+/// The order photos are shown in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Order {
+    #[default]
+    Shuffled,
+    Newest,
+}
+
+/// How long each screen of photos stays up: 5 seconds to an hour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Pace(u16);
+
+impl Pace {
+    pub fn new(seconds: u64) -> Option<Pace> {
+        u16::try_from(seconds).ok().filter(|secs| (5..=3600).contains(secs)).map(Pace)
+    }
+}
+
+impl Default for Pace {
+    fn default() -> Self {
+        Pace(15)
+    }
+}
+
+impl<'de> Deserialize<'de> for Pace {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let seconds = u64::deserialize(deserializer)?;
+        Pace::new(seconds).ok_or_else(|| de::Error::custom("photos change every 5 to 3600 seconds"))
+    }
+}
+
+/// How the Pictures tab of the frame's own screen behaves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Slideshow {
+    #[serde(default)]
+    pub every: Pace,
+    #[serde(default)]
+    pub order: Order,
+    /// Photos taken on today's date in earlier years are shown first.
+    #[serde(default = "yes")]
+    pub memories: bool,
+    /// In the morning, today's events are listed under the clock.
+    #[serde(default = "yes")]
+    pub morning: bool,
+    /// The weather is shown beside the clock.
+    #[serde(default = "yes")]
+    pub weather: bool,
+    /// When the Calendar or Settings tab is left open, the screen goes back to Pictures.
+    #[serde(default)]
+    pub home_after: Rest,
+}
+
+/// How many minutes a tab other than Pictures may be left alone before the screen goes back
+/// to Pictures: 1 minute to a day, or null to stay where it was left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Rest(Option<u16>);
+
+impl Default for Rest {
+    fn default() -> Self {
+        Rest(Some(5))
+    }
+}
+
+impl<'de> Deserialize<'de> for Rest {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match Option::<u64>::deserialize(deserializer)? {
+            None => Ok(Rest(None)),
+            Some(minutes) if (1..=1440).contains(&minutes) => Ok(Rest(u16::try_from(minutes).ok())),
+            Some(_) => {
+                Err(de::Error::custom("the screen goes back to Pictures after 1 to 1440 minutes, or never (null)"))
+            }
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Slideshow {
+    fn default() -> Self {
+        Slideshow {
+            every: Pace::default(),
+            order: Order::default(),
+            memories: true,
+            morning: true,
+            weather: true,
+            home_after: Rest::default(),
+        }
+    }
+}
+
+/// When the frame's screen is switched off: between two times of day, and, if wanted,
+/// whenever the room is dark.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct Night {
+    #[serde(default)]
+    pub on: bool,
+    #[serde(default = "Night::usual_start")]
+    pub from: ClockTime,
+    #[serde(default = "Night::usual_end")]
+    pub until: ClockTime,
+    /// Also off whenever the room has been dark for a while, whatever the time.
+    #[serde(default)]
+    pub when_dark: bool,
+}
+
+impl Night {
+    fn usual_start() -> ClockTime {
+        ClockTime(NaiveTime::from_hms_opt(23, 0, 0).unwrap_or(NaiveTime::MIN))
+    }
+
+    fn usual_end() -> ClockTime {
+        ClockTime(NaiveTime::from_hms_opt(7, 0, 0).unwrap_or(NaiveTime::MIN))
+    }
+
+    /// Whether `time` falls in the night, which may run past midnight. A night that
+    /// starts and ends at the same time is no night at all.
+    pub fn covers(&self, time: NaiveTime) -> bool {
+        let (from, until) = (self.from.0, self.until.0);
+        if from <= until {
+            from <= time && time < until
+        } else {
+            time >= from || time < until
+        }
+    }
+}
+
+impl Default for Night {
+    fn default() -> Self {
+        Night { on: false, from: Night::usual_start(), until: Night::usual_end(), when_dark: false }
+    }
+}
+
+/// Whether the frame sounds a chime for calendar events, and how many minutes before
+/// they start (at most two hours). Written as a number of minutes, or null for no chime.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Chime(Option<u8>);
+
+impl Chime {
+    const MOST_MINUTES: u64 = 120;
+}
+
+impl<'de> Deserialize<'de> for Chime {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let minutes = Option::<u64>::deserialize(deserializer)?;
+        match minutes {
+            None => Ok(Chime(None)),
+            Some(minutes) if minutes <= Self::MOST_MINUTES => Ok(Chime(u8::try_from(minutes).ok())),
+            Some(_) => Err(de::Error::custom("a chime comes at most 120 minutes before an event")),
+        }
+    }
+}
+
+/// A place on the map, for the weather.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Place {
+    pub name: String,
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+impl Place {
+    /// A place with a name of 1 to 100 characters, somewhere on the globe.
+    pub fn new(name: &str, latitude: f64, longitude: f64) -> Option<Place> {
+        let name = name.trim();
+        let named = (1..=100).contains(&name.chars().count()) && !name.contains(char::is_control);
+        let on_the_globe = (-90.0..=90.0).contains(&latitude) && (-180.0..=180.0).contains(&longitude);
+        (named && on_the_globe).then(|| Place { name: name.to_string(), latitude, longitude })
+    }
+}
+
+impl<'de> Deserialize<'de> for Place {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            name: String,
+            latitude: f64,
+            longitude: f64,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        Place::new(&raw.name, raw.latitude, raw.longitude).ok_or_else(|| de::Error::custom("not a place on the map"))
+    }
+}
+
+/// What someone typed to say where the frame is: 1 to 100 characters.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlaceQuery(String);
+
+impl PlaceQuery {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PlaceQuery {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        let text = text.trim();
+        let usable = (1..=100).contains(&text.chars().count()) && !text.contains(char::is_control);
+        usable.then(|| PlaceQuery(text.to_string())).ok_or_else(|| de::Error::custom("type the name of a town or city"))
+    }
+}
+
+/// The stretch of time a calendar request asks about, in seconds since 1970: never
+/// backwards, and never longer than the calendar is prepared to work out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Window {
+    pub from: i64,
+    pub to: i64,
+}
+
+impl Window {
+    const DEFAULT_DAYS: i64 = 35;
+    const MAX_DAYS: i64 = 400;
+
+    /// From query parameters. Without a readable start it begins a day ago; without a
+    /// readable end it runs for five weeks; an end too far off is brought closer.
+    pub fn from_query(from: Option<&str>, to: Option<&str>, now: i64) -> Window {
+        let number = |text: Option<&str>| text.and_then(|t| t.parse::<i64>().ok());
+        let earliest = now - 50 * 365 * DAY_SECS;
+        let from = number(from).unwrap_or(now - DAY_SECS).clamp(earliest, now + 50 * 365 * DAY_SECS);
+        let to =
+            number(to).unwrap_or(from + Self::DEFAULT_DAYS * DAY_SECS).clamp(from, from + Self::MAX_DAYS * DAY_SECS);
+        Window { from, to }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{from_value, json};
+
+    #[test]
+    fn calendar_links_are_https_and_keep_their_secret() {
+        let link = CalendarLink::parse(" webcal://p12-caldav.icloud.com/published/2/SECRET ").unwrap();
+        assert_eq!(link.as_str(), "https://p12-caldav.icloud.com/published/2/SECRET");
+        assert_eq!(link.host(), "p12-caldav.icloud.com");
+        assert_eq!(format!("{link:?}"), "CalendarLink(p12-caldav.icloud.com/…)", "the secret part is never printed");
+        assert_eq!(CalendarLink::parse("https://calendar.google.com?x=1").unwrap().host(), "calendar.google.com");
+        for bad in ["", "https://", "webcal://", "http://plain", "ftp://x/y.ics", "https://a b", "/etc/x.ics"] {
+            assert_eq!(CalendarLink::parse(bad), None, "{bad:?}");
+        }
+        assert_eq!(CalendarLink::parse(&format!("https://a/{}", "x".repeat(2000))), None, "absurdly long");
+    }
+
+    #[test]
+    fn google_calendars_ordinary_links_become_the_calendars_public_feed() {
+        let feed = |id: &str| format!("https://calendar.google.com/calendar/ical/{id}/public/basic.ics");
+        let parsed = |link: &str| CalendarLink::parse(link).unwrap().as_str().to_string();
+        // The link from "Get shareable link": the calendar's id in base64, with or without padding.
+        assert_eq!(
+            parsed("https://calendar.google.com/calendar/u/0?cid=ZmFtaWx5QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20"),
+            feed("family%40group.calendar.google.com")
+        );
+        assert_eq!(
+            parsed("https://calendar.google.com/calendar?cid=c29tZW9uZUBnbWFpbC5jb20="),
+            feed("someone%40gmail.com")
+        );
+        assert_eq!(
+            parsed("https://calendar.google.com/calendar/r?cid=someone@gmail.com"),
+            feed("someone%40gmail.com"),
+            "an id given as it is"
+        );
+        // The link for embedding in a page.
+        assert_eq!(
+            parsed("https://calendar.google.com/calendar/embed?src=en.portuguese%23holiday%40group.v.calendar.google.com&ctz=Europe%2FLondon"),
+            feed("en.portuguese%23holiday%40group.v.calendar.google.com")
+        );
+        assert_eq!(
+            parsed("https://www.google.com/calendar/embed?height=600&src=someone%40gmail.com#top"),
+            feed("someone%40gmail.com")
+        );
+        assert!(CalendarLink::parse(&feed("x%40y")).unwrap().is_google_public_feed());
+
+        // Feeds, and anything that is not one of those links, are used as they are.
+        for unchanged in [
+            "https://calendar.google.com/calendar/ical/someone%40gmail.com/private-0123abcd/basic.ics",
+            "https://calendar.google.com/calendar/ical/someone%40gmail.com/public/basic.ics",
+            "https://calendar.google.com/calendar/u/0/r/week",
+            "https://calendar.google.com/calendar/embed?ctz=Europe%2FLondon",
+            "https://calendar.google.com/calendar?cid=!!!not-an-id!!!",
+            "https://www.google.com/search?src=someone@gmail.com",
+            "https://example.org/embed?src=someone%40gmail.com",
+        ] {
+            assert_eq!(parsed(unchanged), unchanged);
+        }
+        assert!(!CalendarLink::parse("https://calendar.google.com/calendar/ical/a%40b/private-0123/basic.ics")
+            .unwrap()
+            .is_google_public_feed());
+        assert_eq!(base64_decode("aGVsbG8"), Some(b"hello".to_vec()));
+        assert_eq!(base64_decode("aGVsbG8="), Some(b"hello".to_vec()));
+        assert_eq!(base64_decode("-_-_"), Some(vec![0xfb, 0xff, 0xbf]), "the address-safe alphabet too");
+        assert_eq!(base64_decode("not base64!"), None);
+        assert_eq!(percent_encode("a b@c#d-e_f.g~h"), "a%20b%40c%23d-e_f.g~h");
+    }
+
+    #[test]
+    fn calendar_link_lists_drop_blanks_and_repeats_and_have_a_limit() {
+        let links =
+            from_value::<CalendarLinks>(json!([" https://a/1.ics ", "", "webcal://a/1.ics", "https://b"])).unwrap();
+        assert_eq!(links.0.iter().map(CalendarLink::as_str).collect::<Vec<_>>(), ["https://a/1.ics", "https://b"]);
+        assert_eq!(from_value::<CalendarLinks>(json!([])).unwrap(), CalendarLinks::default());
+        let error = from_value::<CalendarLinks>(json!(["http://a"])).unwrap_err().to_string();
+        assert!(error.contains("https:// or webcal://"), "{error}");
+        let many: Vec<String> = (0..=MAX_CALENDARS).map(|n| format!("https://a/{n}")).collect();
+        assert!(from_value::<CalendarLinks>(json!(many)).unwrap_err().to_string().contains("at most 10"));
+        assert!(from_value::<CalendarLink>(json!("https://a")).is_ok());
+        assert!(from_value::<CalendarLink>(json!("nope")).is_err());
+    }
+
+    #[test]
+    fn titles_are_one_trimmed_line() {
+        assert_eq!(Title::parse("  Dentist  ").unwrap().as_str(), "Dentist");
+        assert!(Title::parse(&"é".repeat(120)).is_some(), "length is counted in characters");
+        for bad in ["", "   ", "two\nlines", &"x".repeat(121)] {
+            assert_eq!(Title::parse(bad), None, "{bad:?}");
+        }
+        assert!(from_value::<Title>(json!("")).unwrap_err().to_string().contains("1 to 120 characters"));
+        assert_eq!(json!(Title::parse("Swim").unwrap()), json!("Swim"));
+    }
+
+    #[test]
+    fn event_ids_are_sixteen_hex_digits() {
+        let id = EventId::from_digest(&[0xcd; 20]);
+        assert_eq!(json!(id), json!("cdcdcdcdcdcdcdcd"));
+        assert_eq!(from_value::<EventId>(json!("cdcdcdcdcdcdcdcd")).unwrap(), id);
+        for bad in ["", "cdcd", "CDCDCDCDCDCDCDCD", "../../etc/passwd"] {
+            assert_eq!(EventId::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn days_and_times_read_and_write_one_form() {
+        let day = Day::parse("2026-10-13").unwrap();
+        assert_eq!((day.to_string(), json!(day)), ("2026-10-13".to_string(), json!("2026-10-13")));
+        assert_eq!(from_value::<Day>(json!("2028-02-29")).unwrap().0, NaiveDate::from_ymd_opt(2028, 2, 29).unwrap());
+        for bad in ["", "2026-02-30", "2026-1-5", "13/10/2026", "0026-10-13", "2026-10-13T09:00"] {
+            assert_eq!(Day::parse(bad), None, "{bad:?}");
+        }
+        let time = ClockTime::parse("07:05").unwrap();
+        assert_eq!((time.to_string(), json!(time)), ("07:05".to_string(), json!("07:05")));
+        assert!(from_value::<ClockTime>(json!("23:59")).is_ok());
+        for bad in ["", "7:05", "24:00", "07:60", "07:05:00", "noon!"] {
+            assert_eq!(ClockTime::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn repeats_are_named_in_lower_case() {
+        assert_eq!(from_value::<Repeat>(json!("yearly")).unwrap(), Repeat::Yearly);
+        assert_eq!(json!(Repeat::Never), json!("never"));
+        assert_eq!(Repeat::default(), Repeat::Never);
+        assert!(from_value::<Repeat>(json!("hourly")).is_err());
+    }
+
+    #[test]
+    fn the_screen_and_the_slideshow_have_safe_defaults() {
+        assert_eq!(Screen::default(), Screen::Legacy, "the frame keeps its own screen until told otherwise");
+        assert_eq!(from_value::<Screen>(json!("new")).unwrap(), Screen::New);
+        assert_eq!(json!(Screen::Legacy), json!("legacy"));
+        assert!(from_value::<Screen>(json!("shiny")).is_err());
+        let usual = json!({ "every": 15, "order": "shuffled", "memories": true, "morning": true, "weather": true, "home_after": 5 });
+        assert_eq!(json!(Slideshow::default()), usual);
+        let chosen = from_value::<Slideshow>(json!({ "every": 60, "order": "newest", "memories": false })).unwrap();
+        let expected =
+            Slideshow { every: Pace::new(60).unwrap(), order: Order::Newest, memories: false, ..Slideshow::default() };
+        assert_eq!(chosen, expected);
+        assert_eq!(from_value::<Slideshow>(json!({})).unwrap(), Slideshow::default());
+        assert_eq!(
+            json!(from_value::<Slideshow>(json!({ "home_after": null })).unwrap())["home_after"],
+            json!(null),
+            "never"
+        );
+        assert_eq!(json!(from_value::<Rest>(json!(30)).unwrap()), json!(30));
+        for bad in [json!(0), json!(1441), json!(-1), json!("soon")] {
+            assert!(from_value::<Rest>(bad.clone()).is_err(), "{bad}");
+        }
+        for bad in [json!(4), json!(3601), json!(-5), json!("15"), json!(99_999_999)] {
+            let error = from_value::<Pace>(bad.clone()).unwrap_err().to_string();
+            assert!(error.contains("5 to 3600 seconds") || error.contains("invalid"), "{bad}: {error}");
+        }
+        assert_eq!((Pace::new(5), Pace::new(4), Pace::new(3600).is_some()), (Some(Pace(5)), None, true));
+    }
+
+    #[test]
+    fn a_night_may_run_past_midnight() {
+        let at = |text: &str| ClockTime::parse(text).unwrap();
+        let night = Night::default();
+        assert_eq!((night.on, night.from, night.until, night.when_dark), (false, at("23:00"), at("07:00"), false));
+        for (time, dark) in
+            [("22:59", false), ("23:00", true), ("03:00", true), ("06:59", true), ("07:00", false), ("12:00", false)]
+        {
+            assert_eq!(night.covers(at(time).0), dark, "{time}");
+        }
+        let nap = Night { from: at("13:00"), until: at("14:30"), ..night };
+        assert!(nap.covers(at("13:30").0) && !nap.covers(at("14:30").0) && !nap.covers(at("23:30").0));
+        let none = Night { from: at("09:00"), until: at("09:00"), ..night };
+        assert!(!none.covers(at("09:00").0) && !none.covers(at("21:00").0));
+        assert_eq!(from_value::<Night>(json!({})).unwrap(), night, "anything left out takes its usual value");
+        let set =
+            from_value::<Night>(json!({ "on": true, "from": "22:30", "until": "06:00", "when_dark": true })).unwrap();
+        assert_eq!(json!(set), json!({ "on": true, "from": "22:30", "until": "06:00", "when_dark": true }));
+        assert!(from_value::<Night>(json!({ "from": "late" })).is_err());
+    }
+
+    #[test]
+    fn a_chime_is_off_or_some_minutes_ahead() {
+        assert_eq!(from_value::<Chime>(json!(null)).unwrap(), Chime::default());
+        assert_eq!(
+            json!(from_value::<Chime>(json!(0)).unwrap()),
+            json!(0),
+            "at the time itself is not the same as off"
+        );
+        assert_eq!(json!(from_value::<Chime>(json!(120)).unwrap()), json!(120));
+        assert_eq!(json!(from_value::<Chime>(json!(10)).unwrap()), json!(10));
+        assert_eq!(json!(Chime::default()), json!(null));
+        assert!(from_value::<Chime>(json!(121)).unwrap_err().to_string().contains("at most 120 minutes"));
+        assert!(from_value::<Chime>(json!(-5)).is_err() && from_value::<Chime>(json!("soon")).is_err());
+    }
+
+    #[test]
+    fn a_place_has_a_name_and_is_on_the_globe() {
+        let lisbon = Place::new(" Lisbon ", 38.72, -9.14).unwrap();
+        assert_eq!(json!(lisbon), json!({ "name": "Lisbon", "latitude": 38.72, "longitude": -9.14 }));
+        assert_eq!(from_value::<Place>(json!(lisbon)).unwrap(), lisbon);
+        for (name, latitude, longitude) in
+            [("", 0.0, 0.0), ("Nowhere", 91.0, 0.0), ("Nowhere", 0.0, -181.0), ("Nowhere", f64::NAN, 0.0)]
+        {
+            assert_eq!(Place::new(name, latitude, longitude), None, "{name} {latitude} {longitude}");
+        }
+        assert!(from_value::<Place>(json!({ "name": "x", "latitude": 99, "longitude": 0 })).is_err());
+        assert_eq!(from_value::<PlaceQuery>(json!("  Porto ")).unwrap().as_str(), "Porto");
+        for bad in [json!(""), json!("   "), json!("x".repeat(101)), json!(5)] {
+            assert!(from_value::<PlaceQuery>(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_calendar_window_is_never_backwards_or_endless() {
+        let now = 1_800_000_000;
+        assert_eq!(Window::from_query(None, None, now), Window { from: now - 86_400, to: now + 34 * 86_400 });
+        assert_eq!(
+            Window::from_query(Some("100"), Some("50"), now).to,
+            Window::from_query(Some("100"), None, now).from
+        );
+        let wide = Window::from_query(Some("1800000000"), Some("9999999999999"), now);
+        assert_eq!(wide.to - wide.from, 400 * 86_400);
+        assert_eq!(Window::from_query(Some("junk"), Some("junk"), now), Window::from_query(None, None, now));
+        assert!(Window::from_query(Some("-99999999999999"), None, now).from > 0, "a silly start is brought into range");
+    }
+
+    #[test]
+    fn photo_paths_accept_real_photo_locations() {
+        for rel in [
+            "frame-sync/fs_0123456789abcdef.jpg",
+            "123user/photos/9/8/7/2026/06/1782161827915211.webp",
+            "frame-sync/up_00aa00aa00aa00aa.jpg",
+            "a/b/c.PNG",
+            "x.jpeg",
+        ] {
+            assert_eq!(PhotoPath::parse(rel).map(|p| p.to_string()).as_deref(), Some(rel));
+        }
+    }
+
+    #[test]
+    fn photo_paths_reject_anything_that_could_escape_or_inject() {
+        for rel in [
+            "",
+            "../x.jpg",
+            "a/../../x.jpg",
+            "/etc/passwd.jpg",
+            ".downloading/x.jpg",
+            "-rf.jpg",
+            "a b.jpg",
+            "a';rm -rf x;'.jpg",
+            "a\"b.jpg",
+            "a$(id).jpg",
+            "a\n.jpg",
+            "frame-sync/notes.txt",
+            "frame-sync/x.jpg.md5",
+            "frame-sync/fs_0123456789abcdef",
+        ] {
+            assert_eq!(PhotoPath::parse(rel), None, "{rel:?}");
+        }
+    }
+
+    #[test]
+    fn a_photo_path_knows_where_the_photo_came_from() {
+        let source = |rel: &str| PhotoPath::parse(rel).unwrap().source();
+        assert_eq!(source("frame-sync/fs_0123456789abcdef.jpg"), Source::Synced);
+        assert_eq!(source("frame-sync/up_0123456789abcdef.jpg"), Source::Added);
+        assert_eq!(source("frame-sync/holiday.jpg"), Source::Added);
+        assert_eq!(source("123user/photos/a.webp"), Source::Phone);
+        assert_eq!(source("fs_0123456789abcdef.jpg"), Source::Phone, "right name, wrong folder");
+        assert_eq!(Source::ALL.map(Source::as_str), ["synced", "added", "phone"]);
+        assert_eq!(json!(Source::Synced), json!("synced"));
+    }
+
+    #[test]
+    fn a_photo_path_gives_its_parts() {
+        let path = PhotoPath::parse("frame-sync/fs_0123456789abcdef.jpg").unwrap();
+        assert_eq!(path.synced_name(), SyncedName::parse("fs_0123456789abcdef.jpg"));
+        assert_eq!(path.within(Path::new("/photos")), Path::new("/photos/frame-sync/fs_0123456789abcdef.jpg"));
+        assert_eq!(PhotoPath::parse("frame-sync/up_0123456789abcdef.jpg").unwrap().synced_name(), None);
+        assert_eq!(PhotoPath::parse("other/fs_0123456789abcdef.jpg").unwrap().synced_name(), None);
+    }
+
+    #[test]
+    fn synced_names_are_exactly_fs_plus_16_lowercase_hex() {
+        assert!(SyncedName::parse("fs_0123456789abcdef.jpg").is_some());
+        for name in [
+            "fs_0123456789abcde.jpg",
+            "fs_0123456789abcdef0.jpg",
+            "fs_0123456789ABCDEF.jpg",
+            "fs_0123456789abcdeg.jpg",
+            "up_0123456789abcdef.jpg",
+            "fs_0123456789abcdef.png",
+            "../fs_0123456789abcdef.jpg",
+            "",
+        ] {
+            assert_eq!(SyncedName::parse(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn names_made_from_a_digest_are_always_valid() {
+        let digest: Digest = [0xab; 20];
+        let name = SyncedName::from_digest(&digest);
+        assert_eq!(name.as_str(), "fs_abababababababab.jpg");
+        assert_eq!(SyncedName::parse(name.as_str()), Some(name.clone()));
+        assert_eq!(name.path().as_str(), "frame-sync/fs_abababababababab.jpg");
+        assert_eq!(PhotoPath::parse(name.path().as_str()), Some(name.path()));
+        let added = PhotoPath::added(&digest);
+        assert_eq!(added.as_str(), "frame-sync/up_abababababababab.jpg");
+        assert_eq!((added.source(), PhotoPath::parse(added.as_str())), (Source::Added, Some(added.clone())));
+        assert_eq!(hex(&[0x00, 0x0f, 0xff]), "000fff");
+    }
+
+    #[test]
+    fn paths_and_names_parse_out_of_json_or_fail_with_a_reason() {
+        assert_eq!(from_value::<PhotoPath>(json!("a/b.jpg")).unwrap().as_str(), "a/b.jpg");
+        let error = from_value::<PhotoPath>(json!("../b.jpg")).unwrap_err().to_string();
+        assert!(error.contains("not a photo path"), "{error}");
+        assert!(from_value::<PhotoPath>(json!(5)).is_err());
+        assert!(from_value::<SyncedName>(json!("fs_0123456789abcdef.jpg")).is_ok());
+        assert!(from_value::<SyncedName>(json!("holiday.jpg")).is_err());
+    }
+
+    #[test]
+    fn bounded_lists_enforce_their_length() {
+        type OneToThree = Bounded<u8, 1, 3>;
+        assert!(OneToThree::new(vec![]).is_none());
+        assert_eq!(OneToThree::new(vec![1, 2]).unwrap().into_inner(), [1, 2]);
+        assert!(OneToThree::new(vec![1, 2, 3, 4]).is_none());
+        assert_eq!(from_value::<OneToThree>(json!([7])).unwrap().len(), 1);
+        assert!(from_value::<OneToThree>(json!([])).unwrap_err().to_string().contains("expected 1 to 3 items, got 0"));
+        assert!(from_value::<NonEmpty<u8>>(json!([])).unwrap_err().to_string().contains("at least 1"));
+        assert!(from_value::<Bounded<u8, 0, 2>>(json!([])).is_ok());
+        assert!(from_value::<NonEmpty<PhotoPath>>(json!(["ok.jpg", "../bad.jpg"])).is_err(), "items are parsed too");
+    }
+
+    #[test]
+    fn pins_are_four_to_eight_digits() {
+        for pin in ["1234", "00000000", "987654"] {
+            assert!(Pin::parse(pin).is_some(), "{pin}");
+        }
+        for pin in ["", "123", "123456789", "12a4", "12 34", "١٢٣٤", "-123"] {
+            assert!(Pin::parse(pin).is_none(), "{pin:?}");
+        }
+        assert_eq!(format!("{:?}", Pin::parse("2468").unwrap()), "Pin(****)", "never printed");
+    }
+
+    #[test]
+    fn a_pin_change_is_a_new_pin_or_a_removal() {
+        assert_eq!(from_value::<PinChange>(json!("")).unwrap(), PinChange::Remove);
+        assert_eq!(from_value::<PinChange>(json!("2468")).unwrap(), PinChange::Set(Pin::parse("2468").unwrap()));
+        assert!(from_value::<PinChange>(json!("12")).unwrap_err().to_string().contains("A PIN is 4 to 8 digits."));
+        assert!(from_value::<PinChange>(json!(2468)).is_err());
+    }
+
+    #[test]
+    fn album_links_are_trimmed_https_addresses() {
+        assert_eq!(
+            AlbumLink::parse(" https://photos.app.goo.gl/abc ").unwrap().as_str(),
+            "https://photos.app.goo.gl/abc"
+        );
+        for link in ["", "https://", "http://insecure", "/home/me/Pictures", "file:///etc", "https://a b"] {
+            assert_eq!(AlbumLink::parse(link), None, "{link:?}");
+        }
+        let links = from_value::<AlbumLinks>(json!([" https://a ", "", "  ", "https://b"])).unwrap();
+        assert_eq!(links.0.iter().map(AlbumLink::as_str).collect::<Vec<_>>(), ["https://a", "https://b"]);
+        assert_eq!(from_value::<AlbumLinks>(json!([])).unwrap(), AlbumLinks::default());
+        assert!(from_value::<AlbumLinks>(json!(["/etc"]))
+            .unwrap_err()
+            .to_string()
+            .contains("must start with https://"));
+        assert!(from_value::<AlbumLinks>(json!("https://a")).is_err());
+        assert!(from_value::<AlbumLinks>(json!([1])).is_err());
+    }
+
+    #[test]
+    fn restore_is_all_or_named_photos() {
+        assert_eq!(from_value::<Restore>(json!("all")).unwrap(), Restore::All);
+        let named = from_value::<Restore>(json!(["fs_0123456789abcdef.jpg"])).unwrap();
+        assert_eq!(named, Restore::These(vec![SyncedName::parse("fs_0123456789abcdef.jpg").unwrap()]));
+        assert_eq!(from_value::<Restore>(json!([])).unwrap(), Restore::These(vec![]));
+        for bad in [json!("some"), json!(["holiday.jpg"]), json!(5), json!(null)] {
+            assert!(from_value::<Restore>(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn likeness_comes_from_a_query_parameter_and_is_capped() {
+        assert_eq!(Likeness::from_query(None), Likeness::IDENTICAL);
+        assert_eq!(Likeness::from_query(Some("3")).bits(), 3);
+        assert_eq!(Likeness::from_query(Some("99")).bits(), 10);
+        assert_eq!(Likeness::from_query(Some("junk")).bits(), 0);
+        assert_eq!(Likeness::from_query(Some("-1")).bits(), 0);
+    }
+}

@@ -1,302 +1,6 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
-<script>
-// Apply the chosen theme before anything is drawn, so the page never flashes the other one.
-try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
-</script>
-<title>Photo Frame</title>
-<meta name="theme-color" content="#0f766e">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='8' width='56' height='48' rx='10' fill='%230f766e'/%3E%3Crect x='11' y='15' width='42' height='34' rx='5' fill='%23e9fbf7'/%3E%3Ccircle cx='24' cy='27' r='5' fill='%23f5b942'/%3E%3Cpath d='M11 44l12-11 9 8 8-10 13 13v0a5 5 0 0 1-5 5H16a5 5 0 0 1-5-5z' fill='%232dd4bf'/%3E%3C/svg%3E">
-<style>
-:root {
-  --bg: #f4f2ee; --panel: #ffffff; --raised: #faf9f6; --ink: #1c1e22; --muted: #666b73; --line: #e2dfd8;
-  --accent: #0f766e; --accent-ink: #ffffff; --accent-soft: #d9f0ec; --danger: #b42318; --danger-soft: #fde8e5; --ok: #15803d;
-  --tile: #e7e4dd; --shadow: 0 1px 2px rgba(20, 20, 20, .06), 0 6px 20px rgba(20, 20, 20, .05);
-  --radius: 14px; --gap: 10px; --pad: clamp(14px, 3vw, 28px); color-scheme: light;
-}
-/* Dark: when the system asks for it and the viewer has not chosen light, or when they chose dark. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #131518; --panel: #1b1e22; --raised: #22262b; --ink: #eceef1; --muted: #979da6; --line: #2c3036;
-    --accent: #2dd4bf; --accent-ink: #062b28; --accent-soft: #12332f; --danger: #f97066; --danger-soft: #3a1c1a; --ok: #4ade80;
-    --tile: #262a2f; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25); color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-    --bg: #131518; --panel: #1b1e22; --raised: #22262b; --ink: #eceef1; --muted: #979da6; --line: #2c3036;
-    --accent: #2dd4bf; --accent-ink: #062b28; --accent-soft: #12332f; --danger: #f97066; --danger-soft: #3a1c1a; --ok: #4ade80;
-    --tile: #262a2f; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25); color-scheme: dark;
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-h1, h2, h3, p { margin: 0; }
-button, select, textarea, input { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-/* --- top bar ------------------------------------------------------------- */
-header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); padding: 10px var(--pad) 0; padding-top: max(10px, env(safe-area-inset-top)); }
-.top { display: flex; align-items: center; gap: 12px; min-height: 36px; }
-h1 { font-size: 18px; letter-spacing: -0.01em; white-space: nowrap; }
-.status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; min-width: 0; flex: 1; }
-.status span:last-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; transition: background .3s; }
-.dot.on { background: var(--ok); } .dot.off { background: var(--danger); }
-nav { display: flex; gap: 2px; margin: 8px calc(var(--pad) * -1) 0; padding: 0 var(--pad); overflow-x: auto; scrollbar-width: none; }
-nav::-webkit-scrollbar { display: none; }
-nav button { flex: none; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px 10px; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
-nav button:hover { color: var(--ink); }
-nav button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
-nav .count { font-weight: 400; color: var(--muted); }
-
-/* --- building blocks ------------------------------------------------------ */
-main { max-width: 1440px; margin: 0 auto; padding: var(--pad); padding-bottom: calc(var(--pad) + 60px); }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, opacity .15s; }
-.btn:hover:not(:disabled) { border-color: var(--muted); }
-.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
-.btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
-.btn.danger { color: var(--danger); }
-.btn.danger:hover:not(:disabled) { background: var(--danger-soft); border-color: transparent; }
-.btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; }
-button:disabled { opacity: .45; cursor: not-allowed; }
-select.small { min-height: 30px; font-size: 13px; padding: 0 6px; }
-select, textarea, input[type=number] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; min-height: 36px; }
-textarea { width: 100%; min-height: 84px; padding: 9px 11px; resize: vertical; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-input[type=number] { width: 110px; }
-input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex: none; margin-top: 3px; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
-.spacer { flex: 1; }
-.muted { color: var(--muted); }
-.hint { color: var(--muted); font-size: 14px; max-width: 78ch; margin-bottom: 14px; }
-.hidden { display: none !important; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: clamp(14px, 2.4vw, 22px); box-shadow: var(--shadow); }
-.card h2 { font-size: 16px; margin-bottom: 4px; }
-.card.narrow { max-width: 780px; }
-label.row { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; cursor: pointer; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chips button { border: 1px solid var(--line); background: none; color: var(--muted); padding: 0 12px; min-height: 32px; border-radius: 999px; cursor: pointer; font-size: 14px; transition: background .15s, color .15s; }
-.chips button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-.progress { height: 8px; background: var(--tile); border-radius: 999px; overflow: hidden; margin: 14px 0 6px; }
-.progress div { height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .4s ease; }
-pre.log { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: 260px; overflow: auto; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; margin: 12px 0 0; }
-
-/* --- photos ---------------------------------------------------------------- */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(104px, 22vw, 176px), 1fr)); gap: var(--gap); }
-.tile { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: var(--tile); cursor: zoom-in; isolation: isolate; }
-.tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .25s ease, transform .25s ease; }
-.tile img.ready { opacity: 1; }
-@media (hover: hover) { .tile:hover img { transform: scale(1.03); } }
-.tile.sel { outline: 3px solid var(--accent); outline-offset: -3px; }
-.pick { position: absolute; top: 6px; left: 6px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, .35); color: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; z-index: 1; }
-.tile.sel .pick { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.tag { position: absolute; left: 6px; bottom: 6px; font-size: 11px; line-height: 1.5; padding: 1px 8px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; z-index: 1; pointer-events: none; }
-.month { grid-column: 1 / -1; font-size: 15px; font-weight: 600; margin-top: 10px; }
-.month:first-child { margin-top: 0; }
-.toolbar { position: sticky; top: var(--header, 96px); z-index: 5; background: var(--bg); padding: 10px 0; margin: -10px 0 4px; }
-.now { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; padding: 10px; }
-.now img { width: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 9px; background: var(--tile); flex: none; }
-.now .grow { flex: 1; min-width: 0; }
-.label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-.banner { margin-bottom: 16px; padding: 12px 14px; }
-.banner .progress { margin: 8px 0 0; }
-
-/* --- duplicates ------------------------------------------------------------- */
-.group { margin-bottom: 12px; padding: 12px; }
-.group .bar { margin-bottom: 10px; }
-.group .grid { grid-template-columns: repeat(auto-fill, minmax(clamp(96px, 20vw, 150px), 1fr)); }
-.group .tile { opacity: .7; transition: opacity .15s, outline-color .15s; outline: 4px solid transparent; outline-offset: -4px; }
-.group .tile:hover, .group .tile.keep { opacity: 1; }
-.group .tile.keep { outline-color: var(--accent); }
-.group .tag.state { top: 6px; bottom: auto; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
-.group .tag.also { top: 6px; bottom: auto; }
-details.hint summary { cursor: pointer; color: var(--accent); width: fit-content; }
-details.hint p { margin-top: 8px; }
-.swap { position: absolute; right: 6px; bottom: 6px; z-index: 1; border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; background: rgba(0, 0, 0, .72); color: #fff; cursor: pointer; opacity: 0; transition: opacity .15s; }
-.tile:hover .swap, .tile:focus-within .swap, .tile.gone .swap { opacity: 1; }
-@media (hover: none) { .swap { opacity: 1; } }
-.group .tile.keep .swap { display: none; }
-.group .note { flex: 1 1 260px; }
-.note { font-size: 13px; color: var(--muted); }
-.tile.gone { cursor: default; }
-.noimg { display: flex; height: 100%; align-items: center; justify-content: center; padding: 10px; font-size: 12px; color: var(--muted); text-align: center; }
-
-/* --- status ----------------------------------------------------------------- */
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
-.card dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; margin: 12px 0 0; }
-.card dt { color: var(--muted); }
-.card dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.meter { height: 10px; background: var(--tile); border-radius: 999px; overflow: hidden; margin-top: 12px; display: flex; }
-.meter span { height: 100%; }
-.meter .ours { background: var(--accent); } .meter .other { background: var(--muted); opacity: .5; }
-.good { color: var(--ok); } .bad { color: var(--danger); }
-.card a { color: var(--accent); }
-
-/* --- overlays ---------------------------------------------------------------- */
-.drop { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 88%, transparent); color: var(--accent-ink); font-size: clamp(18px, 4vw, 26px); font-weight: 600; pointer-events: none; text-align: center; padding: 24px; }
-.drop.on { display: flex; }
-.lightbox { position: fixed; inset: 0; z-index: 30; background: rgba(8, 9, 10, .94); display: none; flex-direction: column; }
-.lightbox.open { display: flex; }
-.stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: clamp(8px, 2vw, 20px); touch-action: pan-y; }
-.stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
-.controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 10px; padding: 10px 14px max(14px, env(safe-area-inset-bottom)); color: #d6d8dc; font-size: 14px; }
-.controls .info { flex-basis: 100%; text-align: center; min-height: 1.5em; }
-.controls .info b { color: #fff; }
-.lightbox .btn { background: #24272c; border-color: #3a3e45; color: #eceef1; }
-.lightbox .btn.primary { background: #2dd4bf; color: #062b28; border-color: transparent; }
-.lightbox .btn.danger { color: #f97066; }
-.toast { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; box-shadow: var(--shadow); z-index: 50; max-width: min(92vw, 560px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
-.toast.on { opacity: 1; transform: translate(-50%, 0); }
-
-@media (max-width: 640px) {
-  .now img { width: 84px; }
-  .now .btn { padding: 0 10px; }
-  .desktop-only { display: none; }
-  .toolbar { position: static; }
-  .toolbar select { flex: 1 1 140px; min-width: 0; }
-  .toolbar .pager { margin-left: auto; }
-  .toolbar .spacer { display: none; }
-  .group .bar .spacer { display: none; }
-  .group .bar .btn { flex: 1 1 auto; }
-}
-.pager { display: flex; align-items: center; gap: 8px; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-</style>
-</head>
-<body>
-<header id="header">
-  <div class="top">
-    <h1>Photo Frame</h1>
-    <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
-    <button class="btn small hidden" id="lockBtn" title="A PIN is needed to make changes">Unlock</button>
-    <select id="theme" class="small" title="Colour theme" aria-label="Colour theme">
-      <option value="system">System</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
-  </div>
-  <nav>
-    <button data-tab="photos" class="active">Photos</button>
-    <button data-tab="duplicates">Duplicates</button>
-    <button data-tab="sync">Google Photos sync</button>
-    <button data-tab="deleted">Bin <span class="count" id="exCount"></span></button>
-    <button data-tab="status">Status</button>
-  </nav>
-</header>
-
-<main>
-  <section id="tab-photos">
-    <div class="card banner hidden" id="adding"><span id="addText"></span><div class="progress"><div id="addFill"></div></div></div>
-    <div class="card now hidden" id="now">
-      <img id="nowImg" alt="Photo on the frame right now">
-      <div class="grow"><div class="label">Showing on the frame now</div><div id="nowText" class="muted"></div></div>
-      <button class="btn danger" id="nowDelete">Delete</button>
-    </div>
-    <div class="bar">
-      <button class="btn primary" id="addBtn">Add photos…</button>
-      <input type="file" id="addInput" accept="image/*,.heic,.heif" multiple class="hidden">
-      <span class="muted desktop-only">or drop them anywhere on this page</span>
-      <span class="spacer"></span>
-      <button class="btn" id="reloadShow" title="Closes the slideshow on the frame so it restarts with the current photos">Refresh frame slideshow</button>
-    </div>
-    <div class="bar toolbar">
-      <div class="chips" id="chips"></div>
-      <select id="sort" title="Order">
-        <option value="newest">Date taken, newest first</option>
-        <option value="oldest">Date taken, oldest first</option>
-        <option value="added">Recently added to the frame</option>
-      </select>
-      <select id="jump" title="Jump to a month"></select>
-      <span class="spacer"></span>
-      <span id="selInfo" class="hidden"><b id="selCount"></b> selected</span>
-      <button class="btn hidden" id="selClear">Clear</button>
-      <button class="btn danger hidden" id="selDelete">Delete selected</button>
-      <div class="pager">
-        <button class="btn" id="prev" aria-label="Previous page">‹</button>
-        <span id="pageInfo" class="muted"></span>
-        <button class="btn" id="next" aria-label="Next page">›</button>
-      </div>
-    </div>
-    <div class="grid" id="grid"></div>
-    <p class="muted" id="empty"></p>
-  </section>
-
-  <section id="tab-duplicates" class="hidden">
-    <div class="bar">
-      <select id="dupLevel" title="How alike photos must be">
-        <option value="0">Look identical</option>
-        <option value="3">Very similar</option>
-        <option value="8">Similar (bursts and retakes)</option>
-      </select>
-      <button class="btn primary" id="dupFind">Find</button>
-      <span id="dupInfo" class="muted"></span>
-      <span class="spacer"></span>
-      <button class="btn danger hidden" id="dupDeleteAll">Delete the others in every group</button>
-    </div>
-    <details class="hint"><summary>How suggestions work</summary><p>Each group keeps one photo, outlined and marked <b>Keeping</b>. It starts as the suggestion: the sharpest, best exposed shot. The frame also looks at faces, slowly, taking the groups on your screen first; once a group has been looked at, its suggestion favours open eyes and smiles, with sharpness as the tie-breaker. Tap a photo to see it large and compare, and choose "Keep this one" to change the choice. Nothing is deleted until you press a Delete button and confirm. Groups are by appearance, not identical files, and the suggestions come from small automatic models that can be wrong.</p></details>
-    <div id="dupGroups"></div>
-  </section>
-
-  <section id="tab-sync" class="hidden">
-    <div class="card narrow">
-      <h2>Sync a Google Photos album to the frame</h2>
-      <p class="muted">One shared-album link per line (in Google Photos: Share, then Create link). The frame downloads the photos itself, and never downloads a photo it already has.</p>
-      <label class="row"><textarea id="sources" placeholder="https://photos.app.goo.gl/…" spellcheck="false"></textarea></label>
-      <label class="row"><input type="checkbox" id="optDelete"> <span>Also remove synced photos that are no longer in these albums</span></label>
-      <label class="row"><input type="checkbox" id="optRefresh" checked> <span>Refresh the frame slideshow when done</span></label>
-      <label class="row" style="align-items:center; flex-wrap:wrap"><span>Download at most</span> <input type="number" id="optLimit" min="1" placeholder="no limit"> <span>new photos this run</span></label>
-      <div class="bar" style="margin: 16px 0 0"><button class="btn primary" id="syncStart">Start sync</button></div>
-      <label class="row" style="margin-top:16px"><input type="checkbox" id="optAuto"> <span>Sync these albums automatically once a day</span></label>
-      <div id="syncLive" class="hidden">
-        <div class="progress"><div id="progFill"></div></div>
-        <div id="progText" class="muted"></div>
-        <pre class="log hidden" id="log"></pre>
-      </div>
-    </div>
-  </section>
-
-  <section id="tab-deleted" class="hidden">
-    <div class="card">
-      <h2>Bin</h2>
-      <p class="muted" id="binNote"></p>
-      <div class="bar" style="margin: 14px 0">
-        <button class="btn" id="restoreAll">Restore all</button>
-        <button class="btn danger" id="emptyBin">Empty the bin now</button>
-        <span class="spacer"></span>
-        <span class="muted" id="goneInfo"></span>
-        <button class="btn hidden" id="forgetGone">Let them sync again</button>
-      </div>
-      <p class="muted" id="exEmpty"></p>
-      <div class="grid" id="exList"></div>
-      <div class="bar" style="margin: 14px 0 0; justify-content: center"><button class="btn hidden" id="exMore"></button></div>
-    </div>
-  </section>
-
-  <section id="tab-status" class="hidden">
-    <div class="cards" id="statusCards"></div>
-  </section>
-</main>
-
-<div class="drop" id="drop">Drop photos to add them to the frame</div>
-<div class="lightbox" id="lightbox" role="dialog" aria-label="Photo viewer">
-  <div class="stage" id="stage"><img id="lbImg" alt=""></div>
-  <div class="controls">
-    <div class="info" id="lbInfo"></div>
-    <button class="btn" id="lbPrev" aria-label="Previous">‹</button>
-    <button class="btn" id="lbNext" aria-label="Next">›</button>
-    <button class="btn primary hidden" id="lbKeep">Keep this one</button>
-    <button class="btn danger" id="lbDelete">Delete from frame</button>
-    <button class="btn" id="lbClose">Close</button>
-  </div>
-</div>
-<div class="toast" id="toast" role="status"></div>
-
-<script>
+// What the page for managing the frame does: photos, duplicates, syncing, the calendar and the frame's settings.
 "use strict";
-const PAGE_SIZE = 60, MAX_SIDE = 1920, BIN_PAGE = 60, TABS = ["photos", "duplicates", "sync", "deleted", "status"];
+const PAGE_SIZE = 60, MAX_SIDE = 1920, BIN_PAGE = 60, TABS = ["photos", "duplicates", "sync", "calendar", "frame", "deleted", "status"];
 const KINDS = { all: "All", synced: "Synced", added: "Added here", phone: "From phone app" };
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; };
@@ -688,6 +392,111 @@ async function findDuplicates() {
   renderDupSummary(r.found, r.pending);
 }
 
+// --- calendar ---------------------------------------------------------------------------------------------
+// A time from the frame: a number is a moment, text is a day or a time on the clock here.
+function calWhen(value) {
+  if (typeof value === "number") return new Date(value * 1000);
+  const n = value.split(/[-T:]/).map(Number);
+  return new Date(n[0], n[1] - 1, n[2], n[3] || 0, n[4] || 0, n[5] || 0);
+}
+const calDay = date => date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const calTime = date => date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const REPEATS = { never: "", weekly: "every week", monthly: "every month", yearly: "every year" };
+function calRow(when, what, from, button) {
+  const row = el("div"); row.append(el("span", "when", when), el("span", "what", what));
+  if (from) row.append(el("span", "from", from));
+  if (button) row.append(button);
+  return row;
+}
+async function loadCalendar() {
+  let c;
+  try { c = await api("/api/calendar"); } catch (e) { return; }
+  // The links are secrets: with a PIN set, the frame only hands them to an unlocked browser.
+  const links = $("calLinks"), kept = c.feeds.length > 0 && !c.unlocked;
+  links.disabled = kept;
+  links.placeholder = kept ? "Unlock (top of the page) to see or change the calendar links" : "https://calendar.google.com/calendar/…";
+  if (document.activeElement !== links && changed("calLinks", kept ? null : c.feeds.map(f => f.link))) links.value = kept ? "" : c.feeds.map(f => f.link).join("\n");
+  if (changed("calFeeds", c.feeds.map(f => [f.host, f.name, f.events, f.fetched, f.error]))) {
+    const box = $("calFeeds"); box.textContent = "";
+    for (const f of c.feeds) {
+      const state = f.error ? `Not updated: ${f.error}` : f.fetched ? `updated ${fmtWhen(f.fetched)}` : "fetching…";
+      const row = calRow(plural(f.events, "event"), f.name || f.host, f.name ? f.host : "", el("span", f.error ? "from bad" : "from", state));
+      box.append(row);
+    }
+  }
+  if (changed("calAdded", c.added)) {
+    const box = $("calAdded"); box.textContent = "";
+    for (const e of c.added) {
+      const day = calWhen(e.day).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+      const remove = el("button", "btn small danger", "Delete");
+      remove.onclick = async () => {
+        if (!confirm(`Delete "${e.title}" from the frame's calendar?`)) return;
+        try { await api("/api/events/delete", { id: e.id }); toast("Event deleted."); loadCalendar(); } catch (err) { toast(err.message); }
+      };
+      box.append(calRow(e.time ? `${day} · ${e.time}` : day, e.title, REPEATS[e.repeat], remove));
+    }
+  }
+  const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const coming = c.events.filter(e => e.all_day ? calWhen(e.end) > today : calWhen(e.end) >= now).slice(0, 40);
+  setText($("calNone"), coming.length ? "" : "Nothing in the next five weeks.");
+  if (changed("calComing", coming)) {
+    const box = $("calComing"); box.textContent = "";
+    for (const e of coming) {
+      const start = calWhen(e.start);
+      box.append(calRow(e.all_day ? calDay(start) : `${calDay(start)} · ${calTime(start)}`, e.place ? `${e.title} (${e.place})` : e.title, e.added ? "added here" : e.calendar || ""));
+    }
+  }
+}
+async function addEvent() {
+  const title = $("evTitle").value.trim();
+  if (!title || !$("evDay").value) return toast("An event needs a title and a date.");
+  try { await api("/api/events/add", { title, day: $("evDay").value, time: $("evTime").value || null, repeat: $("evRepeat").value }); }
+  catch (e) { return toast(e.message); }
+  $("evTitle").value = ""; $("evTime").value = ""; $("evRepeat").value = "never";
+  toast("Added to the frame's calendar."); loadCalendar();
+}
+
+// --- the frame: its screen, night, sound, weather and pictures ----------------------------------------------
+let frame = null;
+const inFrameTab = () => $("tab-frame").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
+async function loadFrame() {
+  let d, w;
+  try { d = await api("/api/device"); w = await api("/api/weather"); } catch (e) { return; }
+  frame = d;
+  const wifi = d.wifi, strength = !wifi || wifi.signal === null ? "" : wifi.signal >= -60 ? ", strong signal" : wifi.signal >= -72 ? ", good signal" : ", weak signal";
+  let screen = `The frame is showing ${d.screen === "new" && !d.fell_back ? "the new screen" : "its original screen"}`;
+  if (d.asleep) screen += ", switched off for the night";
+  screen += wifi ? (wifi.network ? `. Wi-Fi: ${wifi.network}${strength}.` : wifi.on ? ". Wi-Fi: not connected." : ". Wi-Fi is off.") : ".";
+  if (d.fell_back) screen += " The new screen stopped responding, so the frame went back to its original screen.";
+  if (d.simulated) screen += " (Simulated on this computer: nothing is changed on a real frame.)";
+  setText($("frScreen"), screen);
+  setText($("frSwap"), d.screen === "new" && !d.fell_back ? "Show the original screen" : "Show the new screen");
+  setText($("frLight"), typeof d.light === "number" ? `The room now measures ${Math.round(d.light)} lux. Under 4 counts as dark.` : "");
+  const place = d.place ? `Showing the weather for ${d.place}.` : "No place chosen, so no weather is shown.";
+  setText($("frPlace"), w.now ? `${place} Now ${Math.round(w.now.temp)}°.` : place);
+  show($("frForget"), !!d.place);
+  // What someone is in the middle of changing is left alone.
+  if (inFrameTab() || !changed("frame", [d.night, d.chime, d.slideshow])) return;
+  $("frNight").checked = d.night.on; $("frFrom").value = d.night.from; $("frUntil").value = d.night.until; $("frDark").checked = d.night.when_dark;
+  $("frChime").value = d.chime === null ? "" : String(d.chime);
+  $("frEvery").value = String(d.slideshow.every); $("frOrder").value = d.slideshow.order;
+  $("frHome").value = d.slideshow.home_after === null ? "" : String(d.slideshow.home_after);
+  $("frMemories").checked = d.slideshow.memories; $("frWeather").checked = d.slideshow.weather; $("frMorning").checked = d.slideshow.morning;
+}
+async function saveFrame(path, body, done) {
+  try { await api(path, body); toast(done); } catch (e) { toast(e.message); }
+  drawn.delete("frame"); document.activeElement.blur(); loadFrame();
+}
+const saveNight = () => saveFrame("/api/night", { on: $("frNight").checked, from: $("frFrom").value, until: $("frUntil").value, when_dark: $("frDark").checked }, "Night settings saved.");
+const savePictures = () => saveFrame("/api/slideshow", { every: Number($("frEvery").value), order: $("frOrder").value, home_after: $("frHome").value === "" ? null : Number($("frHome").value), memories: $("frMemories").checked, weather: $("frWeather").checked, morning: $("frMorning").checked }, "Saved. The frame picks it up within half a minute.");
+async function findPlace() {
+  const name = $("frTown").value.trim();
+  if (!name) return toast("Type the name of a town or city.");
+  $("frFind").disabled = true;
+  try { const r = await api("/api/weather/place", { name }); $("frTown").value = ""; toast(`Weather will be shown for ${r.place}.`); } catch (e) { toast(e.message); }
+  $("frFind").disabled = false; loadFrame();
+}
+
 // --- status -----------------------------------------------------------------------------------------------
 function card(title, rows, above, below) {
   const c = el("div", "card"); c.append(el("h2", "", title));
@@ -749,7 +558,9 @@ async function loadStatus() {
 
   const up = s.uptime_secs, upText = up >= 86400 ? `${Math.floor(up / 86400)} d ${Math.floor(up % 86400 / 3600)} h` : up >= 3600 ? `${Math.floor(up / 3600)} h ${Math.floor(up % 3600 / 60)} min` : `${Math.max(1, Math.round(up / 60))} min`;
   const logLink = el("a", "", "Open the log"); logLink.href = "/logs"; logLink.target = "_blank"; logLink.style.cssText = "display:inline-block;margin-top:14px";
-  box.append(card("Server", [["Version", s.version], ["Running for", upText]], null, logLink));
+  const screenLink = el("a", "", "Open the frame's own screen"); screenLink.href = "/frame"; screenLink.target = "_blank"; screenLink.style.cssText = "display:block;margin-top:8px";
+  const serverLinks = el("div"); serverLinks.append(logLink, screenLink);
+  box.append(card("Server", [["Version", s.version], ["Running for", upText]], null, serverLinks));
 }
 
 // --- wiring --------------------------------------------------------------------------------------------------
@@ -758,6 +569,8 @@ function showTab(tab) {
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   for (const t of TABS) show($("tab-" + t), t === tab);
   if (tab === "status") loadStatus();
+  if (tab === "calendar") loadCalendar();
+  if (tab === "frame") loadFrame();
   if (tab === "duplicates" && !$("dupGroups").childElementCount) findDuplicates();
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => { location.hash = b.dataset.tab; });
@@ -793,6 +606,18 @@ $("forgetGone").onclick = () => { if (confirm(`Allow the ${plural(bin.gone, "pho
 $("restoreAll").onclick = () => { if (confirm(`Restore all ${plural(bin.names.length, "photo")} in the bin?`)) api("/api/restore", { names: "all" }).then(() => load(false), e => toast(e.message)); };
 $("sources").onchange = () => api("/api/sources", { sources: $("sources").value.split("\n") }).then(() => toast("Album links saved."), e => toast(e.message));
 $("optAuto").onchange = e => api("/api/auto", { enabled: e.target.checked }).then(r => toast(r.auto ? "The frame will sync these albums once a day." : "Daily sync is off."), err => toast(err.message));
+$("calLinks").onchange = () => api("/api/calendars", { links: $("calLinks").value.split("\n") }).then(() => { toast("Calendars saved. The frame is fetching them."); drawn.delete("calLinks"); loadCalendar(); setTimeout(loadCalendar, 4000); }, e => toast(e.message));
+$("evAdd").onclick = addEvent;
+for (const id of ["frNight", "frFrom", "frUntil", "frDark"]) $(id).onchange = saveNight;
+for (const id of ["frEvery", "frOrder", "frHome", "frMemories", "frWeather", "frMorning"]) $(id).onchange = savePictures;
+$("frChime").onchange = e => saveFrame("/api/chime", { before: e.target.value === "" ? null : Number(e.target.value) }, "Chime saved.");
+$("frFind").onclick = findPlace;
+$("frTown").onkeydown = e => { if (e.key === "Enter") findPlace(); };
+$("frForget").onclick = () => saveFrame("/api/weather/forget", {}, "The weather is no longer shown.");
+$("frSwap").onclick = () => { const other = frame && frame.screen === "new" && !frame.fell_back ? "legacy" : "new"; saveFrame("/api/screen", { show: other }, other === "new" ? "The frame is switching to the new screen." : "The frame is switching to its original screen."); };
+$("frWifi").onclick = () => { if (confirm("Open the list of Wi-Fi networks on the frame's screen? Someone has to be at the frame to choose one. It returns to its screen a minute after it was last touched.")) saveFrame("/api/wifi/settings", {}, "The frame is showing its Wi-Fi networks."); };
+$("evTitle").onkeydown = e => { if (e.key === "Enter") addEvent(); };
+{ const d = new Date(); $("evDay").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 $("syncStart").onclick = async () => {
   const limit = parseInt($("optLimit").value, 10);
   const body = { sources: $("sources").value.split("\n"), delete: $("optDelete").checked, refresh: $("optRefresh").checked, limit: Number.isFinite(limit) ? limit : null };
@@ -822,6 +647,5 @@ load(true);
 setInterval(() => { if (!document.hidden) load(needFull); }, 4000);
 setInterval(reportWatching, 5000);
 setInterval(() => { if (!$("tab-status").classList.contains("hidden") && !document.hidden) loadStatus(); }, 10000);
-</script>
-</body>
-</html>
+setInterval(() => { if (!$("tab-calendar").classList.contains("hidden") && !document.hidden) loadCalendar(); }, 15000);
+setInterval(() => { if (!$("tab-frame").classList.contains("hidden") && !document.hidden) loadFrame(); }, 10000);

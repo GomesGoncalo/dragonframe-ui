@@ -14,7 +14,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
 
-use crate::blocking;
+use crate::app::blocking;
 use crate::index::Index;
 use crate::store::{self, Config};
 use crate::types::{AlbumLink, SyncedName};
@@ -139,11 +139,29 @@ pub struct Context {
 /// The HTTP client for talking to Google, with name lookups that work on the frame.
 pub fn client() -> reqwest::Client {
     reqwest::Client::builder()
+        .use_rustls_tls()
         .dns_resolver(Arc::new(crate::dns::FrameResolver))
         .connect_timeout(Duration::from_secs(20))
         .timeout(Duration::from_secs(90))
         .build()
         .expect("the HTTP client configuration is valid")
+}
+
+/// An HTTP client for servers the usual one cannot talk to: ones that only offer the older
+/// ways of encrypting a connection, which browsers still accept and the usual client's TLS
+/// library leaves out on purpose. It uses OpenSSL, with the same trusted roots as the usual
+/// client (Android keeps its own where OpenSSL does not look). None if it cannot be set up.
+pub fn tolerant_client() -> Option<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
+        .use_native_tls()
+        .tls_built_in_root_certs(false)
+        .dns_resolver(Arc::new(crate::dns::FrameResolver))
+        .connect_timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(90));
+    for root in webpki_root_certs::TLS_SERVER_ROOT_CERTS {
+        builder = builder.add_root_certificate(reqwest::Certificate::from_der(root).ok()?);
+    }
+    builder.build().ok()
 }
 
 fn say(job: &Mutex<Job>, line: String) {

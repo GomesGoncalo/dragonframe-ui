@@ -44,6 +44,8 @@ pub struct Meta {
     pub quality: Option<Quality>,
     /// The faces in it and their expressions, if the face models are installed.
     pub people: Option<People>,
+    /// Width and height in pixels, which the frame's screen needs to lay photos out side by side.
+    pub size: Option<(u32, u32)>,
 }
 
 /// Progress of the background analysis.
@@ -152,6 +154,7 @@ impl Index {
                 _ => None,
             };
             let small = |v: &Value| v.as_u64().and_then(|n| u16::try_from(n).ok());
+            let pixels = |v: &Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|n| *n > 0);
             let people = match (small(&value[4][0]), small(&value[4][1]), small(&value[4][2])) {
                 (Some(faces), Some(eyes_open), Some(smiling)) => {
                     Some(People { faces: u8::try_from(faces).unwrap_or(u8::MAX), eyes_open, smiling })
@@ -163,6 +166,10 @@ impl Index {
                 hash: value[1].as_str().and_then(|hex| u64::from_str_radix(hex, 16).ok()),
                 quality,
                 people,
+                size: match (pixels(&value[5][0]), pixels(&value[5][1])) {
+                    (Some(width), Some(height)) => Some((width, height)),
+                    _ => None,
+                },
             };
             entries.insert(photo, meta);
         }
@@ -183,7 +190,8 @@ impl Index {
                 let hash = meta.hash.map(|h| format!("{h:016x}"));
                 let (sharpness, clipped) = meta.quality.map_or((None, None), |q| (Some(q.sharpness), Some(q.clipped)));
                 let people = meta.people.map(|p| [u16::from(p.faces), p.eyes_open, p.smiling]);
-                (photo.to_string(), json!([meta.taken, hash, sharpness, clipped, people]))
+                let size = meta.size.map(|(width, height)| [width, height]);
+                (photo.to_string(), json!([meta.taken, hash, sharpness, clipped, people, size]))
             })
             .collect();
         if let Err(e) = store::write_atomically(&self.path, Value::Object(saved).to_string().as_bytes()) {
@@ -215,6 +223,10 @@ impl Index {
 
     pub fn set_quality(&self, photo: &PhotoPath, quality: Quality) {
         self.update(photo, |meta| meta.quality = Some(quality));
+    }
+
+    pub fn set_size(&self, photo: &PhotoPath, size: (u32, u32)) {
+        self.update(photo, |meta| meta.size = Some(size));
     }
 
     pub fn set_people(&self, photo: &PhotoPath, people: People) {
@@ -296,6 +308,12 @@ pub fn refresh(cfg: &Config, index: &Index) -> Vec<Photo> {
         // Synced photos get their date from the album listing; for the rest, arrival time is the best we have.
         if photo.source != Source::Synced && index.get(&photo.path).taken.is_none() {
             index.set_taken(&photo.path, photo.mtime);
+        }
+    }
+    // Reading a photo's size takes only the start of the file, so it is done here for all of them.
+    for photo in photos.iter().filter(|p| index.get(&p.path).size.is_none()) {
+        if let Some(size) = store::dimensions(cfg, &photo.path) {
+            index.set_size(&photo.path, size);
         }
     }
     // Album dates are recorded for every item, downloaded or not, so keep entries for synced names.
@@ -525,6 +543,20 @@ mod tests {
     }
 
     #[test]
+    fn refresh_learns_the_size_of_every_photo_it_can_read() {
+        let frame = TempFrame::new("index-sizes");
+        frame.put("frame-sync/up_0123456789abcdef.jpg", &picture(64, 48, ImageFormat::Jpeg));
+        frame.put("9user/photos/tall.webp", &picture(30, 50, ImageFormat::WebP));
+        frame.put("frame-sync/up_00000000000000ff.jpg", b"not a picture");
+        let index = Index::load(&frame.0);
+        refresh(&frame.0, &index);
+        assert_eq!(index.get(&p("frame-sync/up_0123456789abcdef.jpg")).size, Some((64, 48)));
+        assert_eq!(index.get(&p("9user/photos/tall.webp")).size, Some((30, 50)));
+        assert_eq!(index.get(&p("frame-sync/up_00000000000000ff.jpg")).size, None);
+        assert_eq!(Index::load(&frame.0).get(&p("9user/photos/tall.webp")).size, Some((30, 50)), "and remembers it");
+    }
+
+    #[test]
     fn only_unchecked_photos_with_look_alikes_are_queued_for_a_look_at_their_faces() {
         let frame = TempFrame::new("index-people-queue");
         let index = Index::load(&frame.0);
@@ -676,6 +708,7 @@ mod tests {
         index.set_quality(&p("a.jpg"), Quality { sharpness: 321, clipped: 12 });
         index.set_people(&p("a.jpg"), People { faces: 2, eyes_open: 150, smiling: 90 });
         index.set_hash(&p("b.jpg"), 7);
+        index.set_size(&p("a.jpg"), (1920, 1080));
         index.save();
 
         let reloaded = Index::load(&frame.0);
@@ -686,9 +719,10 @@ mod tests {
                 hash: Some(0xdead_beef_0000_0001),
                 quality: Some(Quality { sharpness: 321, clipped: 12 }),
                 people: Some(People { faces: 2, eyes_open: 150, smiling: 90 }),
+                size: Some((1920, 1080)),
             }
         );
-        assert_eq!(reloaded.get(&p("b.jpg")), Meta { taken: None, hash: Some(7), quality: None, people: None });
+        assert_eq!(reloaded.get(&p("b.jpg")), Meta { hash: Some(7), ..Meta::default() });
         assert_eq!(reloaded.analysed(), Analysed { fingerprints: 2, quality: 1, people: 1 });
 
         reloaded.forget(&[p("a.jpg"), p("never-there.jpg")]);
@@ -722,6 +756,6 @@ mod tests {
         .unwrap();
         let index = Index::load(&frame.0);
         assert_eq!(index.get(&p("a.jpg")), Meta::default());
-        assert_eq!(index.get(&p("c.jpg")), Meta { taken: Some(12), hash: Some(255), quality: None, people: None });
+        assert_eq!(index.get(&p("c.jpg")), Meta { taken: Some(12), hash: Some(255), ..Meta::default() });
     }
 }

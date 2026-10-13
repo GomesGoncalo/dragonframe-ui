@@ -1,0 +1,180 @@
+/* How the frame's own screen looks. See index.html for what the page is. */
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body {
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif; color: #fff;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; outline: none; border: 0; }
+.view { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; }
+body[data-tab="pictures"] #pictures, body[data-tab="calendar"] #calendar, body[data-tab="settings"] #settings { display: block; }
+#calendar, #settings { background: #101113; }
+
+/* --- pictures --- */
+.slide { position: absolute; top: 0; right: 0; bottom: 0; left: 0; opacity: 0; transition: opacity 1.2s ease; }
+.slide.on { opacity: 1; }
+/* The photos of one screen, laid out in a box the shape of the arrangement and centred. */
+.collage { position: absolute; }
+/* Each cell is exactly the shape of its photo, with a thin black line between cells. */
+.cell {
+  position: absolute; box-sizing: border-box; border: .3vmin solid #000;
+  background-repeat: no-repeat; background-size: contain; background-position: center;
+}
+.scrim {
+  position: absolute; right: 0; bottom: 0; left: 0; height: 40vmin; pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, .68), rgba(0, 0, 0, 0));
+}
+.clock { position: absolute; left: 5vmin; bottom: 4.5vmin; right: 5vmin; text-shadow: 0 .2vmin 1.2vmin rgba(0, 0, 0, .6); pointer-events: none; }
+.time { font-size: 13vmin; font-weight: 300; line-height: 1; letter-spacing: -.2vmin; }
+.date { font-size: 3.6vmin; margin-top: 1vmin; opacity: .92; }
+.date .weather { margin-left: 2.4vmin; opacity: .9; }
+.morning { font-size: 2.8vmin; margin-top: .8vmin; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.morning:empty { display: none; }
+/* When each photo was taken, on a faint plate in its corner so it reads over a bright sky
+   as well. It shows for the first few seconds of a screen, and while the tabs are up. */
+.cell .taken, .paused {
+  position: absolute; padding: .5vmin 1.6vmin; border-radius: 2vmin;
+  font-size: 2.3vmin; background: rgba(0, 0, 0, .42); color: rgba(255, 255, 255, .95);
+}
+.cell .taken {
+  top: 1.4vmin; left: 1.4vmin; max-width: calc(100% - 2.8vmin); box-sizing: border-box;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .6s ease;
+}
+body.dated .cell .taken, body.bar .cell .taken { opacity: 1; }
+.paused { top: 2.6vmin; right: 3vmin; font-weight: 700; display: none; }
+body.paused .paused { display: block; }
+.notice {
+  position: absolute; top: 50%; left: 0; right: 0; margin-top: -3vmin; text-align: center;
+  font-size: 3.4vmin; opacity: .7; display: none;
+}
+body.empty .notice { display: block; }
+
+/* --- an event that is about to start, shown over any tab --- */
+.soon {
+  position: absolute; top: 4vmin; left: 50%; transform: translateX(-50%); max-width: 90vmin; box-sizing: border-box;
+  padding: 2vmin 4vmin; border-radius: 3vmin; background: rgba(250, 250, 250, .96); color: #111; text-align: center;
+  box-shadow: 0 1vmin 4vmin rgba(0, 0, 0, .5); opacity: 0; transition: opacity .4s ease; pointer-events: none;
+}
+.soon.on { opacity: 1; }
+.soon .when { font-size: 2.5vmin; opacity: .65; }
+.soon .what { font-size: 3.8vmin; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- the tabs: always there on Calendar and Settings, brought up by a touch on Pictures --- */
+.tabs {
+  position: absolute; left: 50%; bottom: 3vmin; transform: translateX(-50%); white-space: nowrap;
+  padding: .8vmin; border-radius: 5vmin; background: rgba(28, 29, 32, .94); box-shadow: 0 .6vmin 3vmin rgba(0, 0, 0, .5);
+  transition: opacity .25s ease; font-size: 0;
+}
+body[data-tab="pictures"]:not(.bar) .tabs { opacity: 0; pointer-events: none; }
+.tabs button {
+  font-size: 2.7vmin; color: #c9ccd1; background: none; border-radius: 4.2vmin;
+  padding: 1.6vmin 3.4vmin; margin: 0 .3vmin;
+}
+.tabs button.active { background: #fff; color: #111; font-weight: 700; }
+/* A small drawing before the words of a tab. It takes no touches itself, so the button gets them. */
+button svg {
+  width: 1.25em; height: 1.25em; margin-right: .55em; vertical-align: -.25em; pointer-events: none;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+button.active svg { stroke-width: 2.4; }
+button.only svg { margin-right: 0; }
+.tabs .pause { margin-left: 1.5vmin; border-left: .2vmin solid rgba(255, 255, 255, .18); border-radius: 0; padding-left: 3.6vmin; }
+body:not([data-tab="pictures"]) .tabs .pause { display: none; }
+
+/* --- calendar --- */
+h1 { margin: 0; font-size: 5vmin; font-weight: 300; }
+h2 { margin: 0 0 2.2vmin; font-size: 3.4vmin; font-weight: 500; }
+.top { position: absolute; top: 5vmin; left: 7vmin; right: 7vmin; }
+.top .now { position: absolute; top: 0; right: 0; font-size: 5vmin; font-weight: 300; white-space: nowrap; }
+.top .now .weather { font-size: 3.4vmin; margin-right: 3vmin; opacity: .85; }
+/* Small switches: between month and week, and between the parts of Settings. */
+.switch { position: absolute; top: 13.5vmin; left: 7vmin; right: 7vmin; white-space: nowrap; font-size: 0; }
+.switch button {
+  font-size: 2.5vmin; color: #c9ccd1; background: #1b1d21; border-radius: 3vmin; padding: 1.1vmin 2.8vmin; margin-right: 1vmin;
+}
+.switch button.active { background: #fff; color: #111; font-weight: 700; }
+.switch .step { margin-left: 3vmin; }
+.switch .period { margin-left: 2vmin; font-size: 2.8vmin; color: #c9ccd1; vertical-align: middle; }
+.switch button:active { opacity: .7; }
+body:not([data-view="month"]) #month-view, body:not([data-view="week"]) #week-view { display: none; }
+.month { position: absolute; top: 23vmin; left: 7vmin; width: 74vmin; }
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-gap: .8vmin; text-align: center; font-size: 3.4vmin; }
+.grid span { position: relative; padding: 1.7vmin 0 2.5vmin; border-radius: 1.8vmin; }
+.grid .head { opacity: .5; font-size: 2.4vmin; padding: .6vmin 0 1vmin; }
+.grid .today { background: #fff; color: #111; font-weight: 700; }
+/* The day picked to see what is on it. */
+.grid .picked { box-shadow: inset 0 0 0 .4vmin #6cb6ff; }
+/* A dot for each calendar with something on that day. */
+.grid .dots { position: absolute; left: 0; right: 0; bottom: .8vmin; height: 1vmin; padding: 0; font-size: 0; }
+.grid .dots i { display: inline-block; width: 1vmin; height: 1vmin; margin: 0 .25vmin; border-radius: 50%; }
+.grid .today .dots i { box-shadow: 0 0 0 .15vmin rgba(0, 0, 0, .35); }
+.agenda { position: absolute; top: 23vmin; right: 7vmin; bottom: 14vmin; left: 92vmin; overflow: hidden; }
+.item { margin-bottom: 1.8vmin; padding-left: 1.6vmin; border-left: .6vmin solid #6cb6ff; }
+.item .when { font-size: 2.3vmin; color: rgba(255, 255, 255, .6); }
+.item .what { font-size: 3.2vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .when { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .from { opacity: 1; }
+.agenda .heading { margin: 2.4vmin 0 1.2vmin; font-size: 2.5vmin; font-weight: 700; opacity: .85; }
+.agenda h2 + div > .heading:first-child { margin-top: 0; }
+.agenda .item { margin-bottom: 1.3vmin; }
+.none { font-size: 2.8vmin; opacity: .6; }
+/* The week: seven days side by side, each with its own events. */
+.week { position: absolute; top: 23vmin; left: 7vmin; right: 7vmin; bottom: 14vmin; display: grid; grid-template-columns: repeat(7, 1fr); grid-gap: 1vmin; }
+.day { background: #17191c; border-radius: 1.8vmin; padding: 1.6vmin 1.4vmin; overflow: hidden; min-width: 0; }
+.day.today { background: #24272c; box-shadow: inset 0 0 0 .3vmin #fff; }
+.day .name { font-size: 2.3vmin; opacity: .6; }
+.day .number { font-size: 4.4vmin; font-weight: 300; line-height: 1.15; }
+.day .sky { font-size: 2.2vmin; opacity: .75; margin-bottom: 1.2vmin; min-height: 2.8vmin; white-space: nowrap; overflow: hidden; }
+.day .item { margin-bottom: 1.2vmin; padding-left: 1vmin; border-left-width: .5vmin; }
+.day .item .when { font-size: 1.9vmin; }
+.day .item .what { font-size: 2.3vmin; white-space: normal; max-height: 5.6vmin; line-height: 1.2; }
+.day .more { font-size: 2vmin; opacity: .6; }
+
+/* --- settings: a row of parts, and the part that is open --- */
+.part { position: absolute; top: 23vmin; left: 7vmin; right: 7vmin; bottom: 14vmin; display: none; }
+body[data-part="pictures"] #part-pictures, body[data-part="night"] #part-night, body[data-part="sound"] #part-sound,
+body[data-part="wifi"] #part-wifi, body[data-part="frame"] #part-frame { display: block; }
+.row { margin-bottom: 2.6vmin; }
+.row > .label { display: block; margin-bottom: 1vmin; font-size: 2.5vmin; color: #a9adb5; }
+.part p { margin: 0 0 2vmin; max-width: 110vmin; font-size: 2.5vmin; line-height: 1.4; color: #a9adb5; }
+.part .big { font-size: 3.6vmin; color: #fff; margin-bottom: .8vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.part .good { color: #6ee7a0; } .part .bad { color: #ff8f85; }
+.press {
+  font-size: 2.6vmin; color: #fff; background: #30343b; border-radius: 1.6vmin;
+  padding: 1.5vmin 2.6vmin; margin: 0 .9vmin 1vmin 0;
+}
+.press.on { background: #fff; color: #111; font-weight: 700; }
+.press.warn { background: #6b2d2a; }
+.press:active { opacity: .7; }
+.hours { display: inline-block; min-width: 13vmin; text-align: center; font-size: 4vmin; font-weight: 300; vertical-align: middle; }
+.columns > div { display: inline-block; vertical-align: top; margin-right: 7vmin; }
+/* Asking for the PIN: the parts of Settings stay out of sight until it is given. */
+.lock { position: absolute; top: 15vmin; left: 0; right: 0; text-align: center; display: none; }
+body.locked .lock { display: block; }
+body.locked #parts, body.locked #settings .part { display: none; }
+.lock .dots { height: 5vmin; font-size: 5vmin; letter-spacing: 1.6vmin; line-height: 1; margin: 1vmin 0; }
+.lock p { height: 3.4vmin; margin: 0 0 1.6vmin; font-size: 2.5vmin; color: #ff8f85; }
+.keys { display: inline-grid; grid-template-columns: repeat(3, 13vmin); grid-gap: 1.3vmin; }
+.keys button { height: 9.6vmin; font-size: 4vmin; color: #fff; background: #30343b; border-radius: 2vmin; }
+.keys button:active { opacity: .7; }
+.keys .go { background: #fff; color: #111; font-weight: 700; font-size: 3vmin; }
+/* The address as a QR code, on white so a phone's camera reads it. */
+.code { width: 26vmin; height: 26vmin; border-radius: 1.2vmin; background: #fff; display: none; }
+
+/* Only seen in the simulator: on the frame the screen itself is off. */
+.asleep {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: #000; color: #555; display: none;
+  font-size: 2.6vmin; text-align: center; padding-top: 48vh;
+}
+body.asleep .asleep { display: block; }
+
+/* --- standing tall --- */
+@media (orientation: portrait) {
+  .month { right: 7vmin; width: auto; }
+  .agenda { top: 100vmin; left: 7vmin; }
+  .week { grid-template-columns: 1fr; grid-template-rows: repeat(7, 1fr); }
+  .day .name, .day .number, .day .sky { display: inline-block; vertical-align: baseline; margin: 0 1.6vmin .6vmin 0; min-height: 0; }
+  .day .number { font-size: 3.4vmin; }
+  .day .item { display: inline-block; vertical-align: top; width: 26vmin; margin-right: 1.4vmin; }
+  .switch { overflow: hidden; }
+  .switch button { padding: 1.1vmin 2.1vmin; margin-right: .7vmin; }
+}

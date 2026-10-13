@@ -1,2 +1,6 @@
 __pycache__/
 .DS_Store
+# Downloaded build tools, the simulator's photos and data, and the built screen app.
+.tools/
+.sim/
+android/build/

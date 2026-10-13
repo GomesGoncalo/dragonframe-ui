@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  The frame's own screen in a box of exactly the frame's size, for trying it on a
+  computer: 1920x1080 pixels at Android density 180, so 1706.67x960 CSS pixels,
+  scaled to fit the window. Add ?portrait to the address to stand the frame on its
+  side; anything else in the address is passed on to the screen.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Frame simulator</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1b1b1d; overflow: hidden; }
+  #screen {
+    position: absolute; top: 50%; left: 50%; border: 0; background: #000;
+    box-shadow: 0 0 0 14px #050505, 0 20px 60px rgba(0, 0, 0, .6); transform-origin: 0 0;
+  }
+</style>
+</head>
+<body>
+<iframe id="screen" title="The frame's screen"></iframe>
+<script>
+  const screen = document.getElementById('screen');
+  const options = new URLSearchParams(location.search);
+  const portrait = options.has('portrait');
+  options.delete('portrait');
+  const width = portrait ? 960 : 1706.67, height = portrait ? 1706.67 : 960;
+  screen.style.width = width + 'px';
+  screen.style.height = height + 'px';
+  screen.src = '/frame?' + options.toString();
+  function fit() {
+    const scale = Math.min((innerWidth - 60) / width, (innerHeight - 60) / height);
+    screen.style.transform = 'scale(' + scale + ') translate(-50%, -50%)';
+  }
+  addEventListener('resize', fit);
+  fit();
+  screen.addEventListener('load', () => screen.focus());
+</script>
+</body>
+</html>
