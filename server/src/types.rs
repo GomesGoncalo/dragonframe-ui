@@ -257,6 +257,13 @@ impl<T, const MIN: usize, const MAX: usize> Bounded<T, MIN, MAX> {
     }
 }
 
+/// A list that may be empty starts empty.
+impl<T, const MAX: usize> Default for Bounded<T, 0, MAX> {
+    fn default() -> Self {
+        Bounded(Vec::new())
+    }
+}
+
 impl<T, const MIN: usize, const MAX: usize> Deref for Bounded<T, MIN, MAX> {
     type Target = [T];
 
@@ -871,6 +878,96 @@ impl<'de> Deserialize<'de> for PlaceQuery {
     }
 }
 
+// --- the house -----------------------------------------------------------------------------------
+
+/// A short name to show on the screen: one line of 1 to 60 characters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Label(String);
+
+impl Label {
+    pub fn parse(text: &str) -> Option<Label> {
+        let text = text.trim();
+        ((1..=60).contains(&text.chars().count()) && !text.contains(char::is_control)).then(|| Label(text.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for Label {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, Label::parse, "not a name of 1 to 60 characters")
+    }
+}
+
+/// What a camera is called in addresses: 1 to 64 lower-case letters, digits and underscores.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct CameraId(String);
+
+impl CameraId {
+    pub fn parse(text: &str) -> Option<CameraId> {
+        let allowed = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_';
+        ((1..=64).contains(&text.len()) && text.bytes().all(allowed)).then(|| CameraId(text.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for CameraId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, CameraId::parse, "not the name of a camera")
+    }
+}
+
+/// What a house alarm is doing. Anything not known here is `Unknown`, so that a new state
+/// some day is shown as such rather than refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlarmState {
+    Disarmed,
+    ArmedHome,
+    ArmedAway,
+    ArmedNight,
+    ArmedVacation,
+    ArmedCustomBypass,
+    Arming,
+    Pending,
+    Triggered,
+    #[serde(other)]
+    Unknown,
+}
+
+/// What a sensor in the house watches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SensorKind {
+    Door,
+    Window,
+    Motion,
+}
+
+/// The key the house's relay proves itself with: 32 hex digits, made here.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct HomeKey(String);
+
+impl HomeKey {
+    pub fn parse(text: &str) -> Option<HomeKey> {
+        (text.len() == 32 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+            .then(|| HomeKey(text.to_string()))
+    }
+
+    /// Whether `offered` is this key. Every character is looked at, however early they differ.
+    pub fn matches(&self, offered: &str) -> bool {
+        let (ours, theirs) = (self.0.as_bytes(), offered.as_bytes());
+        ours.len() == theirs.len() && ours.iter().zip(theirs).fold(0u8, |differing, (a, b)| differing | (a ^ b)) == 0
+    }
+}
+
+/// A key is never printed in logs or debug output.
+impl fmt::Debug for HomeKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("HomeKey(****)")
+    }
+}
+
 /// What the frame's screen page asks of the display when it says it is running: to stay on
 /// for a while (a timer is counting down), and to be on at a moment to come (an alarm).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1125,6 +1222,38 @@ mod tests {
         assert_eq!(from_value::<PlaceQuery>(json!("  Porto ")).unwrap().as_str(), "Porto");
         for bad in [json!(""), json!("   "), json!("x".repeat(101)), json!(5)] {
             assert!(from_value::<PlaceQuery>(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_names_and_states_of_the_house_are_checked_where_they_arrive() {
+        assert_eq!(json!(Label::parse("  Front Door ").unwrap()), json!("Front Door"));
+        for bad in ["", "   ", "two\nlines", &"x".repeat(61)] {
+            assert_eq!(Label::parse(bad), None, "{bad:?}");
+        }
+        assert!(from_value::<Label>(json!("")).is_err());
+        assert_eq!(json!(CameraId::parse("side_passage").unwrap()), json!("side_passage"));
+        for bad in ["", "Side Passage", "../etc", "a-b", &"x".repeat(65)] {
+            assert_eq!(CameraId::parse(bad), None, "{bad:?}");
+        }
+        assert_eq!(from_value::<AlarmState>(json!("armed_away")).unwrap(), AlarmState::ArmedAway);
+        assert_eq!(from_value::<AlarmState>(json!("something_new")).unwrap(), AlarmState::Unknown);
+        assert_eq!(json!(AlarmState::Disarmed), json!("disarmed"));
+        assert_eq!(from_value::<SensorKind>(json!("door")).unwrap(), SensorKind::Door);
+        assert!(from_value::<SensorKind>(json!("smoke")).is_err());
+        assert!(from_value::<Bounded<u8, 0, 2>>(json!([1, 2, 3])).is_err());
+        assert!(Bounded::<u8, 0, 2>::default().is_empty());
+    }
+
+    #[test]
+    fn a_home_key_is_32_hex_digits_and_never_printed() {
+        let key = HomeKey::parse("0123456789abcdef0123456789abcdef").unwrap();
+        assert!(key.matches("0123456789abcdef0123456789abcdef"));
+        assert!(!key.matches("0123456789abcdef0123456789abcdee"));
+        assert!(!key.matches("") && !key.matches("0123"));
+        assert_eq!(format!("{key:?}"), "HomeKey(****)");
+        for bad in ["", "0123", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef0123456789abcdeg"] {
+            assert!(HomeKey::parse(bad).is_none(), "{bad:?}");
         }
     }
 

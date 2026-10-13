@@ -471,6 +471,9 @@ async function loadFrame() {
   if (d.simulated) screen += " (Simulated on this computer: nothing is changed on a real frame.)";
   setText($("frScreen"), screen);
   setText($("frSwap"), d.screen === "new" && !d.fell_back ? "Show the original screen" : "Show the new screen");
+  setText($("frHouse"), !d.home ? "The house is not connected." : d.home_in_touch ? "The house is connected and its relay is in touch." : "The house is connected, but its relay has not been heard from in the last minute and a half.");
+  setText($("frConnect"), d.home ? "Make a new key" : "Connect the house");
+  show($("frDisconnect"), d.home);
   setText($("frLight"), typeof d.light === "number" ? `The room now measures ${Math.round(d.light)} lux. Under 4 counts as dark.` : "");
   const place = d.place ? `Showing the weather for ${d.place}.` : "No place chosen, so no weather is shown.";
   setText($("frPlace"), w.now ? `${place} Now ${Math.round(w.now.temp)}°.` : place);
@@ -611,6 +614,17 @@ $("evAdd").onclick = addEvent;
 for (const id of ["frNight", "frFrom", "frUntil", "frDark"]) $(id).onchange = saveNight;
 for (const id of ["frEvery", "frOrder", "frHome", "frMemories", "frWeather", "frMorning"]) $(id).onchange = savePictures;
 $("frChime").onchange = e => saveFrame("/api/chime", { before: e.target.value === "" ? null : Number(e.target.value) }, "Chime saved.");
+$("frConnect").onclick = async () => {
+  if (frame && frame.home && !confirm("Make a new key? The relay stops being listened to until the new key is put in its settings.")) return;
+  try {
+    const r = await api("/api/home/key", {});
+    // Shown this once: it goes in the relay's settings on the machine that runs Home Assistant.
+    $("frKey").textContent = `FRAME_URL=${location.origin}\nFRAME_KEY=${r.key}`; show($("frKey"), true);
+    toast("Key made. Copy the two lines into the relay's settings.");
+  } catch (e) { toast(e.message); }
+  loadFrame();
+};
+$("frDisconnect").onclick = () => { if (confirm("Disconnect the house? The frame forgets what it knew and stops listening to the relay.")) { show($("frKey"), false); saveFrame("/api/home/forget", {}, "The house is disconnected."); } };
 $("frFind").onclick = findPlace;
 $("frTown").onkeydown = e => { if (e.key === "Enter") findPlace(); };
 $("frForget").onclick = () => saveFrame("/api/weather/forget", {}, "The weather is no longer shown.");

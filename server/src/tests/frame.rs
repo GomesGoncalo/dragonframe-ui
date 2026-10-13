@@ -228,7 +228,7 @@ fn the_time_of_day_follows_the_frames_time_zone() {
 }
 
 /// Serialises the tests that switch the stand-in frame's one screen.
-static ONE_SCREEN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(super) static ONE_SCREEN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(start_paused = true)]
 async fn night_mode_switches_the_screen_off_for_the_night_and_back_on_after() {

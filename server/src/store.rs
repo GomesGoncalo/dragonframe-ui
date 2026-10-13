@@ -16,7 +16,7 @@ use sha1::{Digest as _, Sha1};
 use tracing::{debug, info, warn};
 
 use crate::types::{
-    hex, AlbumLink, CalendarLink, Chime, Digest, Night, PhotoPath, Place, Restore, Screen, Slideshow, Source,
+    hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Restore, Screen, Slideshow, Source,
     SyncedName, SYNC_SUBDIR,
 };
 
@@ -532,6 +532,8 @@ pub struct Settings {
     pub chime: Chime,
     /// Where the frame is, for the weather.
     pub place: Option<Place>,
+    /// The key the house's relay proves itself with, once the house is connected.
+    pub home_key: Option<HomeKey>,
 }
 
 /// How the most recent sync went.
@@ -580,6 +582,7 @@ impl Settings {
             night: serde_json::from_value(saved["night"].clone()).unwrap_or_default(),
             chime: serde_json::from_value(saved["chime"].clone()).unwrap_or_default(),
             place: serde_json::from_value(saved["place"].clone()).ok(),
+            home_key: saved["home_key"].as_str().and_then(HomeKey::parse),
         }
     }
 
@@ -600,6 +603,7 @@ impl Settings {
             "night": self.night,
             "chime": self.chime,
             "place": self.place,
+            "home_key": self.home_key,
         })
     }
 }
@@ -978,6 +982,7 @@ mod tests {
                 .unwrap(),
             chime: serde_json::from_value(json!(10)).unwrap(),
             place: Place::new("Lisbon", 38.72, -9.14),
+            home_key: HomeKey::parse("0123456789abcdef0123456789abcdef"),
         };
         save_settings(&frame.0, &settings);
         assert_eq!(load_settings(&frame.0), settings);

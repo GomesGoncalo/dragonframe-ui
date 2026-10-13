@@ -7,6 +7,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::calendar::Calendars;
 use crate::device::Device;
+use crate::home::Home;
 use crate::index::Index;
 use crate::store::{Config, Settings};
 use crate::types::Screen;
@@ -40,6 +41,8 @@ pub(crate) struct App {
     pub(crate) port: u16,
     pub(crate) watch: Mutex<ScreenWatch>,
     pub(crate) weather: Arc<Weather>,
+    /// What the house's relay has said about the doorbell, cameras, alarm and sensors.
+    pub(crate) home: Home,
 }
 
 /// A moment on the clock that waiting is measured by (tokio's, which tests can move forward).
@@ -88,6 +91,7 @@ impl App {
             port,
             watch: Mutex::default(),
             weather: Arc::new(Weather::new(weather::FORECAST_URL, weather::PLACES_URL)),
+            home: Home::default(),
         })
     }
 

@@ -60,6 +60,7 @@ const ICONS = {
   sound: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20.5a2 2 0 0 0 4 0"/>',
   wifi: '<path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9 16.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r=".6"/>',
   frame: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/>',
+  home: '<path d="M3.5 11L12 3.5l8.5 7.5M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>',
   utilities: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2.5M9.5 2.5h5"/>',
   alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.3 2.3M5.5 3.5L2.5 6.5M18.5 3.5l3 3"/>',
   pomodoro: '<circle cx="12" cy="14" r="7"/><path d="M12 7c0-2 1-3.5 3-3.5M8.5 6.5l3.5 1.2 3.5-1.2"/>',
@@ -901,6 +902,9 @@ async function sayAlive() {
     }
     // A place chosen a moment ago, or a fresh forecast, shows without waiting for the next turn.
     if ((reply.weather || null) !== (weather ? weather.fetched : null)) refreshWeather();
+    // The Home tab is there only while the house is connected.
+    document.body.classList.toggle('no-home', !reply.home);
+    if (!reply.home && tab === 'home') showTab('pictures');
     asleep = !!reply.asleep;
     document.body.classList.toggle('asleep', asleep);
     schedule();
@@ -1027,8 +1031,9 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === ' ') setPaused(!paused);
   else if (event.key === '1') showTab('pictures');
   else if (event.key === '2') showTab('calendar');
-  else if (event.key === '3') showTab('utilities');
-  else if (event.key === '4') showTab('settings');
+  else if (event.key === '3') showTab('home');
+  else if (event.key === '4') showTab('utilities');
+  else if (event.key === '5') showTab('settings');
 });
 
 // Every tab gets its drawing.

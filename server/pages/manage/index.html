@@ -148,6 +148,16 @@ try { const t = localStorage.getItem("frameTheme"); if (t === "light" || t === "
       </div>
     </div>
     <div class="card narrow">
+      <h2>House</h2>
+      <p class="muted" id="frHouse"></p>
+      <p class="muted">The frame can show the doorbell, cameras, alarm and door sensors that Home Assistant knows about. It does not sign in to them: a small relay beside Home Assistant tells the frame what to show, and proves itself with a key made here. See the README for setting the relay up.</p>
+      <pre class="log hidden" id="frKey"></pre>
+      <div class="bar" style="margin: 14px 0 0">
+        <button class="btn" id="frConnect"></button>
+        <button class="btn danger hidden" id="frDisconnect">Disconnect the house</button>
+      </div>
+    </div>
+    <div class="card narrow">
       <h2>Night</h2>
       <p class="muted">The frame switches its screen off for the night and back on in the morning. It can also go dark whenever the room does. A frame that was touched in the last five minutes stays on.</p>
       <label class="row"><input type="checkbox" id="frNight"> <span>Switch the screen off at night</span></label>

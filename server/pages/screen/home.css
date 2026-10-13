@@ -1,0 +1,45 @@
+/* How the Home tab looks (the house's alarm, sensors and cameras), and the notice that
+   someone is at the door. */
+body[data-tab="home"] #home { display: block; }
+#home { background: #101113; }
+/* Until the house is connected there is no Home tab to go to. */
+body.no-home [data-tab="home"] { display: none; }
+
+.house { position: absolute; top: 16vmin; left: 7vmin; bottom: 14vmin; width: 62vmin; overflow: hidden; }
+.cameras { position: absolute; top: 16vmin; left: 76vmin; right: 7vmin; bottom: 14vmin; overflow: hidden; }
+.stale { margin: 0 0 2vmin; font-size: 2.4vmin; color: #ff8f85; }
+.stale:empty { display: none; }
+
+.alarm { margin-bottom: 1.6vmin; padding: 2vmin 2.6vmin; border-radius: 2vmin; background: #17191c; }
+.alarm .name { font-size: 2.3vmin; color: #a9adb5; }
+.alarm .state { font-size: 4.6vmin; font-weight: 300; }
+.alarm.armed .state { color: #6cb6ff; }
+.alarm.triggered { background: #6b2d2a; }
+.alarm.triggered .state { color: #fff; font-weight: 700; }
+
+.sensor { padding: 1.3vmin 0; border-top: .2vmin solid #23262b; font-size: 2.9vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sensor:first-child { border-top: 0; }
+.sensor .is { float: right; color: #a9adb5; }
+.sensor.on .is { color: #f2a65a; font-weight: 700; }
+
+.camera { position: relative; display: inline-block; vertical-align: top; width: 48%; margin: 0 2% 2vmin 0; border-radius: 1.8vmin; overflow: hidden; background: #17191c; }
+.camera img { display: block; width: 100%; height: 30vmin; object-fit: cover; background: #000; }
+.camera .none { height: 30vmin; line-height: 30vmin; text-align: center; font-size: 2.4vmin; color: #6b7078; }
+.camera .name { padding: 1.2vmin 1.8vmin; font-size: 2.6vmin; }
+.camera .name span { float: right; font-size: 2.2vmin; color: #a9adb5; }
+.camera.person { box-shadow: inset 0 0 0 .4vmin #f2a65a; }
+
+/* A camera's picture, large; and someone at the door. Both sit over everything. */
+.look, .bell { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: rgba(8, 9, 10, .96); text-align: center; }
+.look.on, .bell.on { display: block; }
+.look img, .bell img { position: absolute; top: 12vmin; left: 4vmin; right: 4vmin; bottom: 14vmin; width: calc(100% - 8vmin); height: calc(100% - 26vmin); object-fit: contain; }
+.look .said, .bell .said { position: absolute; top: 3vmin; left: 0; right: 0; font-size: 5vmin; font-weight: 300; }
+.bell .said b { font-weight: 500; }
+/* Under the picture: that it is not yet the picture of this ring. */
+.bell .note { position: absolute; left: 0; right: 0; bottom: 11.5vmin; font-size: 2.6vmin; color: #f2a65a; }
+.look .press, .bell .press { position: absolute; bottom: 3.4vmin; left: 50%; transform: translateX(-50%); margin: 0; font-size: 3.2vmin; padding: 2vmin 5vmin; }
+
+@media (orientation: portrait) {
+  .house { width: auto; right: 7vmin; bottom: auto; height: 62vmin; }
+  .cameras { top: 82vmin; left: 7vmin; }
+}

@@ -17,6 +17,7 @@ server/                  the server that runs on the frame (Rust)
     manage/              the page for a phone or computer
     simulator.html       the screen in a frame-sized box
 android/                 the small app that shows the screen full screen on the frame
+homeassistant/           Home Assistant, the eufy bridge and the relay, for another machine
 tools/
   deploy.py              builds everything and installs it on the frame; also reverts
   simulate.py            runs it all on this computer, without touching the frame
@@ -29,7 +30,7 @@ data), `android/build/`, `server/target/` and `server/models/`.
 
 ## The frame's screen
 
-Four tabs, each with an icon. On Pictures the tab bar is hidden until you tap the middle
+Five tabs, each with an icon (Home only once the house is connected). On Pictures the tab bar is hidden until you tap the middle
 of the screen; on the other two it stays visible. The frame can stand either way up: the
 screen turns with it and lays itself out for a wide or a tall display. Calendar and
 Settings go back to Pictures when left alone (5 minutes unless set otherwise).
@@ -48,6 +49,11 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   are grey. The arrows, or a swipe, move to other months and weeks; "Today" comes back.
   A touch on a day lists what is on it, past or future (from the week view this opens
   the month with that day picked).
+- **Home.** The house's alarm state, door and window sensors, motion sensors, and the
+  latest picture from each camera (touch one to see it large). When the doorbell rings,
+  the frame chimes and shows who is there over whatever tab is open, switching the
+  screen on if night mode has it off. The frame only shows these things; it cannot arm
+  or disarm anything. See [The house](#the-house).
 - **Utilities.** Timers (up to four at once, from preset lengths or one set by hand),
   alarms (once, every day, weekdays or weekends, with a five-minute snooze) and a
   pomodoro clock (focus and break lengths can be chosen; a long break after four
@@ -88,6 +94,39 @@ The server switches the screen off and on with Android's sleep and wake keys.
 - The server holds a wake lock so the frame's processor keeps running with the screen
   off; otherwise nothing could switch it back on.
 - To use the frame while it is off, press its power button.
+
+### The house
+
+The frame does not sign in to the doorbell, cameras or alarm, and holds no password or
+token for them: anything kept on the frame can be read by whoever is on the same Wi-Fi.
+Instead, three things run on another always-on machine at home (`homeassistant/` in
+this project, as Docker containers):
+
+- **Home Assistant**, which knows the house's devices;
+- **the eufy bridge** (community software, not supported by eufy), which is how Home
+  Assistant reaches eufy devices;
+- **the relay** (`homeassistant/relay/relay.py`), which follows Home Assistant and tells
+  the frame what to show, proving itself with a key the frame made. That key opens
+  nothing but "here is what the house is doing".
+
+Setting it up:
+
+1. On the other machine, copy `homeassistant/` there, create `eufy.env` and `relay.env`
+   from the two `.example` files, and start Home Assistant: `docker compose up -d
+   homeassistant`. Open `http://<that machine>:8123` and make your account.
+2. For eufy: fill in `eufy.env` with a second eufy account that your home is shared
+   with as an admin, `docker compose up -d eufy`, install the Eufy Security integration
+   into Home Assistant, and add it with host `eufy`, port `3000`.
+3. On the frame's page: Frame tab, House, "Connect the house". Copy the two lines it
+   shows into `relay.env`.
+4. In Home Assistant: your profile, Security, "Long-lived access tokens", create one,
+   and put it in `relay.env` as `HA_TOKEN`.
+5. `docker compose up -d relay`. The Home tab appears on the frame within half a minute.
+   `docker compose logs -f relay` shows what the frame is being told.
+
+The relay picks devices by what Home Assistant says they are, so it is not tied to eufy:
+alarm panels, door and window sensors, motion sensors, cameras that publish an "event
+image", and anything that reports "ringing".
 
 ## The management page
 
@@ -222,6 +261,7 @@ a value it would still have to check.
 | `device.rs` | The frame itself: Wi-Fi status, which screen is in front, room light, screen on and off. Has a stand-in for the simulator |
 | `night.rs` | Deciding when the screen should be off |
 | `weather.rs` | Finding a place by name and fetching its forecast from Open-Meteo |
+| `home.rs`, `routes/home.rs` | What the house's relay reports (alarm, sensors, cameras, doorbell), kept in memory |
 | `plain.rs` | Listening for plain http, and resetting https attempts |
 | `auth.rs`, `dns.rs` | The PIN and sessions; name lookups that work in a static binary on Android |
 | `types.rs` | Values checked once, where they enter |
@@ -255,6 +295,9 @@ Routes added for the screen and calendar:
 | `GET /api/weather` | The weather now and day by day, for the chosen place |
 | `POST /api/weather/place`, `/api/weather/forget` | Choose the place by name, or stop showing the weather |
 | `POST /api/night`, `/api/chime` | Night mode and the event chime |
+| `GET /api/home`, `GET /api/home/picture?camera=` | The house as last reported, and a camera's latest picture |
+| `POST /api/home/report`, `POST /api/home/picture?camera=` | From the relay, with its key in `X-Home-Key` |
+| `POST /api/home/key`, `/api/home/forget` | Connect the house (makes the relay's key) or disconnect it |
 | `GET /api/address.svg` | QR code of the management address |
 | `GET /api/alive` | The screen saying it is running; `?busy=<seconds>` keeps the display on, `?wake=<seconds since 1970>` has it on then |
 | `POST /api/screen`, `/api/slideshow`, `/api/wifi/settings` | Choose the screen, set the slideshow, open the Wi-Fi list |

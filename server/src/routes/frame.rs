@@ -52,6 +52,9 @@ pub(crate) async fn device_view(State(app): State<Shared>) -> Json<Value> {
             json!({
                 "simulated": app.device.is_simulated(),
                 "pin": settings.protection.is_some(),
+                // Whether the house is connected (a key was given out), and whether its relay is in touch.
+                "home": settings.home_key.is_some(),
+                "home_in_touch": app.home.view()["connected"],
                 "address": wifi.as_ref().and_then(|wifi| wifi.address.as_deref()).map(|at| manage_address(at, app.port)),
                 "wifi": wifi,
                 "screen": settings.screen,
@@ -108,7 +111,13 @@ pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap
     let settings = blocking(move || store::load_settings(&cfg)).await;
     // When the weather it would get was fetched, so the screen knows at once when there is news.
     let weather = app.weather.view(settings.place.as_ref())["fetched"].clone();
-    Json(json!({ "slideshow": settings.slideshow, "chime": settings.chime, "asleep": asleep, "weather": weather }))
+    Json(json!({
+        "slideshow": settings.slideshow,
+        "chime": settings.chime,
+        "asleep": asleep,
+        "weather": weather,
+        "home": settings.home_key.is_some(),
+    }))
 }
 
 /// Choose which screen the frame shows, and put it in front.

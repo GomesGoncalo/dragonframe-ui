@@ -169,8 +169,10 @@ body.asleep .asleep { display: block; }
 
 /* --- standing tall --- */
 @media (orientation: portrait) {
-  .tabs button { font-size: 2.4vmin; padding: 1.5vmin 2vmin; margin: 0 .1vmin; }
-  .tabs .pause { margin-left: .6vmin; padding-left: 2vmin; }
+  /* Five tabs and Pause across a narrow screen: smaller, and closer together. */
+  .tabs button { font-size: 2.2vmin; padding: 1.5vmin 1.4vmin; margin: 0; }
+  .tabs button svg { margin-right: .35em; }
+  .tabs .pause { margin-left: .5vmin; padding-left: 1.6vmin; }
   .month { right: 7vmin; width: auto; }
   .agenda { top: 100vmin; left: 7vmin; }
   .week { grid-template-columns: 1fr; grid-template-rows: repeat(7, 1fr); }

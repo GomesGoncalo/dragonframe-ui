@@ -1,0 +1,55 @@
+# Home Assistant, the bridge that lets it talk to eufy devices, and the relay that tells
+# the photo frame what the house is doing. This runs on an always-on machine at home,
+# not on the frame.
+#
+#   docker compose up -d                 start everything (the two .env files must be filled in)
+#   docker compose up -d homeassistant   start Home Assistant alone
+#   docker compose logs -f relay         watch what the frame is being told
+#   docker compose down                  stop everything; add -v to delete the data as well
+#
+# What they keep is in the two Docker volumes named at the bottom, not in this folder.
+name: homeassistant
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    environment:
+      TZ: Europe/London
+    volumes:
+      - config:/config
+    ports:
+      - "8123:8123"   # the only door open to the rest of the network
+
+  # Community software (bropat/eufy-security-ws); eufy does not support it.
+  # It is reached by Home Assistant as eufy:3000 and by nothing outside this file.
+  eufy:
+    image: bropat/eufy-security-ws:latest
+    container_name: eufy-bridge
+    restart: unless-stopped
+    env_file: eufy.env
+    environment:
+      TRUSTED_DEVICE_NAME: homeassistant
+    volumes:
+      - eufy:/data
+
+  # Tells the photo frame what the house is doing (relay/relay.py). It holds Home
+  # Assistant's token so that the frame does not have to.
+  relay:
+    image: python:3.13-alpine
+    container_name: frame-relay
+    restart: unless-stopped
+    env_file: relay.env
+    environment:
+      HA_URL: http://homeassistant:8123
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./relay/relay.py:/relay.py:ro
+    command: ["python", "/relay.py"]
+    depends_on:
+      - homeassistant
+
+volumes:
+  config:
+  eufy:

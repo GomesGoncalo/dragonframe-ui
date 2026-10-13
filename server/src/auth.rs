@@ -16,7 +16,7 @@ const MAX_ATTEMPTS: u32 = 5;
 const LOCKOUT: Duration = Duration::from_secs(60);
 const MAX_SESSIONS: usize = 20;
 
-fn random_hex() -> String {
+pub fn random_hex() -> String {
     let mut bytes = [0u8; 16];
     let from_os = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes));
     if from_os.is_err() {

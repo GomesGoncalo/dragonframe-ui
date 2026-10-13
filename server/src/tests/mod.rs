@@ -85,6 +85,7 @@ mod duplicates;
 mod face_checks;
 mod forecast;
 mod frame;
+mod house;
 mod protection;
 mod reading;
 mod syncing;
