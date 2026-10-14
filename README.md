@@ -50,7 +50,8 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   corner, for the first five seconds of a screen and whenever the tab bar is up. Photos
   taken on today's date in earlier years come first, marked "On this day" with the year.
   In the morning (06:00 to 10:00) today's events are listed under the clock. Tap the
-  left or right quarter to step back or forward. The tab bar has a Pause button.
+  left or right quarter to step back or forward; with the tab bar up, arrows at the sides
+  do that instead, so the photos can be touched (to show one alone, say). The tab bar has a Pause button.
   While the tab bar is up, each photo that shares the screen has a button in its corner
   that shows it alone, as large as the screen allows. It stays for two minutes, or until
   the button on it (now pointing inwards) puts back the photos it was with.

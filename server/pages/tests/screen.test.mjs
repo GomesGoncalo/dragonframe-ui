@@ -65,6 +65,26 @@ describe('pictures', () => {
   });
 });
 
+describe('stepping', () => {
+  test('the arrows step while the tabs are up, and a touch at the side does not', async () => {
+    const seen = () => page.eval('JSON.stringify(shown[at].cells.map((c) => c.photo[0]))');
+    await page.eval('document.body.classList.add("bar")');
+    const before = await seen();
+    await page.eval('$("next").click()');
+    await until('the next screen', async () => (await seen()) !== before);
+    const middle = await seen();
+    // A touch at the side with the tabs up puts them away instead of stepping.
+    await page.eval('document.dispatchEvent(new MouseEvent("click", { clientX: 5, clientY: 5 }))');
+    assert.equal(await page.eval('document.body.classList.contains("bar")'), false);
+    assert.equal(await seen(), middle);
+    // And the screen after the next is ready before it is asked for.
+    await until('the next screen being ready', () => page.eval('!!prepared'));
+    await page.eval('$("previous").click()');
+    await until('the screen before', async () => (await seen()) !== middle);
+    assert.deepEqual(page.errors, []);
+  });
+});
+
 describe('told from elsewhere', () => {
   test('the remote control on the phone page changes the tab within moments', async () => {
     await server.api('/api/act', { do: 'show', tab: 'calendar' });

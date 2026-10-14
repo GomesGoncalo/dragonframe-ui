@@ -211,7 +211,8 @@ async function refreshPhotos() {
 function load(src) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
+    // Decoded before it counts as loaded, so showing it later does not stall the fade.
+    image.onload = () => (image.decode ? image.decode().then(() => resolve(image), () => resolve(image)) : resolve(image));
     image.onerror = reject;
     image.src = src;
   });
@@ -337,7 +338,9 @@ function rearrange() {
     return;
   }
   turned = false;
-  const again = shown.slice(Math.max(0, at)).reduce((all, screen) => all.concat(screen.cells.map((cell) => cell.photo)), []);
+  const ahead = shown.slice(Math.max(0, at)).concat(prepared ? [prepared.screen] : []);
+  prepared = null;
+  const again = ahead.reduce((all, screen) => all.concat(screen.cells.map((cell) => cell.photo)), []);
   queue = again.concat(queue);
   shown = [];
   at = -1;
@@ -354,9 +357,37 @@ window.addEventListener('resize', () => {
   }
 });
 
-async function draw(screen) {
+/// The screen after this one, made ready while this one is looked at: chosen, with its photos
+/// loaded and decoded, so a touch (or the timer) only has to show it.
+let prepared = null, preparing = null;
+function prepare() {
+  if (preparing || prepared) return;
+  preparing = (async () => {
+    try {
+      const screen = await nextScreen();
+      // Taken from the line as it stands now: if the line or the frame's shape changes, it is not used.
+      const made = { screen: screen, queue: queue, left: queue.length, tall: tall };
+      await Promise.all(screen.cells.map((cell) => load(url('file', cell.photo[0]))));
+      prepared = made;
+    } catch (error) {
+      // A photo that will not load: the next step will find that out itself and go on.
+    }
+    preparing = null;
+  })();
+}
+
+/// The prepared screen, if the line it came from is still the line.
+function takePrepared() {
+  const made = prepared;
+  prepared = null;
+  return made && made.queue === queue && made.left === queue.length && made.tall === tall ? made.screen : null;
+}
+
+async function draw(screen, quick) {
   await Promise.all(screen.cells.map((cell) => load(url('file', cell.photo[0]))));
   const next = slides[1 - front];
+  // A touch asks for the photo now: a short fade. The timer's is slow and gentle.
+  next.style.transitionDuration = slides[front].style.transitionDuration = quick ? '.25s' : '';
   next.textContent = '';
   const box = element('div', 'collage', '');
   box.dataset.shape = screen.total;
@@ -431,7 +462,7 @@ function schedule() {
 }
 
 /// Move one screen on (or back). A screen with a photo that will not load is skipped.
-async function step(by) {
+async function step(by, quick) {
   if (busy || !photos.length) return;
   busy = true;
   clearTimeout(timer);
@@ -442,11 +473,12 @@ async function step(by) {
       } else if (at < shown.length - 1) {
         at++;
       } else {
-        shown.push(await nextScreen());
+        if (preparing) await preparing;
+        shown.push(takePrepared() || await nextScreen());
         if (shown.length > HISTORY) shown.shift();
         at = shown.length - 1;
       }
-      await draw(shown[at]);
+      await draw(shown[at], quick);
       break;
     } catch (error) {
       shown.splice(at, 1);
@@ -456,6 +488,8 @@ async function step(by) {
   busy = false;
   if (turned) rearrange();
   else schedule();
+  // While this one is looked at, get the one after it ready.
+  if (at === shown.length - 1) prepare();
 }
 
 function setPaused(now) {
@@ -1202,11 +1236,22 @@ $('parts').addEventListener('click', (event) => {
 document.addEventListener('click', (event) => {
   if (tab !== 'pictures') return touched();
   const x = event.clientX / window.innerWidth;
-  if (x < 0.25) step(-1);
-  else if (x > 0.75) step(1);
-  else document.body.classList.toggle('bar');
+  // With the tabs up, the photos are there to be touched (to show one alone, say) and the
+  // arrows step; a touch anywhere else puts the tabs away.
+  if (document.body.classList.contains('bar')) document.body.classList.remove('bar');
+  else if (x < 0.25) step(-1, true);
+  else if (x > 0.75) step(1, true);
+  else document.body.classList.add('bar');
   touched();
 });
+// The arrows that are there while the tabs are up.
+for (const [id, by] of [['previous', -1], ['next', 1]]) {
+  $(id).addEventListener('click', (event) => {
+    event.stopPropagation();
+    step(by, true);
+    touched();
+  });
+}
 // (Keys, from a keyboard or a remote control, are in actions.js.)
 
 // Every tab gets its drawing.

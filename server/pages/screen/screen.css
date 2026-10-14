@@ -40,6 +40,14 @@ body[data-tab="pictures"] #pictures, body[data-tab="calendar"] #calendar, body[d
   background: rgba(0, 0, 0, .55); color: var(--ink); font-size: 3.4vmin; opacity: 0; pointer-events: none; transition: opacity .25s ease;
 }
 body.bar .cell .grow { opacity: 1; pointer-events: auto; }
+/* Arrows to the previous and next photos, at the sides, while the tabs are up. */
+.nav {
+  position: absolute; top: 50%; margin-top: -5vmin; width: 10vmin; height: 10vmin; padding: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); color: var(--ink); font-size: 4vmin; opacity: 0; pointer-events: none; transition: opacity .25s ease;
+}
+#previous { left: 2vmin; }
+#next { right: 2vmin; }
+body.bar .nav { opacity: 1; pointer-events: auto; }
 /* The photos of one screen, laid out in a box the shape of the arrangement and centred. */
 .collage { position: absolute; }
 /* Each cell is exactly the shape of its photo, with a thin black line between cells. */

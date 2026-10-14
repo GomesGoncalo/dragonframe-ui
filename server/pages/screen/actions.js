@@ -24,7 +24,7 @@ function act(action) {
     case 'next':
     case 'previous':
       if (tab !== 'pictures') showTab('pictures');
-      step(action.do === 'next' ? 1 : -1);
+      step(action.do === 'next' ? 1 : -1, true);
       break;
     case 'pause': setPaused(true); break;
     case 'resume': setPaused(false); break;
