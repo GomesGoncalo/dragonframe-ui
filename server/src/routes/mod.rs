@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, FromRequest, Request, State};
+use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Query, Request, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_LENGTH, HOST, ORIGIN, X_CONTENT_TYPE_OPTIONS};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -105,6 +106,25 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Parsed<T> {
             let reason = e.to_string();
             ApiError::bad_request(reason.split(" at line ").next().unwrap_or(&reason))
         })
+    }
+}
+
+/// A query string (`?name=...`) parsed into `T`: the query's counterpart of [`Parsed`].
+/// One that does not parse is answered with 400 and the reason.
+pub(crate) struct Asked<T>(pub(crate) T);
+
+impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for Asked<T> {
+    type Rejection = ApiError;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, ApiError>> + Send {
+        // Nothing to wait for: the query is already here.
+        std::future::ready(Query::try_from_uri(&parts.uri).map(|Query(asked)| Asked(asked)).map_err(|e| {
+            let reason = e.body_text();
+            ApiError::bad_request(reason.strip_prefix("Failed to deserialize query string: ").unwrap_or(&reason))
+        }))
     }
 }
 

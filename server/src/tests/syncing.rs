@@ -10,7 +10,7 @@ async fn app_with_google(
     let google = gphotos::testing::google(items, 0).await;
     let frame = TempFrame::new(&format!("route-{name}"));
     let cfg = Config { cloud_dir: frame.0.cloud_dir.clone(), data_dir: frame.0.data_dir.clone() };
-    let mut app = Arc::try_unwrap(App::new(cfg, Device::Simulated, 8080)).ok().expect("a new app has one owner");
+    let mut app = Arc::try_unwrap(App::new(cfg, Device::simulated(), 8080)).ok().expect("a new app has one owner");
     app.rpc_url = format!("{google}/rpc");
     (Arc::new(app), frame, google)
 }

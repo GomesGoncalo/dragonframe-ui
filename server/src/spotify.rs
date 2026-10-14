@@ -32,7 +32,7 @@ use tracing::{debug, info, warn};
 
 use crate::app::blocking;
 use crate::store::{self, Config};
-use crate::types::Loudness;
+use crate::types::{CoverLink, Loudness};
 
 /// What the frame is called in the Spotify app.
 const NAME: &str = "Frame";
@@ -97,7 +97,7 @@ pub struct Track {
     pub by: String,
     pub album: String,
     /// The address of a picture of the cover.
-    pub cover: Option<String>,
+    pub cover: Option<CoverLink>,
     /// How long it is, in milliseconds.
     pub length_ms: Option<u64>,
 }
@@ -255,9 +255,7 @@ impl Spotify {
             News::Ready | News::LetGo => *known = Known { stage: Stage::Waiting, ..Known::default() },
             News::Chosen | News::Stopped => known.stage = Stage::Idle,
             News::Track { title, by, album, cover, length_ms } => {
-                // The picture comes from Spotify's own servers; anything else is not shown.
-                let cover =
-                    cover.filter(|at| at.starts_with("https://") && at.len() <= 300 && !at.contains(['"', ' ']));
+                let cover = cover.as_deref().and_then(CoverLink::parse);
                 let (title, by, album) = (line(&title, 120), line(&by, 120), line(&album, 120));
                 known.track = Some(Track { title, by, album, cover, length_ms });
                 known.position = None;

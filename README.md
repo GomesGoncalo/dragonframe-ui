@@ -371,6 +371,18 @@ Calendar links are treated as secrets: they are never written to the log and are
 shown to a browser that has entered the PIN. The frame's own Settings tab asks for the
 PIN too, and gives it up again when Settings is left, so the next person is asked again.
 
+## Telling the tools which frame
+
+The tools need the frame's address on your network. It is not kept in this repository;
+give it once in a file `.frame` at the top of the repository (git ignores it):
+
+```sh
+echo 192.168.1.20 > .frame
+```
+
+`FRAME_HOST=192.168.1.20` in the environment, or `--host` on any tool, works too. The
+frame shows its address in Settings, under Wi-Fi.
+
 ## Trying it on this computer
 
 ```sh
@@ -440,6 +452,9 @@ app shown on top of it.
 3. **By itself**: the new screen tells the server it is running every 30 seconds. If
    that stops for 3 minutes, the server puts the original screen back and says so on
    the Status tab. The choice of screen is kept, so a restart tries the new one again.
+   The frame's own app sometimes puts its slideshow in front by itself (it did overnight,
+   seen at about 22:44 and 07:06). When it does, the server puts the new screen back
+   within 30 seconds rather than taking it for a new screen that stopped.
 4. **From this computer**: `tools/deploy.py --original-ui`. This works through adb alone
    and does not depend on the server or the page.
 5. **Completely**: `tools/deploy.py --remove` removes the server and the app. Photos are
@@ -503,6 +518,14 @@ Checks, run from `server/`: `cargo fmt --check`, `cargo clippy --all-targets -- 
 warnings`, `cargo test`. `tools/deploy.py` refuses to deploy unless all three pass, there
 and in `spotify/` (which has little to test: nearly all it does is talk to Spotify). `spotify/Cargo.lock` began as librespot's own, whose versions are known to
 build together; a fresh one does not build.
+
+The pages have tests of their own in `server/pages/tests/`, run from the repository with
+`node --experimental-websocket --test server/pages/tests/` (Node 20; Node 22 needs no
+flag). They need Chrome (or `CHROME=` pointing at one) and no packages: they run the real
+server against empty folders with a stand-in frame and drive the pages in headless Chrome,
+at the frame's own size and at a phone's. `compat.test.mjs` reads the screen's files for
+anything newer than the frame's Chromium 74, which a newer browser would never notice.
+`deploy.py` does not run them yet.
 
 Routes added for the screen and calendar:
 

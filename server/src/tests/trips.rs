@@ -17,7 +17,7 @@ async fn app_with_planners(name: &str) -> (Shared, TempFrame) {
     let services = travel::testing::services().await;
     let frame = TempFrame::new(&format!("route-{name}"));
     let cfg = Config { cloud_dir: frame.0.cloud_dir.clone(), data_dir: frame.0.data_dir.clone() };
-    let mut app = Arc::try_unwrap(App::new(cfg, Device::Simulated, 8080)).ok().expect("a new app has one owner");
+    let mut app = Arc::try_unwrap(App::new(cfg, Device::simulated(), 8080)).ok().expect("a new app has one owner");
     app.travel = travel::Travel::new(services);
     (Arc::new(app), frame)
 }

@@ -372,6 +372,19 @@ impl<'de> Deserialize<'de> for AlbumLinks {
     }
 }
 
+/// The album links to sync now: at least one, typed one per line.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AlbumsToSync(pub NonEmpty<AlbumLink>);
+
+impl<'de> Deserialize<'de> for AlbumsToSync {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let AlbumLinks(links) = AlbumLinks::deserialize(deserializer)?;
+        NonEmpty::new(links)
+            .map(AlbumsToSync)
+            .ok_or_else(|| de::Error::custom("add at least one Google Photos shared-album link (https://...)"))
+    }
+}
+
 /// Which photos in the bin to restore.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Restore {
@@ -616,6 +629,26 @@ impl Serialize for Day {
 impl<'de> Deserialize<'de> for Day {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         parsed(deserializer, Day::parse, "not a date (YYYY-MM-DD)")
+    }
+}
+
+/// A day about now, written `YYYY-MM-DD`: the server's own, or the one before or after.
+/// The server does not know the time zone of whoever sends it, so either neighbour is as
+/// good as its own day; anything further off is a mistake.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Today(pub Day);
+
+impl Today {
+    /// `day`, if it is about `today`.
+    pub fn parse(day: Day, today: NaiveDate) -> Option<Today> {
+        ((day.0 - today).num_days().abs() <= 1).then_some(Today(day))
+    }
+}
+
+impl<'de> Deserialize<'de> for Today {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let day = Day::deserialize(deserializer)?;
+        Today::parse(day, chrono::Utc::now().date_naive()).ok_or_else(|| de::Error::custom("that is not today"))
     }
 }
 
@@ -1117,6 +1150,22 @@ impl<'de> Deserialize<'de> for StreamLink {
     }
 }
 
+/// Where a picture of a track's cover is: an https address of at most 300 characters, with
+/// nothing in it that could break out of the page's markup.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct CoverLink(String);
+
+impl CoverLink {
+    pub fn parse(text: &str) -> Option<CoverLink> {
+        let rest = text.strip_prefix("https://")?;
+        let usable = !rest.is_empty()
+            && text.len() <= 300
+            && !text.contains(|c: char| c.is_control() || c.is_whitespace() || matches!(c, '"' | '<' | '>'));
+        usable.then(|| CoverLink(text.to_string()))
+    }
+}
+
 /// A radio station the frame can play.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct Station {
@@ -1223,6 +1272,27 @@ impl<'de> Deserialize<'de> for Points {
     }
 }
 
+/// Points given to someone by hand, or taken away when below nothing: 1 to 1000 either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PointChange(i32);
+
+impl PointChange {
+    pub fn new(change: i64) -> Option<PointChange> {
+        i32::try_from(change).ok().filter(|change| *change != 0 && change.abs() <= 1000).map(PointChange)
+    }
+
+    pub fn get(self) -> i32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PointChange {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let change = i64::deserialize(deserializer)?;
+        PointChange::new(change).ok_or_else(|| de::Error::custom("give or take 1 to 1000 points at a time"))
+    }
+}
+
 /// Days of the week, at least one: written as a list of numbers, 1 for Monday to 7 for Sunday.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Weekdays(u8);
@@ -1313,6 +1383,37 @@ impl How {
     pub fn available(driving: bool) -> Vec<How> {
         let all = [How::Transit, How::Walk, How::Cycle, How::Car, How::Park];
         all.into_iter().filter(|how| driving || !how.drives()).collect()
+    }
+}
+
+/// When a journey is to arrive, in seconds since 1970: from two days ago to 120 days ahead.
+/// Events are looked at a few months around today, and refusing other moments keeps anyone
+/// on the network from having the frame ask the planners (one of them metered) about any time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Arrival(i64);
+
+impl Arrival {
+    const DAY: i64 = 24 * 60 * 60;
+
+    /// `at`, if it is near enough to `now` (both in seconds since 1970).
+    pub fn parse(at: i64, now: i64) -> Option<Arrival> {
+        (now.saturating_sub(2 * Arrival::DAY)..=now.saturating_add(120 * Arrival::DAY))
+            .contains(&at)
+            .then_some(Arrival(at))
+    }
+
+    pub fn get(self) -> i64 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Arrival {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // In a query string a number arrives as text.
+        let text = String::deserialize(deserializer)?;
+        let now = chrono::Utc::now().timestamp();
+        let at = text.parse().map_err(|_| de::Error::custom(format!("not a moment (seconds since 1970): {text:?}")))?;
+        Arrival::parse(at, now).ok_or_else(|| de::Error::custom("that is too far from today to plan for"))
     }
 }
 
@@ -1481,7 +1582,7 @@ impl PlaceQuery {
 impl<'de> Deserialize<'de> for PlaceQuery {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        PlaceQuery::parse(&text).ok_or_else(|| de::Error::custom("type the name of a town or city"))
+        PlaceQuery::parse(&text).ok_or_else(|| de::Error::custom("type a name to look for, up to 100 characters"))
     }
 }
 
@@ -2292,5 +2393,65 @@ mod tests {
         for bad in [json!([]), json!([0]), json!([8]), json!([1, 9])] {
             assert!(from_value::<Weekdays>(bad.clone()).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_tick_is_for_a_day_about_now() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 14).unwrap();
+        for near in ["2026-10-13", "2026-10-14", "2026-10-15"] {
+            assert!(Today::parse(Day::parse(near).unwrap(), today).is_some(), "{near}");
+        }
+        for far in ["2026-10-12", "2026-10-16", "2025-10-14"] {
+            assert_eq!(Today::parse(Day::parse(far).unwrap(), today), None, "{far}");
+        }
+        let now = chrono::Utc::now().date_naive();
+        assert_eq!(from_value::<Today>(json!(Day(now).to_string())).unwrap(), Today(Day(now)));
+        let long_ago = from_value::<Today>(json!("2000-01-01")).unwrap_err().to_string();
+        assert_eq!(long_ago, "that is not today");
+    }
+
+    #[test]
+    fn points_are_given_or_taken_a_thousand_at_most() {
+        for good in [1, -1, 1000, -1000, 250] {
+            assert_eq!(from_value::<PointChange>(json!(good)).unwrap().get(), good);
+        }
+        for bad in [json!(0), json!(1001), json!(-1001), json!(i64::MAX), json!(1.5), json!("5")] {
+            assert!(from_value::<PointChange>(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_journey_is_planned_for_a_few_months_around_today() {
+        let now = 1_800_000_000;
+        let day = 24 * 60 * 60;
+        for near in [now, now - 2 * day, now + 120 * day] {
+            assert_eq!(Arrival::parse(near, now).map(Arrival::get), Some(near));
+        }
+        for far in [now - 2 * day - 1, now + 120 * day + 1, 0, i64::MIN, i64::MAX] {
+            assert_eq!(Arrival::parse(far, now), None, "{far}");
+        }
+        assert_eq!(Arrival::parse(i64::MAX, i64::MAX).map(Arrival::get), Some(i64::MAX), "no overflow at the edge");
+    }
+
+    #[test]
+    fn a_cover_picture_is_an_https_address_that_cannot_break_the_page() {
+        let cover = CoverLink::parse("https://i.scdn.co/image/ab67616d0000b273").unwrap();
+        assert_eq!(json!(cover), json!("https://i.scdn.co/image/ab67616d0000b273"));
+        let long = format!("https://i.scdn.co/{}", "a".repeat(300));
+        for bad in ["http://i.scdn.co/x.jpg", "https://", "https://a b", "https://a\"onload=\"x", "https://a<b", &long]
+        {
+            assert_eq!(CoverLink::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_sync_needs_at_least_one_album() {
+        let albums = from_value::<AlbumsToSync>(json!(["", " https://photos.app.goo.gl/abc ", "  "])).unwrap();
+        assert_eq!(albums.0.len(), 1);
+        for nothing in [json!([]), json!(["", "   "])] {
+            let error = from_value::<AlbumsToSync>(nothing).unwrap_err().to_string();
+            assert!(error.starts_with("add at least one"), "{error}");
+        }
+        assert!(from_value::<AlbumsToSync>(json!(["photos.app.goo.gl/abc"])).is_err());
     }
 }

@@ -29,7 +29,7 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 use crate::store::{self, Config};
-use crate::types::{Day, EventId, PersonName, Points, Title, Weekdays, Words};
+use crate::types::{Day, EventId, PersonName, PointChange, Points, Title, Weekdays, Words};
 
 const MOST_PEOPLE: usize = 12;
 const MOST_TASKS: usize = 100;
@@ -596,9 +596,9 @@ impl Todo {
     }
 
     /// Give someone points, or take some away, for a reason. Blocking.
-    pub fn adjust(&self, who: &EventId, change: i32, why: &Title) -> Result<(), TodoError> {
+    pub fn adjust(&self, who: &EventId, change: PointChange, why: &Title) -> Result<(), TodoError> {
         let mut kept = self.kept();
-        kept.credit(who, i64::from(change), why.as_str().to_string())?;
+        kept.credit(who, i64::from(change.get()), why.as_str().to_string())?;
         self.save(&kept);
         Ok(())
     }
@@ -707,10 +707,10 @@ mod tests {
         let film: EventId = from_value(view["rewards"][0]["id"].clone()).unwrap();
 
         assert_eq!(todo.redeem(&ana, &film), Err(TodoError::NotEnough { have: 0, cost: 30 }));
-        todo.adjust(&ana, 40, &Title::parse("Helped all weekend").unwrap()).unwrap();
+        todo.adjust(&ana, PointChange::new(40).unwrap(), &Title::parse("Helped all weekend").unwrap()).unwrap();
         todo.redeem(&ana, &film).unwrap();
         assert_eq!((points(&todo, 0), points(&todo, 1)), (10, 0));
-        todo.adjust(&rui, -5, &Title::parse("Left the bike out").unwrap()).unwrap();
+        todo.adjust(&rui, PointChange::new(-5).unwrap(), &Title::parse("Left the bike out").unwrap()).unwrap();
         assert_eq!(points(&todo, 1), -5);
         assert_eq!(todo.view(day("2026-10-13"))["history"][1]["what"], "Reward: Film night");
 
@@ -725,7 +725,7 @@ mod tests {
     #[test]
     fn people_keep_their_points_when_renamed_and_their_tasks_become_anyones_when_they_go() {
         let (todo, _frame, ana, rui) = household("todo-people");
-        todo.adjust(&ana, 7, &Title::parse("A start").unwrap()).unwrap();
+        todo.adjust(&ana, PointChange::new(7).unwrap(), &Title::parse("A start").unwrap()).unwrap();
         let tasks =
             json!([{ "title": "Lay the table", "who": rui, "points": 2, "repeat": { "days": [1, 2, 3, 4, 5, 6, 7] } }]);
         todo.set_tasks(from_value(tasks).unwrap()).unwrap();

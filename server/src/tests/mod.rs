@@ -36,7 +36,7 @@ fn p(rel: &str) -> PhotoPath {
 fn app(name: &str) -> (Shared, TempFrame) {
     let frame = TempFrame::new(&format!("route-{name}"));
     let cfg = Config { cloud_dir: frame.0.cloud_dir.clone(), data_dir: frame.0.data_dir.clone() };
-    (App::new(cfg, Device::Simulated, 8080), frame)
+    (App::new(cfg, Device::simulated(), 8080), frame)
 }
 
 struct Reply {
@@ -101,6 +101,23 @@ fn percent_decoding() {
     assert_eq!(percent_decode("100%"), "100%");
     assert_eq!(percent_decode("%zz%4"), "%zz%4");
     assert_eq!(percent_decode(""), "");
+}
+
+#[tokio::test]
+async fn a_query_that_does_not_parse_is_refused_with_the_reason() {
+    let (app, _frame) = app("asked");
+    let reason = |reply: Reply| (reply.status, reply.json()["error"].as_str().unwrap_or_default().to_string());
+    let cases = [
+        ("/api/todo", "missing field `day`"),
+        ("/api/todo?day=yesterday", "day: not a date (YYYY-MM-DD): \"yesterday\""),
+        ("/api/travel?trip=0", "missing field `arrive`"),
+        ("/api/travel?trip=0&arrive=0", "arrive: that is too far from today to plan for"),
+        ("/api/travel?trip=-1&arrive=0", "trip: invalid digit found in string"),
+        ("/api/stations/find?name=%20", "name: type a name to look for, up to 100 characters"),
+    ];
+    for (path, expected) in cases {
+        assert_eq!(reason(get(&app, path).await), (StatusCode::BAD_REQUEST, expected.to_string()), "{path}");
+    }
 }
 
 #[test]

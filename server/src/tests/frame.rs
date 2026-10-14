@@ -136,14 +136,7 @@ async fn a_new_screen_that_goes_quiet_sends_the_frame_back_to_its_own() {
     assert_eq!(get(&app, "/api/device").await.json()["fell_back"], false);
     // Then it stops.
     tokio::time::sleep(device::QUIET_LIMIT + Duration::from_secs(61)).await;
-    // Putting the other screen in front happens off the test's paused clock; give it a real moment.
-    for _ in 0..500 {
-        if app.watch().fell_back {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-        tokio::task::yield_now().await;
-    }
+    until("falling back", || app.watch().fell_back).await;
     assert!(app.watch().shown.is_none());
     let device = get(&app, "/api/device").await.json();
     assert_eq!((device["fell_back"].as_bool(), device["screen"].as_str()), (Some(true), Some("new")));
@@ -151,6 +144,55 @@ async fn a_new_screen_that_goes_quiet_sends_the_frame_back_to_its_own() {
     // Choosing it again clears the note.
     post(&app, "/api/screen", r#"{"show":"new"}"#).await;
     assert_eq!(get(&app, "/api/device").await.json()["fell_back"], false);
+}
+
+/// Wait, on the real clock, until `done` holds: the device is asked off the test's paused clock.
+async fn until(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+        tokio::task::yield_now().await;
+    }
+    panic!("{what} never happened");
+}
+
+#[tokio::test(start_paused = true)]
+async fn when_the_frames_own_app_comes_forward_the_new_screen_is_put_back() {
+    let (app, _frame) = app("own-app-forward");
+    let Device::Simulated(stand_in) = app.device else { unreachable!("tests use the stand-in") };
+    tokio::spawn(fall_back_if_quiet(Arc::clone(&app)));
+    post(&app, "/api/screen", r#"{"show":"new"}"#).await;
+    assert!(!app.device.own_screen_in_front());
+    // The frame's own app pushes its slideshow in front, as it did one night at 22:44.
+    stand_in.own_app_comes_forward();
+    tokio::time::sleep(Duration::from_secs(31)).await;
+    until("the new screen being put back", || !app.device.own_screen_in_front()).await;
+    // The page, uncovered, speaks again; nothing falls back.
+    get(&app, "/api/alive").await;
+    tokio::time::sleep(device::QUIET_LIMIT).await;
+    get(&app, "/api/alive").await;
+    let watch = app.watch();
+    assert!(watch.shown.is_some() && !watch.fell_back);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_new_screen_that_cannot_start_is_not_put_back_forever() {
+    // A page that never speaks leaves the frame's own app in front over and over;
+    // after the quiet limit the server gives up and leaves the frame on its own screen.
+    let (app, _frame) = app("own-app-forever");
+    let Device::Simulated(stand_in) = app.device else { unreachable!("tests use the stand-in") };
+    tokio::spawn(fall_back_if_quiet(Arc::clone(&app)));
+    post(&app, "/api/screen", r#"{"show":"new"}"#).await;
+    for _ in 0..12 {
+        stand_in.own_app_comes_forward();
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        std::thread::sleep(Duration::from_millis(20));
+        tokio::task::yield_now().await;
+    }
+    until("falling back", || app.watch().fell_back).await;
+    assert!(app.device.own_screen_in_front());
 }
 
 #[tokio::test(start_paused = true)]

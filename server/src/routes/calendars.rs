@@ -13,11 +13,25 @@ use serde_json::{json, Value};
 use tracing::info;
 
 use crate::app::{blocking, now_secs, Shared};
-use crate::routes::{header, ApiError, ApiResult, Parsed};
-use crate::types::{CalendarLinks, EventId, How, Reminders, RoadsKey, Spot, Trips, Window};
+use crate::routes::{header, ApiError, ApiResult, Asked, Parsed};
+use crate::types::{Arrival, CalendarLinks, EventId, How, Reminders, RoadsKey, Spot, Trips, Window};
 use crate::{auth, calendar, store, travel};
 
-const DAY_SECS: i64 = 24 * 60 * 60;
+/// A place typed for a trip, to look up: `?place=`.
+#[derive(Deserialize)]
+pub(crate) struct PlaceQuery {
+    pub(crate) place: Spot,
+}
+
+/// A journey to plan: `?trip=` is the trip's place in the list and `?arrive=` when the event
+/// starts. With `?how=`, the same trip made another way, for comparing.
+#[derive(Deserialize)]
+pub(crate) struct PlanQuery {
+    pub(crate) trip: usize,
+    pub(crate) arrive: Arrival,
+    #[serde(default)]
+    pub(crate) how: Option<How>,
+}
 
 #[derive(Deserialize)]
 pub(crate) struct CalendarsRequest {
@@ -177,10 +191,8 @@ pub(crate) async fn save_roads_key(State(app): State<Shared>, Parsed(request): P
 
 /// Where a place typed for a trip was found (`?place=`), so whoever typed it can see it is
 /// the one they meant.
-pub(crate) async fn find_place(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
-    let spot = query.get("place").and_then(|text| Spot::parse(text));
-    let spot = spot.ok_or_else(|| ApiError::bad_request("which place? (?place=)"))?;
-    let found = app.travel.find(&app.http, &spot).await.map_err(|e| {
+pub(crate) async fn find_place(State(app): State<Shared>, Asked(query): Asked<PlaceQuery>) -> ApiResult {
+    let found = app.travel.find(&app.http, &query.place).await.map_err(|e| {
         let status =
             if matches!(e, travel::TravelError::NotFound(_)) { StatusCode::NOT_FOUND } else { StatusCode::BAD_GATEWAY };
         ApiError::new(status, e.to_string())
@@ -188,30 +200,16 @@ pub(crate) async fn find_place(State(app): State<Shared>, Query(query): Query<Ha
     Ok(Json(found))
 }
 
-/// When to leave for an event: `?trip=` is the trip's place in the list and `?arrive=` when
-/// the event starts, in seconds since 1970. With `?how=`, the same trip made another way,
-/// for comparing; the answer says which ways there are.
-pub(crate) async fn travel_plan(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
-    let number = |name: &str| query.get(name).and_then(|text| text.parse::<i64>().ok());
-    let (Some(which), Some(arrive)) = (number("trip"), number("arrive")) else {
-        return Err(ApiError::bad_request("which trip, and arriving when?"));
-    };
-    // Events are looked at a few months around today. Refusing the rest keeps anyone on the
-    // network from having the frame ask the planners (one of them metered) about any moment.
-    let now = i64::try_from(now_secs()).unwrap_or(i64::MAX);
-    if !(now - 2 * DAY_SECS..=now + 120 * DAY_SECS).contains(&arrive) {
-        return Err(ApiError::bad_request("that is too far from today to plan for"));
-    }
+/// When to leave for an event (see [`PlanQuery`]); the answer says which ways there are of
+/// making the trip.
+pub(crate) async fn travel_plan(State(app): State<Shared>, Asked(query): Asked<PlanQuery>) -> ApiResult {
     let cfg = std::sync::Arc::clone(&app.cfg);
     let settings = blocking(move || store::load_settings(&cfg)).await;
-    let set_up =
-        usize::try_from(which).ok().and_then(|which| settings.trips.get(which)).ok_or_else(ApiError::not_found)?;
-    let trip = match query.get("how") {
+    let set_up = settings.trips.get(query.trip).ok_or_else(ApiError::not_found)?;
+    let arrive = query.arrive.get();
+    let trip = match query.how {
         None => set_up.clone(),
-        Some(how) => serde_json::from_value::<How>(json!(how))
-            .ok()
-            .and_then(|how| set_up.by(how))
-            .ok_or_else(|| ApiError::bad_request("this trip cannot be made that way"))?,
+        Some(how) => set_up.by(how).ok_or_else(|| ApiError::bad_request("this trip cannot be made that way"))?,
     };
     let plan = app.travel.plan(&app.http, settings.roads_key.as_ref(), settings.home.as_ref(), &trip, arrive).await;
     let plan = plan.map_err(|e| {

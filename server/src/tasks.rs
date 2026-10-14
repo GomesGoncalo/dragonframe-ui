@@ -183,21 +183,30 @@ pub(crate) async fn keep_night(app: Shared) {
 }
 
 /// If the new screen stops saying it is running, put the frame back on the screen it came
-/// with, so a page that fails to load never leaves the frame showing nothing.
+/// with, so a page that fails to load never leaves the frame showing nothing. If instead the
+/// frame's own app has pushed itself in front of a new screen that is still running, put the
+/// new screen back: that app does so by itself now and then, and covered, the new screen goes quiet too.
 pub(crate) async fn fall_back_if_quiet(app: Shared) {
     loop {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let quiet = {
+        let (expected, quiet) = {
             let watch = app.watch();
             let since = |at: Option<Moment>| at.map(|at| at.elapsed());
             match (watch.in_wifi_settings || watch.asleep, since(watch.shown), since(watch.heard)) {
-                (false, Some(shown_for), Some(since_heard)) => device::gone_quiet(shown_for, since_heard),
-                _ => false,
+                (false, Some(shown_for), Some(since_heard)) => (true, device::gone_quiet(shown_for, since_heard)),
+                _ => (false, false),
             }
         };
+        // Quiet comes first: a new screen that cannot start leaves the frame's own app in front
+        // too, and putting it back again and again would never end.
+        let device = (app.device, app.port);
+        if expected && !quiet && blocking(move || device.0.own_screen_in_front()).await {
+            warn!("the frame's own screen came to the front by itself; putting the new screen back");
+            blocking(move || device.0.show(Screen::New, device.1)).await;
+            continue;
+        }
         if quiet {
             warn!("the new screen has gone quiet; putting the frame back on its own screen");
-            let device = (app.device, app.port);
             blocking(move || device.0.show(Screen::Legacy, device.1)).await;
             let mut watch = app.watch();
             watch.shown = None;

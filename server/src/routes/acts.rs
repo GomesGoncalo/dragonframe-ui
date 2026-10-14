@@ -16,7 +16,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tracing::info;
 
 use crate::app::{blocking, Shared};
-use crate::routes::{ApiError, ApiResult, Parsed, NO_STORE};
+use crate::routes::{ApiError, ApiResult, Asked, Parsed, NO_STORE};
 use crate::spotify::{wav_header, Order};
 use crate::store;
 use crate::types::{Action, PlaceQuery, Said, Stations};
@@ -142,14 +142,18 @@ pub(crate) async fn save_stations(State(app): State<Shared>, Parsed(request): Pa
     Json(json!({ "stations": count }))
 }
 
-/// Radio stations whose names have what was typed (`?name=`), to choose one from.
-pub(crate) async fn find_stations(
-    State(app): State<Shared>,
-    Query(query): Query<HashMap<String, String>>,
-) -> ApiResult {
-    let name = query.get("name").and_then(|text| PlaceQuery::parse(text));
-    let name = name.ok_or_else(|| ApiError::bad_request("which station? (?name=)"))?;
-    let found =
-        app.radio.find(&app.http, &name).await.map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, e.to_string()))?;
+/// What was typed to look for a radio station: `?name=`.
+#[derive(Deserialize)]
+pub(crate) struct StationQuery {
+    pub(crate) name: PlaceQuery,
+}
+
+/// Radio stations whose names have what was typed, to choose one from.
+pub(crate) async fn find_stations(State(app): State<Shared>, Asked(query): Asked<StationQuery>) -> ApiResult {
+    let found = app
+        .radio
+        .find(&app.http, &query.name)
+        .await
+        .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(json!({ "stations": found })))
 }

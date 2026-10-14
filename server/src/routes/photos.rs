@@ -22,7 +22,7 @@ use crate::index::Index;
 use crate::routes::{header, ApiError, ApiResult, Parsed, KEEP_FOREVER};
 use crate::store::LastSync;
 use crate::types::{
-    percent_decode, AlbumLinks, Bounded, Likeness, Mark, NonEmpty, PhotoPath, Restore, Source, SyncedName,
+    percent_decode, AlbumLinks, AlbumsToSync, Bounded, Likeness, Mark, NonEmpty, PhotoPath, Restore, Source, SyncedName,
 };
 use crate::{auth, faces, gphotos, index, store};
 
@@ -78,7 +78,7 @@ pub(crate) struct DailySyncRequest {
 
 #[derive(Deserialize)]
 pub(crate) struct SyncRequest {
-    pub(crate) sources: AlbumLinks,
+    pub(crate) sources: AlbumsToSync,
     #[serde(default)]
     pub(crate) delete: bool,
     #[serde(default)]
@@ -465,10 +465,7 @@ pub(crate) fn start_sync(app: &Shared, options: gphotos::Options) -> bool {
 }
 
 pub(crate) async fn sync(State(app): State<Shared>, Parsed(request): Parsed<SyncRequest>) -> ApiResult {
-    let albums = request.sources.0;
-    if albums.is_empty() {
-        return Err(ApiError::bad_request("add at least one Google Photos shared-album link (https://...)"));
-    }
+    let albums = request.sources.0.into_inner();
     let (shared, saved) = (Arc::clone(&app), albums.clone());
     blocking(move || shared.update_settings(|settings| settings.albums = saved)).await;
     let options = gphotos::Options { albums, delete: request.delete, refresh: request.refresh, limit: request.limit };

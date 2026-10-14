@@ -100,7 +100,7 @@ async fn stations_are_looked_up_by_name_in_the_directory() {
     let directory = radio::testing::directory().await;
     let frame = TempFrame::new("route-station-search");
     let cfg = Config { cloud_dir: frame.0.cloud_dir.clone(), data_dir: frame.0.data_dir.clone() };
-    let mut app = Arc::try_unwrap(App::new(cfg, Device::Simulated, 8080)).ok().expect("a new app has one owner");
+    let mut app = Arc::try_unwrap(App::new(cfg, Device::simulated(), 8080)).ok().expect("a new app has one owner");
     app.radio = radio::Radio::new(&directory);
     let app = Arc::new(app);
 
@@ -136,7 +136,7 @@ fn app_with_spotify(name: &str) -> (Shared, TempFrame) {
     let frame = TempFrame::new(&format!("route-{name}"));
     spotify::testing::program(&frame.0);
     let cfg = Config { cloud_dir: frame.0.cloud_dir.clone(), data_dir: frame.0.data_dir.clone() };
-    let app = App::new(cfg, Device::Simulated, 8080);
+    let app = App::new(cfg, Device::simulated(), 8080);
     tokio::spawn(Arc::clone(&app.spotify).run(Arc::clone(&app.cfg)));
     (app, frame)
 }

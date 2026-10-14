@@ -22,14 +22,34 @@ const APP_ACTIVITY: &str = "frame.screen/.MainActivity";
 /// the same page, under its own title and address bars.
 const BROWSER: &str = "org.chromium.webview_shell";
 const BROWSER_ACTIVITY: &str = "org.chromium.webview_shell/.WebViewBrowserActivity";
+/// The app the frame came with. It stays running behind the new screen and now and then
+/// puts its own slideshow in front by itself.
+const OWN_APP: &str = "com.fujia.calendar";
 /// The new screen must be heard from this often, or the frame goes back to its own.
 pub const QUIET_LIMIT: Duration = Duration::from_mins(3);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub enum Device {
     Android,
     /// A stand-in on a computer: reports a made-up network and only logs what it is asked to do.
-    Simulated,
+    Simulated(&'static StandIn),
+}
+
+/// What the stand-in frame remembers: whether its screen is on, and which screen is in front.
+/// Each stand-in has its own, so tests running side by side do not see each other's.
+#[derive(Debug)]
+pub struct StandIn {
+    screen_on: AtomicBool,
+    /// Whether the frame's own app has put itself in front.
+    own_in_front: AtomicBool,
+}
+
+#[cfg(test)]
+impl StandIn {
+    /// Have the frame's own app put itself in front, as the real one does now and then.
+    pub fn own_app_comes_forward(&self) {
+        self.own_in_front.store(true, Ordering::Relaxed);
+    }
 }
 
 /// How bright the room is.
@@ -41,9 +61,6 @@ pub struct Light {
     /// the one before is the same reading, not news.
     pub at: u64,
 }
-
-/// Whether the stand-in frame's screen is on.
-static SIMULATED_SCREEN_ON: AtomicBool = AtomicBool::new(true);
 
 /// How the frame's Wi-Fi is doing.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -61,20 +78,27 @@ impl Device {
     /// `FRAME_DEVICE=simulated` asks for the stand-in.
     pub fn from_env() -> Device {
         match std::env::var("FRAME_DEVICE").as_deref() {
-            Ok("simulated") => Device::Simulated,
+            Ok("simulated") => Device::simulated(),
             _ => Device::Android,
         }
     }
 
+    /// A new stand-in frame, with its screen on and the new screen in front. It lives as long
+    /// as the program: a server has one, and a test one each.
+    pub fn simulated() -> Device {
+        let stand_in = StandIn { screen_on: AtomicBool::new(true), own_in_front: AtomicBool::new(false) };
+        Device::Simulated(Box::leak(Box::new(stand_in)))
+    }
+
     pub fn is_simulated(self) -> bool {
-        self == Device::Simulated
+        matches!(self, Device::Simulated(_))
     }
 
     /// Whether the frame has finished starting up, so that a screen can be put in front. Blocking.
     pub fn started(self) -> bool {
         match self {
             Device::Android => run("getprop", &["sys.boot_completed"]).is_some_and(|out| out.trim() == "1"),
-            Device::Simulated => true,
+            Device::Simulated(_) => true,
         }
     }
 
@@ -86,7 +110,7 @@ impl Device {
                 let addresses = run("ip", &["-4", "-o", "addr", "show", "wlan0"]).unwrap_or_default();
                 Some(parse_wifi(&state, &addresses))
             }
-            Device::Simulated => Some(Wifi {
+            Device::Simulated(_) => Some(Wifi {
                 on: true,
                 network: Some("Simulated network".into()),
                 signal: Some(-52),
@@ -99,7 +123,7 @@ impl Device {
     pub fn open_wifi_settings(self) -> bool {
         match self {
             Device::Android => run("am", &["start", "-a", "android.settings.WIFI_SETTINGS"]).is_some(),
-            Device::Simulated => {
+            Device::Simulated(_) => {
                 info!("simulated: Android's Wi-Fi settings would open now");
                 true
             }
@@ -117,7 +141,7 @@ impl Device {
     pub fn room_light(self) -> Option<Light> {
         match self {
             Device::Android => run("dumpsys", &["sensorservice"]).as_deref().and_then(parse_light),
-            Device::Simulated => {
+            Device::Simulated(_) => {
                 let at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
                 Some(Light { lux: 110.0, at })
             }
@@ -134,7 +158,7 @@ impl Device {
                 (state.map(|state| state == "Awake"), parse_untouched(&power))
             }
             // Nobody is touching a frame that is not there.
-            Device::Simulated => (Some(SIMULATED_SCREEN_ON.load(Ordering::Relaxed)), Some(Duration::MAX)),
+            Device::Simulated(stand_in) => (Some(stand_in.screen_on.load(Ordering::Relaxed)), Some(Duration::MAX)),
         }
     }
 
@@ -143,9 +167,9 @@ impl Device {
         match self {
             // The "sleep" and "wake up" keys, which unlike the power key say which way to go.
             Device::Android => run("input", &["keyevent", if on { "224" } else { "223" }]).is_some(),
-            Device::Simulated => {
+            Device::Simulated(stand_in) => {
                 info!(on, "simulated: the screen would be switched now");
-                SIMULATED_SCREEN_ON.store(on, Ordering::Relaxed);
+                stand_in.screen_on.store(on, Ordering::Relaxed);
                 true
             }
         }
@@ -155,7 +179,7 @@ impl Device {
     pub fn time_zone(self) -> Option<String> {
         let zone = match self {
             Device::Android => run("getprop", &["persist.sys.timezone"])?,
-            Device::Simulated => std::env::var("FRAME_TZ").ok()?,
+            Device::Simulated(_) => std::env::var("FRAME_TZ").ok()?,
         };
         Some(zone.trim().to_string()).filter(|zone| !zone.is_empty())
     }
@@ -163,10 +187,18 @@ impl Device {
     /// Keep the frame's processor running while the screen is off, so this server can
     /// switch the screen back on in the morning. Blocking.
     pub fn stay_running(self) {
-        if self == Device::Android {
+        if matches!(self, Device::Android) {
             if let Err(e) = std::fs::write("/sys/power/wake_lock", "frameserver") {
                 tracing::warn!(error = %e, "could not ask the frame to keep running with its screen off");
             }
+        }
+    }
+
+    /// Whether the app the frame came with has put itself in front. Blocking.
+    pub fn own_screen_in_front(self) -> bool {
+        match self {
+            Device::Android => run("dumpsys", &["window"]).as_deref().and_then(focused_app) == Some(OWN_APP),
+            Device::Simulated(stand_in) => stand_in.own_in_front.load(Ordering::Relaxed),
         }
     }
 
@@ -190,8 +222,9 @@ impl Device {
                 let home = ["start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME"];
                 run("am", &home).is_some()
             }
-            (Device::Simulated, screen) => {
+            (Device::Simulated(stand_in), screen) => {
                 info!(?screen, "simulated: this screen would be put in front now");
+                stand_in.own_in_front.store(screen == Screen::Legacy, Ordering::Relaxed);
                 true
             }
         }
@@ -259,6 +292,14 @@ fn parse_light(sensors: &str) -> Option<Light> {
         .then_some(Light { lux, at: seconds as u64 })
 }
 
+/// Read which app has the window in front out of `dumpsys window`.
+fn focused_app(windows: &str) -> Option<&str> {
+    // mCurrentFocus=Window{1451474 u0 com.fujia.calendar/com.waophoto.smartframe.ui.SlideActivity}
+    let focus = windows.lines().find_map(|line| line.trim().strip_prefix("mCurrentFocus="))?;
+    let (app, _activity) = focus.split_whitespace().last()?.split_once('/')?;
+    Some(app)
+}
+
 /// Read how long ago the frame was touched out of `dumpsys power`.
 fn parse_untouched(power: &str) -> Option<Duration> {
     let line = power.lines().find(|line| line.trim_start().starts_with("mLastUserActivityTime="))?;
@@ -308,6 +349,19 @@ mod tests {
     }
 
     #[test]
+    fn the_app_in_front_is_read_from_what_android_prints() {
+        let windows = "WINDOW MANAGER WINDOWS (dumpsys window windows)\n  \
+            mCurrentFocus=Window{1451474 u0 com.fujia.calendar/com.waophoto.smartframe.ui.SlideActivity}\n  \
+            mFocusedApp=AppWindowToken{8a1 token=Token{3c ActivityRecord{1e u0 com.fujia.calendar/.ui.MainActivity t14}}}\n";
+        assert_eq!(focused_app(windows), Some(OWN_APP));
+        let ours = windows.replace("com.fujia.calendar/com.waophoto.smartframe.ui.SlideActivity", APP_ACTIVITY);
+        assert_eq!(focused_app(&ours), Some(APP));
+        for unreadable in ["", "  mCurrentFocus=null", "  mCurrentFocus=Window{9 u0 StatusBar}"] {
+            assert_eq!(focused_app(unreadable), None, "{unreadable:?}");
+        }
+    }
+
+    #[test]
     fn the_time_since_the_last_touch_is_read_from_what_android_prints() {
         let power = "  mWakefulness=Awake\n  mLastUserActivityTime=39885086 (4150617 ms ago)\n  \
             mLastUserActivityTimeNoChangeLights=994055 (43041648 ms ago)\n";
@@ -339,7 +393,7 @@ mod tests {
 
     #[test]
     fn the_stand_in_screen_can_be_switched() {
-        let device = Device::Simulated;
+        let device = Device::simulated();
         assert!(device.switch_screen(false));
         assert_eq!(device.power().0, Some(false));
         assert!(device.switch_screen(true));
@@ -358,7 +412,7 @@ mod tests {
 
     #[test]
     fn the_stand_in_answers_without_an_android_to_ask() {
-        let device = Device::Simulated;
+        let device = Device::simulated();
         assert!(device.is_simulated() && device.started());
         let wifi = device.wifi().unwrap();
         assert_eq!(wifi.network.as_deref(), Some("Simulated network"));

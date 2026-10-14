@@ -1,24 +1,22 @@
 //! Things to do: the list for a day, ticking tasks, and looking after people, tasks,
 //! rewards and points.
 
-use std::collections::HashMap;
-
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::app::{blocking, Shared};
-use crate::routes::{ApiError, ApiResult, Parsed};
+use crate::routes::{ApiError, ApiResult, Asked, Parsed};
 use crate::todo::{Happening, PersonGiven, RewardGiven, RuleGiven, TaskGiven, TodoError};
-use crate::types::{Day, EventId, Title};
+use crate::types::{Day, EventId, PointChange, Title, Today};
 
 #[derive(Deserialize)]
 pub(crate) struct TickRequest {
     pub(crate) task: EventId,
     /// The day it is where the task was ticked.
-    pub(crate) day: Day,
+    pub(crate) day: Today,
     pub(crate) done: bool,
     /// Who did it, for a task that is anyone's.
     #[serde(default)]
@@ -68,23 +66,14 @@ pub(crate) struct RedeemRequest {
 #[derive(Deserialize)]
 pub(crate) struct AdjustRequest {
     pub(crate) who: EventId,
-    /// Points to give, or to take when below nothing: at most a thousand either way.
-    pub(crate) change: i32,
+    pub(crate) change: PointChange,
     pub(crate) why: Title,
 }
 
-/// A tick is for a day about now. The server does not know the frame's time zone, so the
-/// day before and the day after its own are as good as its own; anything else is a
-/// mistake, and would clear away tasks as if their days were long over.
-fn about_now(day: Day) -> Result<Day, ApiError> {
-    let today = chrono::DateTime::from_timestamp(i64::try_from(crate::app::now_secs()).unwrap_or(0), 0)
-        .unwrap_or_default()
-        .date_naive();
-    if (day.0 - today).num_days().abs() <= 1 {
-        Ok(day)
-    } else {
-        Err(ApiError::bad_request("that is not today"))
-    }
+/// Which day the list is asked for: `?day=YYYY-MM-DD`, the day it is for whoever asks.
+#[derive(Deserialize)]
+pub(crate) struct DayQuery {
+    pub(crate) day: Day,
 }
 
 fn refused(error: &TodoError) -> ApiError {
@@ -139,9 +128,7 @@ async fn change(app: Shared, work: impl FnOnce(&Shared) -> Result<(), TodoError>
 
 /// Everything about the things to do, with the list for `?day=YYYY-MM-DD`: the day it is
 /// for whoever asks.
-pub(crate) async fn todo_view(State(app): State<Shared>, Query(query): Query<HashMap<String, String>>) -> ApiResult {
-    let day = query.get("day").and_then(|text| Day::parse(text));
-    let day = day.ok_or_else(|| ApiError::bad_request("which day is it? (?day=YYYY-MM-DD)"))?;
+pub(crate) async fn todo_view(State(app): State<Shared>, Asked(DayQuery { day }): Asked<DayQuery>) -> ApiResult {
     Ok(Json(blocking(move || app.todo.view_with(day, &happenings(&app, day))).await))
 }
 
@@ -160,9 +147,10 @@ pub(crate) async fn set_approval(State(app): State<Shared>, Parsed(request): Par
 }
 
 /// Tick a task, or take its tick away. This needs no PIN: ticking is what the list is for,
-/// and where points wait for approval a tick only asks for them.
+/// and where points wait for approval a tick only asks for them. A tick is only for a day
+/// about now: one for a day long gone would clear away tasks as if their days were over.
 pub(crate) async fn tick_task(State(app): State<Shared>, Parsed(request): Parsed<TickRequest>) -> ApiResult {
-    let day = about_now(request.day)?;
+    let Today(day) = request.day;
     change(app, move |app| {
         app.todo.tick_with(&request.task, day, request.done, request.who.as_ref(), &happenings(app, day))
     })
@@ -193,9 +181,6 @@ pub(crate) async fn redeem(State(app): State<Shared>, Parsed(request): Parsed<Re
 
 /// Give someone points or take some away, by hand.
 pub(crate) async fn adjust_points(State(app): State<Shared>, Parsed(request): Parsed<AdjustRequest>) -> ApiResult {
-    if request.change == 0 || request.change.abs() > 1000 {
-        return Err(ApiError::bad_request("give or take 1 to 1000 points at a time"));
-    }
     change(app, move |app| app.todo.adjust(&request.who, request.change, &request.why)).await
 }
 
