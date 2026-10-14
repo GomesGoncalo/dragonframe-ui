@@ -569,20 +569,6 @@ player is; on the frame it is `framespot` beside the data).
   with a title strip and address bar. The server falls back to it only when the app is
   not installed.
 
-## Not yet tried on the frame
-
-These work in the tests and the simulator but have not been exercised on the device:
-opening the Wi-Fi list and coming back from it, switching to the original screen from
-the Settings tab, the automatic fallback, the new screen coming up by itself after a
-reboot, a whole night of night mode (including waking when a dark room is lit), the
-chime through the frame's speaker, an alarm ringing while the screen is off, and the
-remote control's keys. The radio has been heard on the frame.
-
-Spotify has not been played anywhere yet. What has been seen: the player builds for
-the frame, and on this computer the server starts it and the frame is announced on
-the network as a speaker. Not yet seen: a track chosen in the Spotify app coming out
-as sound, on this computer or on the frame; and on the frame, the player finding
-Spotify's servers by name (it answers its own name lookups there, see
 `spotify/src/dns.rs`) and being found by phones.
 
 Driving times have only been tried against a stand-in for TomTom's service, never the
