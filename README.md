@@ -7,6 +7,13 @@ from a phone or computer.
 The frame's original software is never removed or changed. Everything here sits beside
 it and can be switched off or removed again (see [Going back](#going-back)).
 
+| Pictures | Calendar |
+| --- | --- |
+| ![The Pictures tab: three photos laid out side by side, with the clock, the weather and today's event](docs/screen-pictures.jpg) | ![The Calendar tab: the month with dots on days with events, and the events coming up](docs/screen-calendar.png) |
+
+The screenshots are from the simulator (`tools/simulate.py`), with stock photos from
+[Unsplash](https://unsplash.com) and made-up events.
+
 ## What is here
 
 ```
