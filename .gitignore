@@ -4,3 +4,5 @@ __pycache__/
 .tools/
 .sim/
 android/build/
+# Each developer's own frame address (see tools/frame_sync.py).
+.frame

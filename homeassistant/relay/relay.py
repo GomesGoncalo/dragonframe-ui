@@ -12,7 +12,7 @@ opens nothing but that.
 Settings, from the environment:
     HA_URL      where Home Assistant is (default http://homeassistant:8123)
     HA_TOKEN    a long-lived access token from Home Assistant
-    FRAME_URL   where the frame's server is, such as http://192.168.4.23:8080
+    FRAME_URL   where the frame's server is, such as http://192.168.1.20:8080
     FRAME_KEY   the key made on the frame's page (Frame tab, "Connect the house")
 
 Only the standard library is used, so it runs in a stock Python image.

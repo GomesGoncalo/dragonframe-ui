@@ -652,13 +652,13 @@ setInterval(() => load(needFull), 4000);
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--host", default=fs.DEFAULT_HOST, help=f"frame address (default {fs.DEFAULT_HOST}, or $FRAME_HOST)")
+    p.add_argument("--host", help=fs.HOST_HELP)
     p.add_argument("--port", type=int, default=8765, help="local port for the app (default 8765)")
     p.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
     args = p.parse_args()
 
     fs.setup_logging()
-    app = App(args.host)
+    app = App(args.host or fs.frame_host())
     Handler.app = app
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

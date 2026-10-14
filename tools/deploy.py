@@ -232,7 +232,7 @@ def write_file(frame, path, content):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--host", default=fs.DEFAULT_HOST, help="frame address")
+    p.add_argument("--host", help=fs.HOST_HELP)
     p.add_argument("--remove", action="store_true", help="stop the server and remove it from the frame")
     p.add_argument("--no-boot", action="store_true", help="do not set it to start when the frame boots")
     p.add_argument("--reset-pin", action="store_true", help="remove a forgotten PIN")
@@ -242,7 +242,7 @@ def main():
     p.add_argument("--new-ui", action="store_true", help="put the new screen on the frame, without building")
     p.add_argument("--previous", action="store_true", help="put back the server the last deploy replaced")
     args = p.parse_args()
-    frame = fs.Frame(args.host)
+    frame = fs.Frame(args.host or fs.frame_host())
 
     if args.original_ui:
         frame.connect()

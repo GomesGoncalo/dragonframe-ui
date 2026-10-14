@@ -40,7 +40,11 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-DEFAULT_HOST = os.environ.get("FRAME_HOST", "192.168.4.23:5555")
+# The frame's address differs from one network to the next, so it is not kept in this
+# repository: each developer gives it in $FRAME_HOST or in the file .frame at the top of
+# the repository, which git ignores. See frame_host().
+HOST_FILE = Path(__file__).resolve().parent.parent / ".frame"
+HOST_HELP = "frame address, such as 192.168.1.20 (default: $FRAME_HOST, or the file .frame)"
 REMOTE_DIR = "/storage/emulated/0/CloudAlbum/cloud/frame-sync"
 PREFIX = "fs_"
 if sys.platform == "darwin":
@@ -82,6 +86,28 @@ def say(msg):
     print(msg)
     log.info(msg.strip())
     emit("log", msg.strip())
+
+
+def frame_host():
+    """The frame's address as the developer gave it: $FRAME_HOST, or the first line of .frame."""
+    host = os.environ.get("FRAME_HOST", "").strip()
+    if not host and HOST_FILE.is_file():
+        lines = (line.split("#")[0].strip() for line in HOST_FILE.read_text().splitlines())
+        host = next((line for line in lines if line), "")
+    if not host:
+        die(
+            "Which frame? Give its address on your network, once, in a file at the top of the repository:\n"
+            f"    echo 192.168.1.20 > {HOST_FILE}\n"
+            "or as FRAME_HOST=192.168.1.20 in the environment, or with --host. "
+            "The frame shows its address in Settings, under Wi-Fi."
+        )
+    return host
+
+
+def frame_name(host=None):
+    """The frame's address without a port, for reaching its web server rather than adb."""
+    host = host or frame_host()
+    return host.rpartition(":")[0] if host.count(":") == 1 else host
 
 
 def die(msg):
@@ -555,7 +581,7 @@ def setup_logging():
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--host", default=DEFAULT_HOST, help=f"frame address (default {DEFAULT_HOST}, or $FRAME_HOST)")
+    p.add_argument("--host", help=HOST_HELP)
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("sync", help="upload photos from folders and/or Google Photos shared-album links")
@@ -587,7 +613,7 @@ def main():
     setup_logging()
     log.info("--- %s", " ".join(sys.argv[1:]))
     try:
-        args.func(Frame(args.host), args)
+        args.func(Frame(args.host or frame_host()), args)
     except KeyboardInterrupt:
         log.warning("interrupted")
         sys.exit("\ninterrupted; run the same command again to continue")
