@@ -366,9 +366,9 @@ Utilities can show how much listening time each Yoto player has left today, from
 [Yoto Limiter](https://yoto-limiter.com/developers). It is drawn for a small child: each
 player is a disc that shrinks as its time is used, like a children's kitchen timer. The disc is
 green while there is plenty, orange under 10 minutes and red under 3. In the middle,
-notes bob while the player plays, a play sign means it may play, a moon means it is
-asleep (all used up for today, or outside its allowed hours) and two bars mean it is
-paused. The words underneath ("37 min left of 1 h · Playing The Gruffalo") are for
+notes bob while the player plays, a play sign means it may play, a red stop sign means
+today's time is all used up, a moon means it is asleep (outside its allowed hours, as at
+night) and two bars mean it is paused. The words underneath ("37 min left of 1 h · Playing The Gruffalo") are for
 grown-ups.
 
 Setting it up: in Yoto Limiter's app (Plus), Settings, API keys, make a key with the

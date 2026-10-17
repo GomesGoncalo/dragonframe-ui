@@ -187,6 +187,7 @@ const DISC_MIDDLES = {
     + '<path class="tune two" d="M17.5 13.5V6.5"/><circle class="tune two" cx="16" cy="13.6" r="1.6"/>',
   sleeping: '<path class="moon" d="M16.5 15.5A6 6 0 1 1 10 6a4.8 4.8 0 0 0 6.5 9.5z"/><path class="moon star" d="M17 5.5l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/>',
   paused: '<path d="M9.5 7.5v9M14.5 7.5v9"/>',
+  stop: '<path class="stop" d="M8.9 3.5h6.2l5.4 5.4v6.2l-5.4 5.4H8.9l-5.4-5.4V8.9z"/><path class="bar" d="M8.5 12h7"/>',
   waiting: '<path class="solid" d="M9.5 7.5l7 4.5-7 4.5z"/>',
   sand: '<path d="M7 4h10M7 20h10M8.5 4c0 4.5 3.5 5 3.5 8s-3.5 3.5-3.5 8M15.5 4c0 4.5-3.5 5-3.5 8s3.5 3.5 3.5 8"/><path class="solid sand" d="M9.8 19.6h4.4L12 16.5z"/>',
 };

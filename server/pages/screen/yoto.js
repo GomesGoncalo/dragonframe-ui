@@ -3,8 +3,9 @@
 //
 // Each player is a disc that shrinks as its time is used, the way a kitchen timer for children
 // does: green while there is plenty, orange when it is nearly gone, red at the very end. In
-// the middle, notes dance while it plays, a play sign shows it may play, a moon shows it is
-// sleeping (all used up, or outside the hours it may play) and two bars show it is paused.
+// the middle, notes dance while it plays, a play sign shows it may play, a stop sign shows
+// today's time is all used up, a moon shows it is sleeping (outside the hours it may play,
+// as at night) and two bars show it is paused.
 // The words underneath are for grown-ups.
 //
 // It comes from Yoto Limiter, which the frame's server follows live with a key that only
@@ -56,7 +57,7 @@ function yotoLooks(player, left) {
       more: player.allowed_from ? 'Wakes up at ' + player.allowed_from : 'Not time for listening' });
   }
   if (player.limited && (player.exhausted || left <= 0)) {
-    return Object.assign(looks, { share: 0, middle: 'sleeping', said: 'All done for today', more: 'More tomorrow' });
+    return Object.assign(looks, { share: 0, middle: 'stop', said: 'All done for today', more: 'More tomorrow' });
   }
   if (player.blocked) return Object.assign(looks, { said: 'That card is done for today', more: listening(left) + ' left for other cards' });
   if (!player.limited) return Object.assign(looks, { said: 'No limit today', more: listening(player.used_secs) + ' listened' });

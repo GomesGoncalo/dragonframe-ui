@@ -232,6 +232,8 @@ body.asleep .asleep { display: block; }
 .disc .middle .moon { fill: var(--gold); stroke: var(--gold); }
 .disc .middle .star { stroke-width: .6; }
 .disc .middle .sand { stroke: none; fill: var(--orange); }
+.disc .middle .stop { fill: var(--red); stroke: var(--red); }
+.disc .middle .bar { stroke: #fff; stroke-width: 2.4; }
 /* Notes bob up and down, one after the other, while a Yoto plays. */
 @keyframes disc-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.6px); } }
 .disc .tune { animation: disc-bob 1.2s ease-in-out infinite; }
