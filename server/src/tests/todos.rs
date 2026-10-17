@@ -148,3 +148,39 @@ async fn a_calendar_event_becomes_a_task_on_its_day_by_a_rule() {
         assert_eq!(post(&app, "/api/todo/rules", bad).await.status, StatusCode::BAD_REQUEST, "{bad}");
     }
 }
+
+#[tokio::test]
+async fn a_quick_award_is_given_from_a_phone_and_cheered_on_the_screen_at_once() {
+    let (app, _frame) = app("todo-award");
+    post(&app, "/api/todo/people", r#"{"people":[{"name":"Leo"}]}"#).await;
+    post(&app, "/api/todo/rewards", r#"{"rewards":[{"title":"Ice cream","cost":10}]}"#).await;
+    let awards = r#"{"awards":[{"title":"Shared a toy","points":2}]}"#;
+    assert_eq!(post(&app, "/api/todo/awards", awards).await.status, StatusCode::OK);
+    let list = todo(&app).await;
+    let (leo, shared) = (list["people"][0]["id"].as_str().unwrap(), list["awards"][0]["id"].as_str().unwrap());
+    let told_before = get(&app, "/api/acts").await.json()["last"].as_u64().unwrap();
+
+    let give = format!(r#"{{"who":"{leo}","award":"{shared}"}}"#);
+    assert_eq!(post(&app, "/api/todo/award", &give).await.status, StatusCode::OK);
+    assert_eq!(todo(&app).await["people"][0]["points"], 2);
+    let told = get(&app, &format!("/api/acts?after={told_before}")).await.json();
+    assert_eq!(
+        told["acts"],
+        json!([{ "do": "cheer", "name": "Leo", "what": "Shared a toy", "points": 2, "has": 2,
+                 "goal": { "title": "Ice cream", "cost": 10 } }])
+    );
+    // Taking points away is not cheered.
+    let take = format!(r#"{{"who":"{leo}","change":-1,"why":"x"}}"#);
+    post(&app, "/api/todo/points", &take).await;
+    assert_eq!(get(&app, &format!("/api/acts?after={told_before}")).await.json()["acts"].as_array().unwrap().len(), 1);
+
+    let nobody = format!(r#"{{"who":"0123456789abcdef","award":"{shared}"}}"#);
+    assert_eq!(post(&app, "/api/todo/award", &nobody).await.status, StatusCode::NOT_FOUND);
+    // The screen cannot be asked to cheer: only points given are cheered.
+    let fake = r#"{"do":"cheer","name":"Leo","what":"x","points":100,"has":100,"goal":null}"#;
+    assert_eq!(post(&app, "/api/act", fake).await.status, StatusCode::BAD_REQUEST);
+
+    post(&app, "/api/pin", r#"{"pin":"2468"}"#).await;
+    assert_eq!(post(&app, "/api/todo/award", &give).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(post(&app, "/api/todo/awards", awards).await.status, StatusCode::UNAUTHORIZED);
+}

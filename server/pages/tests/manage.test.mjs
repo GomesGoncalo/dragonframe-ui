@@ -92,6 +92,20 @@ describe('the calendar', () => {
   });
 });
 
+describe('things to do', () => {
+  test('a quick award is added, then given to someone at a touch', async () => {
+    await server.api('/api/todo/people', { people: [{ name: 'Mia' }] });
+    const page = await open('/#todo', PHONE);
+    await until('being asked for awards', () => page.eval('$("tdNoAwards").textContent.startsWith("No awards")'));
+    await page.eval('$("tdAward").value = "Kind words"; $("tdAwardPoints").value = "3"; $("tdAddAward").click()');
+    await until('a button for Mia', () => page.eval('$("tdGive").textContent.includes("Kind words +3")'));
+    await page.click('#tdGive .btn');
+    await until('Mia given the points', async () => (await server.api('/api/todo?day=2026-10-17')).people[0].points === 3);
+    await until('the toast', () => page.eval('$("toast").textContent.includes("cheered on the frame")'));
+    assert.deepEqual(page.errors, []);
+  });
+});
+
 describe('the remote control', () => {
   // TODO: this passes run alone (--test-name-pattern="button on the phone") but not after the
   // tests above it in this file; why is not yet known. Until it is, it runs without failing the suite.

@@ -512,6 +512,7 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 let todo = null;
 const todayText = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const nameOf = id => { const p = todo.people.find(p => p.id === id); return p ? p.name : "Anyone"; };
+const peopleKept = people => people.map(p => ({ id: p.id, name: p.name, goal: p.goal }));
 function repeatText(repeat) {
   if ("once" in repeat) return repeat.once ? `once, on ${calWhen(repeat.once).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}` : "once";
   if (repeat.days.length === 7) return "every day";
@@ -540,10 +541,36 @@ async function loadTodo() {
       box.append(calRow(`${nameOf(rule.who)} · ${rule.points} pts`, rule.words, today, remove));
     });
   }
-  if (changed("tdPeople", todo.people)) {
+  setText($("tdNoAwards"), !todo.people.length ? "Add a person below first." : todo.awards.length ? "" : "No awards yet. Add some below, for example Shared a toy or Kind words.");
+  if (changed("tdGive", [todo.people, todo.awards])) {
+    const box = $("tdGive"); box.textContent = "";
+    if (todo.awards.length) for (const person of todo.people) {
+      const row = el("div", "give"); row.append(el("span", "who", person.name));
+      for (const award of todo.awards) {
+        const button = el("button", "btn small primary", `${award.title}${award.points ? ` +${award.points}` : ""}`);
+        button.onclick = () => saveTodo("/api/todo/award", { who: person.id, award: award.id }, `${award.title}: ${person.name} is cheered on the frame.`);
+        row.append(button);
+      }
+      box.append(row);
+    }
+  }
+  if (changed("tdAwards", todo.awards)) {
+    const box = $("tdAwards"); box.textContent = "";
+    for (const award of todo.awards) {
+      const remove = el("button", "btn small danger", "Delete");
+      remove.onclick = () => saveTodo("/api/todo/awards", { awards: todo.awards.filter(a => a.id !== award.id) }, "Award deleted.");
+      box.append(calRow(`★ ${award.points}`, award.title, "", remove));
+    }
+  }
+  if (changed("tdPeople", [todo.people, todo.rewards])) {
     const box = $("tdPeople"); box.textContent = "";
     for (const person of todo.people) {
       const give = el("button", "btn small", "Give or take points"), remove = el("button", "btn small danger", "Remove");
+      // The reward they are saving for: the cheapest unless one is chosen.
+      const goal = el("select"); goal.setAttribute("aria-label", `What ${person.name} is saving for`);
+      goal.append(new Option("Saving for the cheapest reward", ""), ...todo.rewards.map(r => new Option(`Saving for ${r.title} (★ ${r.cost})`, r.id)));
+      goal.value = person.goal || "";
+      goal.onchange = () => saveTodo("/api/todo/people", { people: peopleKept(todo.people.map(p => p.id === person.id ? { ...p, goal: goal.value || null } : p)) }, "Saved.");
       give.onclick = async () => {
         const amount = Number(prompt(`Points to give ${person.name} (a number below zero takes points away):`, "5"));
         if (!Number.isInteger(amount) || !amount) return;
@@ -551,8 +578,9 @@ async function loadTodo() {
         if (why === null) return;
         saveTodo("/api/todo/points", { who: person.id, change: amount, why: why.trim() || (amount > 0 ? "Points given" : "Points taken") }, "Done.");
       };
-      remove.onclick = () => { if (confirm(`Remove ${person.name}? Their ${person.points} points go too, and their tasks become anyone's.`)) saveTodo("/api/todo/people", { people: todo.people.filter(p => p.id !== person.id).map(p => ({ id: p.id, name: p.name })) }, "Removed."); };
+      remove.onclick = () => { if (confirm(`Remove ${person.name}? Their ${person.points} points go too, and their tasks become anyone's.`)) saveTodo("/api/todo/people", { people: peopleKept(todo.people.filter(p => p.id !== person.id)) }, "Removed."); };
       box.append(calRow(`★ ${person.points}`, person.name, "", give)); box.lastChild.append(remove);
+      if (todo.rewards.length) box.lastChild.append(goal);
     }
   }
   if (document.activeElement !== $("tdApproval")) $("tdApproval").checked = todo.approval;
@@ -601,7 +629,7 @@ async function addPerson() {
   const name = $("tdName").value.trim();
   if (!name) { $("tdName").focus(); return; }
   if (!todo) await loadTodo();
-  if (await saveTodo("/api/todo/people", { people: todo.people.map(p => ({ id: p.id, name: p.name })).concat([{ name }]) }, `${name} added.`)) $("tdName").value = "";
+  if (await saveTodo("/api/todo/people", { people: peopleKept(todo.people).concat([{ name }]) }, `${name} added.`)) $("tdName").value = "";
 }
 async function addTask() {
   const title = $("tdTitle").value.trim(), kind = $("tdRepeat").value;
@@ -618,6 +646,12 @@ async function addEventRule() {
   if (!words) { toast("Say which words to look for in the names of events."); $("tdWords").focus(); return; }
   const rule = { words, who: $("tdRuleWho").value || null, points: Number($("tdRulePoints").value) || 0 };
   if (await saveTodo("/api/todo/rules", { rules: todo.rules.concat([rule]) }, "Rule added. Matching events are tasks on their day.")) $("tdWords").value = "";
+}
+async function addAward() {
+  const title = $("tdAward").value.trim();
+  if (!title) { $("tdAward").focus(); return; }
+  if (!todo) await loadTodo();
+  if (await saveTodo("/api/todo/awards", { awards: todo.awards.concat([{ title, points: Number($("tdAwardPoints").value) || 0 }]) }, "Award added.")) $("tdAward").value = "";
 }
 async function addReward() {
   const title = $("tdReward").value.trim();
@@ -1000,7 +1034,7 @@ $("rmAdd").onclick = addRule;
 $("tdApproval").onchange = e => saveTodo("/api/todo/approval", { on: e.target.checked }, e.target.checked ? "Points now wait for approval." : "Points are now added at once; what was waiting has been added.");
 $("tdAddRule").onclick = addEventRule;
 $("tdWords").onkeydown = e => { if (e.key === "Enter") addEventRule(); };
-$("tdAddPerson").onclick = addPerson; $("tdAddTask").onclick = addTask; $("tdAddReward").onclick = addReward;
+$("tdAddPerson").onclick = addPerson; $("tdAddTask").onclick = addTask; $("tdAddReward").onclick = addReward; $("tdAddAward").onclick = addAward;
 $("tdName").onkeydown = e => { if (e.key === "Enter") addPerson(); };
 $("tdTitle").onkeydown = e => { if (e.key === "Enter") addTask(); };
 $("tdReward").onkeydown = e => { if (e.key === "Enter") addReward(); };

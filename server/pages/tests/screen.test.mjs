@@ -100,6 +100,39 @@ describe('told from elsewhere', () => {
     await until('the note', () => page.eval('$("soon").classList.contains("on") && $("soon-what").textContent === "Dinner is ready"'));
   });
 
+  test('a quick award is cheered at once, with the stars towards the reward, and touched away', async () => {
+    await server.api('/api/todo/people', { people: [{ name: 'Leo' }] });
+    await server.api('/api/todo/rewards', { rewards: [{ title: 'Ice cream', cost: 3 }] });
+    await server.api('/api/todo/awards', { awards: [{ title: 'Shared a toy', points: 2 }] });
+    const list = await server.api('/api/todo?day=2026-10-17');
+    const give = { who: list.people[0].id, award: list.awards[0].id };
+    await server.api('/api/todo/award', give);
+    await until('the cheer', () => page.eval('$("cheer").classList.contains("on")'));
+    const shown = await page.eval(`({
+      text: $("cheer").textContent.replace(/\\s+/g, " "),
+      got: document.querySelectorAll("#cheer .star.got").length,
+      stars: document.querySelectorAll("#cheer .star").length,
+      ready: $("cheer").classList.contains("ready"),
+    })`);
+    assert.match(shown.text, /\+2 Leo Shared a toy/);
+    assert.match(shown.text, /1 more for Ice cream/);
+    assert.deepEqual([shown.got, shown.stars, shown.ready], [2, 3, false]);
+    // Another while it shows waits its turn; this one reaches the reward.
+    await server.api('/api/todo/award', give);
+    await page.eval('new Promise((done) => setTimeout(done, 1500))');
+    assert.match(await page.eval('$("cheer-goal").textContent'), /1 more/, 'the first is still showing');
+    await page.click('#cheer');
+    await until('the second cheer', () => page.eval('$("cheer-goal").textContent === "Ice cream is ready!"'));
+    assert.equal(await page.eval('$("cheer").classList.contains("ready")'), true);
+    await page.click('#cheer');
+    await until('the cheers gone', () => page.eval('!$("cheer").classList.contains("on")'));
+    assert.equal(await page.eval('tab'), 'pictures', 'touching a cheer away does not step the photos or change tab');
+    // The To do column shows how far Leo is.
+    await page.eval('showTab("todo"); refreshTodo()');
+    await until('the goal in the column', () => page.eval('$("todo-people").textContent.includes("Ice cream is ready!")'));
+    await page.eval('showTab("pictures")');
+  });
+
   test('an event added on the phone page shows in Coming up', async () => {
     const tomorrow = await page.eval('dayKey(dayAfter(new Date(), 1)).split("-").map((n) => n.padStart(2, "0")).join("-")');
     await server.api('/api/events/add', { title: 'Parents evening', day: tomorrow, time: '09:00' });

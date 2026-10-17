@@ -36,6 +36,32 @@ body[data-tab="todo"] #todo { display: block; }
 #todo .rewards { position: absolute; left: 7vmin; right: 7vmin; bottom: 13vmin; height: 15vmin; overflow: hidden; }
 #todo .rewards h2 { margin: 0 0 1.2vmin; font-size: 2.6vmin; font-weight: 400; color: var(--muted); }
 .reward .cost { margin-left: 1.6vmin; color: var(--gold); }
+/* How far each person is towards the reward they are saving for. */
+#todo .goal { margin: -.4vmin 0 1.4vmin; }
+#todo .goal .for { font-size: 2.2vmin; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#todo .goal.ready .for { color: var(--gold); font-weight: 500; }
+#todo .goal .towards { font-size: 3vmin; line-height: 1.15; }
+#todo .goal .meter { height: 1.6vmin; margin-top: .6vmin; }
+.towards .star { display: inline-block; color: var(--press); }
+.towards .star.got { color: var(--gold); }
+.towards .meter { border-radius: 2vmin; background: var(--press); overflow: hidden; }
+.towards .meter .fill { height: 100%; background: var(--gold); }
+
+/* Someone was given points: cheered over any tab, until touched or after a few seconds. */
+.cheer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; box-sizing: border-box; padding: 6vmin 6vmin 0; background: var(--bg); color: var(--ink); text-align: center; }
+.cheer.on { display: block; }
+.cheer .big { font-size: 26vmin; line-height: 1; color: var(--gold); animation: cheer-pop .8s cubic-bezier(.2, 1.6, .4, 1) both; }
+.cheer .points { font-size: 9vmin; font-weight: 600; color: var(--gold); animation: cheer-rise .5s .3s ease-out both; }
+.cheer .name { margin-top: 1vmin; font-size: 7vmin; font-weight: 500; }
+.cheer .what { margin: 1vmin 0 4vmin; font-size: 4.4vmin; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cheer .towards { max-width: 150vmin; margin: 0 auto; font-size: 6vmin; line-height: 1.1; }
+.cheer .meter { width: 100vmin; height: 4vmin; margin: 1vmin auto 0; }
+.cheer .goal { margin-top: 2vmin; font-size: 3.6vmin; color: var(--muted); }
+.cheer.ready .goal { font-size: 5.4vmin; font-weight: 600; color: var(--gold); animation: cheer-pulse .7s 1.2s ease-in-out 4 alternate both; }
+.towards .star.new { animation: cheer-pop .6s cubic-bezier(.2, 1.6, .4, 1) both; }
+@keyframes cheer-pop { from { transform: scale(0) rotate(-40deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes cheer-rise { from { transform: translateY(4vmin); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes cheer-pulse { from { transform: scale(1); } to { transform: scale(1.12); } }
 
 /* Choosing a person: who did a task, or who a reward is for. */
 .pick { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: var(--overlay); text-align: center; padding-top: 12vmin; }

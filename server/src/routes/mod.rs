@@ -40,8 +40,8 @@ use crate::routes::photos::{
     set_daily_sync, slides, state, status, sync, thumb, watching,
 };
 use crate::routes::todo::{
-    adjust_points, approve_tick, redeem, save_people, save_rewards, save_rules, save_tasks, set_approval, tick_task,
-    todo_view,
+    adjust_points, approve_tick, give_award, redeem, save_awards, save_people, save_rewards, save_rules, save_tasks,
+    set_approval, tick_task, todo_view,
 };
 use crate::{auth, store};
 
@@ -221,6 +221,8 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/todo/rewards", post(save_rewards))
         .route("/api/todo/redeem", post(redeem))
         .route("/api/todo/points", post(adjust_points))
+        .route("/api/todo/awards", post(save_awards))
+        .route("/api/todo/award", post(give_award))
         .route("/api/device", get(device_view))
         .route("/api/address.svg", get(address_code))
         .route("/api/alive", get(alive))

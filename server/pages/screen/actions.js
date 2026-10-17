@@ -1,7 +1,7 @@
 // Things the frame's screen can be told to do, and the ways of telling it.
 //
 // `act` is the one place where an action is carried out: the next photo, a tab, a timer, a
-// radio station, a note. Whatever can be done by touching the screen can be asked for here,
+// radio station, a note, a cheer for points given. Whatever can be done by touching the screen can be asked for here,
 // written the way the server writes it: { do: 'next' }, { do: 'show', tab: 'calendar' },
 // { do: 'play', station: 'Jazz' } (see `Action` in the server's types.rs for all of them).
 //
@@ -44,6 +44,7 @@ function act(action) {
       soonTimer = setTimeout(() => $('soon').classList.remove('on'), NOTE_MS);
       if (!asleep) playChime();
       break;
+    case 'cheer': cheer(action); break;
     default:  // something a newer server knows of and this page does not
   }
 }

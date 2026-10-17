@@ -136,6 +136,11 @@ details.hint p { margin-top: 8px; }
 #tab-frame input[type=text] { flex: 1 1 220px; min-width: 0; }
 .rows > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 9px 0; border-top: 1px solid var(--line); }
 .rows > div:first-child { border-top: 0; }
+/* Quick awards: a row of them for each person, big enough to touch in a hurry. */
+#tdGive .give { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+#tdGive .give:first-child { border-top: 0; }
+#tdGive .who { min-width: 100%; font-weight: 600; }
+#tdGive .btn { padding: 10px 14px; }
 .rows .when { color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 150px; }
 .rows .what { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
 .rows .from { color: var(--muted); font-size: 13px; }

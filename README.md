@@ -65,8 +65,9 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   are grey. The arrows, or a swipe, move to other months and weeks; "Today" comes back.
   A touch on a day lists what is on it, past or future (from the week view this opens
   the month with that day picked).
-- **To do.** A column for each person with today's tasks and the points they have, a
-  column for tasks that are anyone's, and the rewards points buy. See
+- **To do.** A column for each person with today's tasks, the points they have and how
+  far they are towards the reward they are saving for, a column for tasks that are
+  anyone's, and the rewards points buy. See
   [Things to do](#things-to-do).
 - **Utilities.** Timers (up to four at once, from preset lengths or one set by hand),
   alarms (once, every day, weekdays or weekends, with a five-minute snooze) and a
@@ -161,6 +162,10 @@ the same form, an *action*:
 | `{"do": "louder"}`, `{"do": "quieter"}`, `{"do": "volume", "to": 40}` | The music's volume, 0 to 100 |
 | `{"do": "note", "say": "Dinner is ready"}` | A note on the screen for a minute, with a chime |
 
+One more, `{"do": "cheer", ...}`, celebrates points someone was given (see
+[Things to do](#things-to-do)). Only the server gives it, when the points are credited:
+it cannot be asked for, so nobody can cheer points that were never given.
+
 Three things give actions so far:
 
 - the **remote control** on the management page (Frame tab), which also says which tab
@@ -236,11 +241,23 @@ within half a minute, and a tick made on the frame shows on the page.
 - A **reward** costs points. Touching one on the frame and choosing who it is for
   spends their points, after the PIN if one is set. People short of points are shown
   how many they still need.
+- Each person **saves for a reward**: the cheapest, unless another is chosen for them
+  on the management page (People). Their column on the frame shows how far they are:
+  a star for each point, or a bar for a reward that costs more than 20.
+- **Quick awards** ("Shared a toy", 1 point) are for something done well that is no
+  task. They are set up at the top of the management page's To do tab ("Well done"),
+  with a button for each person and award: one touch gives the points.
+- **Whenever someone is given points** (a quick award, a task ticked or approved, points
+  given by hand) the frame celebrates it at once, over whatever it is showing: a star,
+  their name, what it was for, the stars towards their reward (the new ones popping in)
+  and how many more they need, with a chime unless the screen is asleep. Reaching the
+  reward is celebrated the more. It goes after six seconds or at a touch; one that comes
+  meanwhile waits its turn. Points taken away are not shown.
 - Points can also be given or taken by hand on the management page, with a reason.
   Everything that happens to anyone's points is listed there.
 
 With a PIN set, only ticking is open: approving, people, tasks, rewards, spending and
-giving points all need it. Without a PIN anyone at the frame can approve, so approval
+giving points (quick awards too) all need it. Without a PIN anyone at the frame can approve, so approval
 only means something once a PIN is set.
 
 ### Getting there
@@ -493,7 +510,7 @@ a value it would still have to check.
 | `device.rs` | The frame itself: Wi-Fi status, which screen is in front, room light, screen on and off. Has a stand-in for the simulator |
 | `night.rs` | Deciding when the screen should be off |
 | `weather.rs` | Finding a place by name and fetching its forecast from Open-Meteo |
-| `todo.rs`, `routes/todo.rs` | Things to do: people, tasks that come round or are done once, points and rewards |
+| `todo.rs`, `routes/todo.rs` | Things to do: people, tasks that come round or are done once, points, rewards and quick awards |
 | `travel.rs` | When to leave for an event: journeys from TfL, walks from an OpenStreetMap router, driving times from TomTom, places looked up by name |
 | `home.rs`, `routes/home.rs` | What the house's relay reports (alarm, sensors, cameras, doorbell), kept in memory |
 | `acts.rs`, `routes/acts.rs` | Actions on their way to the screen, what the screen says of itself, the radio stations, and the routes for Spotify |
@@ -554,6 +571,7 @@ Routes added for the screen and calendar:
 | `POST /api/todo/approve`, `/approval` | Credit a tick's points or turn it down; choose whether points wait for approval |
 | `POST /api/todo/people`, `/tasks`, `/rewards`, `/rules` | Keep exactly these people, tasks, rewards, or rules that make tasks of calendar events |
 | `POST /api/todo/redeem`, `/points` | Spend someone's points on a reward; give or take points by hand |
+| `POST /api/todo/awards`, `/award` | Keep exactly these quick awards; give someone one (the screen cheers it) |
 | `GET /api/map/{z}/{x}/{y}` | A square of the map, fetched from OpenStreetMap once and kept |
 | `GET /api/calendar?from=&to=` | Events in a window (seconds since 1970), feed status, added events |
 | `POST /api/calendars` | Set the subscribed calendar links |

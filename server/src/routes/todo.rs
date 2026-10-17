@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 
 use crate::app::{blocking, Shared};
 use crate::routes::{ApiError, ApiResult, Asked, Parsed};
-use crate::todo::{Happening, PersonGiven, RewardGiven, RuleGiven, TaskGiven, TodoError};
-use crate::types::{Day, EventId, PointChange, Title, Today};
+use crate::todo::{AwardGiven, Happening, PersonGiven, RewardGiven, RuleGiven, TaskGiven, TodoError};
+use crate::types::{Action, Cheer, Day, EventId, PointChange, Title, Today};
 
 #[derive(Deserialize)]
 pub(crate) struct TickRequest {
@@ -64,6 +64,17 @@ pub(crate) struct RedeemRequest {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct AwardsRequest {
+    pub(crate) awards: Vec<AwardGiven>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct AwardRequest {
+    pub(crate) who: EventId,
+    pub(crate) award: EventId,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct AdjustRequest {
     pub(crate) who: EventId,
     pub(crate) change: PointChange,
@@ -78,9 +89,11 @@ pub(crate) struct DayQuery {
 
 fn refused(error: &TodoError) -> ApiError {
     let status = match error {
-        TodoError::NoSuchPerson | TodoError::NoSuchTask | TodoError::NoSuchReward | TodoError::NothingWaiting => {
-            StatusCode::NOT_FOUND
-        }
+        TodoError::NoSuchPerson
+        | TodoError::NoSuchTask
+        | TodoError::NoSuchReward
+        | TodoError::NoSuchAward
+        | TodoError::NothingWaiting => StatusCode::NOT_FOUND,
         TodoError::WhoDidIt => StatusCode::BAD_REQUEST,
         TodoError::NotEnough { .. } | TodoError::TooMany(_) | TodoError::SameName => StatusCode::CONFLICT,
     };
@@ -116,11 +129,18 @@ fn happenings(app: &Shared, day: Day) -> Vec<Happening> {
     app.calendars.between(window).iter().filter_map(on_the_day).collect()
 }
 
-/// Make a change to the things to do, and tell the screen there is news.
-async fn change(app: Shared, work: impl FnOnce(&Shared) -> Result<(), TodoError> + Send + 'static) -> ApiResult {
+/// Make a change to the things to do, and tell the screen there is news: at once, when
+/// someone was given points that are to be celebrated.
+async fn change(
+    app: Shared,
+    work: impl FnOnce(&Shared) -> Result<Option<Cheer>, TodoError> + Send + 'static,
+) -> ApiResult {
     blocking(move || {
-        work(&app).map_err(|e| refused(&e))?;
+        let cheer = work(&app).map_err(|e| refused(&e))?;
         app.todo_changed();
+        if let Some(cheer) = cheer {
+            app.acts.tell(Action::Cheer(cheer));
+        }
         Ok(Json(json!({ "saved": true })))
     })
     .await
@@ -141,7 +161,7 @@ pub(crate) async fn approve_tick(State(app): State<Shared>, Parsed(request): Par
 pub(crate) async fn set_approval(State(app): State<Shared>, Parsed(request): Parsed<ApprovalRequest>) -> ApiResult {
     change(app, move |app| {
         app.todo.set_approval(request.on);
-        Ok(())
+        Ok(None)
     })
     .await
 }
@@ -158,30 +178,40 @@ pub(crate) async fn tick_task(State(app): State<Shared>, Parsed(request): Parsed
 }
 
 pub(crate) async fn save_people(State(app): State<Shared>, Parsed(request): Parsed<PeopleRequest>) -> ApiResult {
-    change(app, move |app| app.todo.set_people(request.people)).await
+    change(app, move |app| app.todo.set_people(request.people).map(|()| None)).await
 }
 
 pub(crate) async fn save_tasks(State(app): State<Shared>, Parsed(request): Parsed<TasksRequest>) -> ApiResult {
-    change(app, move |app| app.todo.set_tasks(request.tasks)).await
+    change(app, move |app| app.todo.set_tasks(request.tasks).map(|()| None)).await
 }
 
 /// Keep exactly these rules for making tasks of calendar events.
 pub(crate) async fn save_rules(State(app): State<Shared>, Parsed(request): Parsed<RulesRequest>) -> ApiResult {
-    change(app, move |app| app.todo.set_rules(request.rules)).await
+    change(app, move |app| app.todo.set_rules(request.rules).map(|()| None)).await
 }
 
 pub(crate) async fn save_rewards(State(app): State<Shared>, Parsed(request): Parsed<RewardsRequest>) -> ApiResult {
-    change(app, move |app| app.todo.set_rewards(request.rewards)).await
+    change(app, move |app| app.todo.set_rewards(request.rewards).map(|()| None)).await
 }
 
 /// Spend someone's points on a reward.
 pub(crate) async fn redeem(State(app): State<Shared>, Parsed(request): Parsed<RedeemRequest>) -> ApiResult {
-    change(app, move |app| app.todo.redeem(&request.who, &request.reward)).await
+    change(app, move |app| app.todo.redeem(&request.who, &request.reward).map(|()| None)).await
 }
 
 /// Give someone points or take some away, by hand.
 pub(crate) async fn adjust_points(State(app): State<Shared>, Parsed(request): Parsed<AdjustRequest>) -> ApiResult {
     change(app, move |app| app.todo.adjust(&request.who, request.change, &request.why)).await
+}
+
+/// Keep exactly these quick awards.
+pub(crate) async fn save_awards(State(app): State<Shared>, Parsed(request): Parsed<AwardsRequest>) -> ApiResult {
+    change(app, move |app| app.todo.set_awards(request.awards).map(|()| None)).await
+}
+
+/// Give someone a quick award; the screen celebrates it.
+pub(crate) async fn give_award(State(app): State<Shared>, Parsed(request): Parsed<AwardRequest>) -> ApiResult {
+    change(app, move |app| app.todo.award(&request.who, &request.award).map(Some)).await
 }
 
 /// For the screen's half-minute report: how many times the things to do have changed.

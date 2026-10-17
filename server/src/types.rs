@@ -1113,6 +1113,30 @@ pub enum Action {
     Note {
         say: Title,
     },
+    /// Celebrate points someone was given. Only the server tells the screen this, when the
+    /// points are credited: it cannot be asked for.
+    #[serde(skip_deserializing)]
+    Cheer(Cheer),
+}
+
+/// Someone was given points: what the screen shows to celebrate it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Cheer {
+    pub name: String,
+    /// What they were given the points for.
+    pub what: String,
+    pub points: i64,
+    /// What they have now.
+    pub has: i64,
+    /// The reward they are saving for; none when there are no rewards.
+    pub goal: Option<Goal>,
+}
+
+/// A reward someone is saving for, as the screen shows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Goal {
+    pub title: String,
+    pub cost: u32,
 }
 
 impl Action {
@@ -2249,9 +2273,15 @@ mod tests {
         assert_eq!(action(json!({ "do": "volume", "to": 100 })).unwrap(), Action::Volume { to: Loudness(100) });
         assert_eq!(action(json!({ "do": "timer", "minutes": 10 })).unwrap(), Action::Timer { minutes: Minutes(10) });
         assert!(action(json!({ "do": "note", "say": "Dinner is ready" })).is_ok());
+        let cheer = Cheer { name: "Ana".into(), what: "Kind words".into(), points: 1, has: 3, goal: None };
+        assert_eq!(
+            serde_json::to_value(Action::Cheer(cheer)).unwrap(),
+            json!({ "do": "cheer", "name": "Ana", "what": "Kind words", "points": 1, "has": 3, "goal": null })
+        );
         for bad in [
             json!({}),
             json!({ "do": "explode" }),
+            json!({ "do": "cheer", "name": "Ana", "what": "x", "points": 1, "has": 1, "goal": null }),
             json!({ "do": "show" }),
             json!({ "do": "show", "tab": "attic" }),
             json!({ "do": "volume", "to": 101 }),

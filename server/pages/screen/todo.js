@@ -4,9 +4,16 @@
 // Everything is kept by the frame's server, so tasks added from a phone or computer show
 // here and what is ticked here is seen there. Ticking needs no PIN: it asks for the task's
 // points, which are added when someone with the PIN approves (unless set not to wait).
-// Taking a reward takes the PIN too, if one is set. Loaded after screen.js and extras.js, whose helpers it uses.
+// Taking a reward takes the PIN too, if one is set. Each person's column shows how far they
+// are towards the reward they are saving for, and whenever someone is given points (a task,
+// a quick award from a phone, points by hand) the server has the screen cheer it, over
+// whatever is showing. Loaded after screen.js and extras.js, whose helpers it uses.
 
 const TODO_EVERY_MS = 20 * 1000;
+// A cheer stays this long unless touched away; one that comes meanwhile waits its turn.
+const CHEER_MS = 6000;
+// Up to this many points, how far someone is towards a reward is a row of stars; above, a bar.
+const MOST_STARS = 20;
 // A colour for each person, by their place in the list.
 const PERSON_COLOURS = ['#6cb6ff', '#f2a65a', '#7ee0a1', '#e58ad6', '#f2e36b', '#ff8f85', '#9aa5ff', '#5fd4d0'];
 
@@ -32,16 +39,17 @@ async function refreshTodo() {
 }
 
 const personById = (id) => (todo.people.filter((person) => person.id === id)[0] || null);
+const rewardById = (id) => (todo.rewards.filter((reward) => reward.id === id)[0] || null);
 const colourOf = (person) => PERSON_COLOURS[todo.people.indexOf(person) % PERSON_COLOURS.length];
 
 /// Tick a task, or take its tick away, and show what the server makes of it.
 async function tickTask(task, who) {
   try {
     await send('/api/todo/done', { task: task.id, day: todo.day, done: !task.done, who: who || null });
-    if (!task.done && task.points) {
+    // Points added at once are cheered, when the server says so; asked for, they are said here.
+    if (!task.done && task.points && todo.approval) {
       const person = personById(task.who || who), name = person ? person.name : '';
-      if (todo.approval) say('★ ' + task.points + ' asked for ' + name, 'They are added when a grown-up approves');
-      else say('+' + task.points + ' for ' + name, task.title);
+      say('★ ' + task.points + ' asked for ' + name, 'They are added when a grown-up approves');
     }
   } catch (error) {
     say('That did not work', error.message);
@@ -90,6 +98,13 @@ function drawTodo() {
       head.appendChild(element('span', 'points', '★ ' + column.person.points));
     }
     box.appendChild(head);
+    const aim = column.person && rewardById(column.person.aim);
+    if (aim && aim.cost) {
+      const goal = element('div', 'goal' + (column.person.points >= aim.cost ? ' ready' : ''), '');
+      goal.appendChild(element('div', 'for', goalText(column.person.points, aim)));
+      goal.appendChild(towards(column.person.points, aim.cost, 0));
+      box.appendChild(goal);
+    }
     const left = column.tasks.filter((task) => !task.done).length;
     column.tasks.forEach((task) => box.appendChild(taskRow(task)));
     if (!column.tasks.length) box.appendChild(element('div', 'none', 'Nothing today'));
@@ -239,6 +254,68 @@ $('pick-close').onclick = closePick;
 $('pick').addEventListener('click', (event) => {
   event.stopPropagation();
   touched();
+});
+
+// --- cheering: points someone was given, celebrated over whatever is on the screen --------
+
+let cheers = [];          // those waiting their turn
+let cheerTimer = null;
+
+/// What is left to save for a reward, or that it can be had.
+function goalText(has, reward) {
+  return has >= reward.cost ? reward.title + ' is ready!' : (reward.cost - has) + ' more for ' + reward.title;
+}
+
+/// How far someone is towards a reward that costs `cost`: a star for each point, or a bar
+/// for a dear one. The last `fresh` stars, just earned, pop in one after another.
+function towards(has, cost, fresh) {
+  const box = element('div', 'towards', '');
+  if (cost > MOST_STARS) {
+    const meter = element('div', 'meter', ''), fill = element('div', 'fill', '');
+    fill.style.width = Math.max(0, Math.min(100, (100 * has) / cost)) + '%';
+    meter.appendChild(fill);
+    box.appendChild(meter);
+    return box;
+  }
+  for (let i = 0; i < cost; i++) {
+    const got = i < has, just = got && i >= has - fresh;
+    const star = element('span', 'star' + (got ? ' got' : '') + (just ? ' new' : ''), '★');
+    if (just) star.style.animationDelay = (0.4 + 0.18 * (i - (has - fresh))) + 's';
+    box.appendChild(star);
+  }
+  return box;
+}
+
+function nextCheer() {
+  const box = $('cheer'), said = cheers.shift();
+  clearTimeout(cheerTimer);
+  box.classList.remove('on');
+  if (!said) return;
+  const goal = said.goal;
+  $('cheer-points').textContent = said.points > 0 ? '+' + said.points : 'Well done!';
+  $('cheer-name').textContent = said.name;
+  $('cheer-what').textContent = said.what;
+  $('cheer-towards').textContent = '';
+  if (goal && goal.cost) $('cheer-towards').appendChild(towards(said.has, goal.cost, said.points));
+  $('cheer-goal').textContent = goal ? goalText(said.has, goal) : '';
+  // Reaching the goal with these very points is cheered the more.
+  box.classList.toggle('ready', !!goal && said.has >= goal.cost && said.has - said.points < goal.cost);
+  void box.offsetWidth;  // so that the animations start again for a cheer after another
+  box.classList.add('on');
+  if (!asleep) playChime();
+  cheerTimer = setTimeout(nextCheer, CHEER_MS);
+}
+
+/// Celebrate points someone was given, as the server tells it: { name, what, points, has, goal }.
+function cheer(said) {
+  if (cheers.length < 10) cheers.push(said);
+  if (!$('cheer').classList.contains('on')) nextCheer();
+  refreshTodo();
+}
+$('cheer').addEventListener('click', (event) => {
+  event.stopPropagation();
+  touched();
+  nextCheer();
 });
 
 // The list is asked for when its tab is open, when the server says there is news, and when

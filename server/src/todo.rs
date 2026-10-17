@@ -5,7 +5,12 @@
 //! Ticking a task on the frame's screen asks for its points for whoever did it. They are
 //! credited when the tick is approved, which takes the PIN; or at once, if points are set
 //! not to wait for approval. Taking a tick away takes its points back. Points are spent
-//! on rewards.
+//! on rewards. Each person saves for one of them: the one chosen for them, or else the
+//! cheapest.
+//!
+//! Points can also be given at once for something done well that is no task: a quick
+//! award ("Shared a toy", 1 point) is given from a phone with a touch. Whenever someone is
+//! given points, the screen is told to celebrate it (a `Cheer`).
 //!
 //! Calendar events can be tasks too. A rule names the words to look for in the names of
 //! events, whose they are and what they are worth; every event with those words is then a
@@ -29,12 +34,13 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 use crate::store::{self, Config};
-use crate::types::{Day, EventId, PersonName, PointChange, Points, Title, Weekdays, Words};
+use crate::types::{Cheer, Day, EventId, Goal, PersonName, PointChange, Points, Title, Weekdays, Words};
 
 const MOST_PEOPLE: usize = 12;
 const MOST_TASKS: usize = 100;
 const MOST_REWARDS: usize = 40;
 const MOST_RULES: usize = 20;
+const MOST_AWARDS: usize = 40;
 /// How much of what has happened is remembered, newest last.
 const MOST_HISTORY: usize = 400;
 /// A task done once stays in the list, ticked, for the day it was done and is then dropped.
@@ -49,6 +55,8 @@ pub enum TodoError {
     NoSuchTask,
     #[error("there is no such reward")]
     NoSuchReward,
+    #[error("there is no such award")]
+    NoSuchAward,
     #[error("say who did it: this task is anyone's")]
     WhoDidIt,
     #[error("not enough points for that yet: {have} of {cost}")]
@@ -69,6 +77,9 @@ pub struct Person {
     /// What they have to spend. It can be below nothing if points were taken away.
     #[serde(default)]
     pub points: i64,
+    /// The reward they are saving for; when not chosen, the cheapest.
+    #[serde(default)]
+    pub goal: Option<EventId>,
 }
 
 /// When a task is to be done.
@@ -119,6 +130,14 @@ pub struct Reward {
     pub cost: Points,
 }
 
+/// Points to give at a touch for something done well, to whoever did it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Award {
+    pub id: EventId,
+    pub title: Title,
+    pub points: Points,
+}
+
 /// That a task was done on a day, by whom, and what it earned them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Tick {
@@ -162,6 +181,7 @@ impl Default for Kept {
             history: Vec::new(),
             approval: true,
             rules: Vec::new(),
+            awards: Vec::new(),
         }
     }
 }
@@ -184,6 +204,8 @@ struct Kept {
     /// The rules that make tasks of calendar events.
     #[serde(default)]
     rules: Vec<EventRule>,
+    #[serde(default)]
+    awards: Vec<Award>,
 }
 
 /// What the page sends to keep the list of people: those with an id are kept (and may be
@@ -193,6 +215,9 @@ pub struct PersonGiven {
     #[serde(default)]
     pub id: Option<EventId>,
     pub name: PersonName,
+    /// The reward they are saving for; the cheapest when not given.
+    #[serde(default)]
+    pub goal: Option<EventId>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,6 +249,14 @@ pub struct RewardGiven {
     pub id: Option<EventId>,
     pub title: Title,
     pub cost: Points,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AwardGiven {
+    #[serde(default)]
+    pub id: Option<EventId>,
+    pub title: Title,
+    pub points: Points,
 }
 
 pub struct Todo {
@@ -262,6 +295,20 @@ impl Kept {
         let extra = self.history.len().saturating_sub(MOST_HISTORY);
         self.history.drain(..extra);
         Ok(())
+    }
+
+    /// The reward someone is saving for: the one chosen for them, or else the cheapest.
+    fn goal(&self, person: &Person) -> Option<&Reward> {
+        let chosen = person.goal.as_ref().and_then(|goal| self.rewards.iter().find(|reward| reward.id == *goal));
+        chosen.or_else(|| self.rewards.iter().min_by_key(|reward| reward.cost.get()))
+    }
+
+    /// What the screen shows to celebrate points given to someone, now that they have them.
+    fn cheer(&self, who: &EventId, points: i64, what: &str) -> Option<Cheer> {
+        let person = self.people.iter().find(|person| person.id == *who)?;
+        let goal =
+            self.goal(person).map(|reward| Goal { title: reward.title.as_str().to_string(), cost: reward.cost.get() });
+        Some(Cheer { name: person.name.as_str().to_string(), what: what.to_string(), points, has: person.points, goal })
     }
 
     /// Whether a task is in the list for a day: it comes round on that day of the week, or
@@ -373,22 +420,38 @@ impl Todo {
                 && kept.ticks.iter().any(|tick| tick.task == task.id && tick.paid && tick.day < day)
         };
         let tasks: Vec<&Task> = kept.tasks.iter().filter(|task| !finished(task)).collect();
+        // With each person, the reward they are saving for (`aim`), chosen or not.
+        let people: Vec<Value> = kept
+            .people
+            .iter()
+            .map(|person| {
+                let mut shown = json!(person);
+                shown["aim"] = json!(kept.goal(person).map(|reward| &reward.id));
+                shown
+            })
+            .collect();
         json!({
-            "day": day, "people": kept.people, "tasks": tasks, "rewards": kept.rewards,
+            "day": day, "people": people, "tasks": tasks, "rewards": kept.rewards,
             "today": today, "history": history, "waiting": waiting, "approval": kept.approval,
-            "rules": kept.rules,
+            "rules": kept.rules, "awards": kept.awards,
         })
     }
 
     /// Tick a task for a day, or take its tick away. `who` says who did it, which a task
     /// that is somebody's own does not need. Blocking: it is saved.
     #[cfg(test)]
-    pub fn tick(&self, task: &EventId, day: Day, done: bool, who: Option<&EventId>) -> Result<(), TodoError> {
+    pub fn tick(
+        &self,
+        task: &EventId,
+        day: Day,
+        done: bool,
+        who: Option<&EventId>,
+    ) -> Result<Option<Cheer>, TodoError> {
         self.tick_with(task, day, done, who, &[])
     }
 
     /// The same, with what is on the calendar that day, so a calendar event that is a task
-    /// can be ticked.
+    /// can be ticked. Points credited at once are to be celebrated.
     pub fn tick_with(
         &self,
         task: &EventId,
@@ -396,7 +459,7 @@ impl Todo {
         done: bool,
         who: Option<&EventId>,
         happenings: &[Happening],
-    ) -> Result<(), TodoError> {
+    ) -> Result<Option<Cheer>, TodoError> {
         let mut kept = self.kept();
         kept.tidy(day);
         let ours = kept.tasks.iter().find(|t| t.id == *task).cloned();
@@ -410,6 +473,7 @@ impl Todo {
         });
         let found = ours.or_else(of_the_calendar).or(ticked_title).ok_or(TodoError::NoSuchTask)?;
         let ticked = kept.ticks.iter().position(|tick| tick.task == *task && tick.day == day);
+        let mut cheer = None;
         match (done, ticked) {
             (true, None) => {
                 let who = found.who.as_ref().or(who).ok_or(TodoError::WhoDidIt)?.clone();
@@ -418,6 +482,7 @@ impl Todo {
                 let paid = !kept.approval || points == 0;
                 if paid {
                     kept.credit(&who, i64::from(points), found.title.as_str().to_string())?;
+                    cheer = kept.cheer(&who, i64::from(points), found.title.as_str()).filter(|_| points > 0);
                 } else {
                     kept.person(&who)?;
                 }
@@ -428,7 +493,7 @@ impl Todo {
                 let tick = kept.ticks.remove(at);
                 if !tick.paid {
                     self.save(&kept);
-                    return Ok(());
+                    return Ok(None);
                 }
                 // Whoever was given the points may be gone; then there is nothing to take back.
                 let _ = kept.credit(
@@ -437,29 +502,32 @@ impl Todo {
                     format!("Not done after all: {}", found.title.as_str()),
                 );
             }
-            _ => return Ok(()),
+            _ => return Ok(None),
         }
         self.save(&kept);
-        Ok(())
+        Ok(cheer)
     }
 
     /// Approve a tick that is waiting, crediting its points; or turn it down, which takes
-    /// the tick away so the task is to do again. Blocking.
-    pub fn approve(&self, task: &EventId, day: Day, approve: bool) -> Result<(), TodoError> {
+    /// the tick away so the task is to do again. Points credited are to be celebrated.
+    /// Blocking.
+    pub fn approve(&self, task: &EventId, day: Day, approve: bool) -> Result<Option<Cheer>, TodoError> {
         let mut kept = self.kept();
+        let mut cheer = None;
         let waiting = |tick: &Tick| tick.task == *task && tick.day == day && !tick.paid;
         let at = kept.ticks.iter().position(waiting).ok_or(TodoError::NothingWaiting)?;
         if approve {
             let (who, points) = (kept.ticks[at].who.clone(), i64::from(kept.ticks[at].points));
             let known = kept.tasks.iter().find(|t| t.id == *task).map(|t| t.title.as_str().to_string());
             let title = kept.ticks[at].title.clone().or(known).unwrap_or_default();
-            kept.credit(&who, points, title)?;
+            kept.credit(&who, points, title.clone())?;
             kept.ticks[at].paid = true;
+            cheer = kept.cheer(&who, points, &title);
         } else {
             kept.ticks.remove(at);
         }
         self.save(&kept);
-        Ok(())
+        Ok(cheer)
     }
 
     /// Whether points wait to be approved. Turning that off credits whatever is waiting.
@@ -491,13 +559,17 @@ impl Todo {
         let mut kept = self.kept();
         let mut people: Vec<Person> = Vec::new();
         for one in given {
+            if one.goal.as_ref().is_some_and(|goal| kept.rewards.iter().all(|reward| reward.id != *goal)) {
+                return Err(TodoError::NoSuchReward);
+            }
             if people.iter().any(|person| person.name.as_str().eq_ignore_ascii_case(one.name.as_str())) {
                 return Err(TodoError::SameName);
             }
             let known = one.id.as_ref().and_then(|id| kept.people.iter().find(|person| person.id == *id));
             let taken: Vec<&EventId> = kept.people.iter().chain(&people).map(|person| &person.id).collect();
             let id = known.map_or_else(|| new_id(one.name.as_str(), &taken), |person| person.id.clone());
-            people.push(Person { id, name: one.name, points: known.map_or(0, |person| person.points) });
+            let points = known.map_or(0, |person| person.points);
+            people.push(Person { id, name: one.name, points, goal: one.goal });
         }
         // A task whose person is gone becomes anyone's.
         for task in &mut kept.tasks {
@@ -554,6 +626,12 @@ impl Todo {
             let id = known.unwrap_or_else(|| new_id(one.title.as_str(), &taken));
             rewards.push(Reward { id, title: one.title, cost: one.cost });
         }
+        // Whoever was saving for a reward that is gone saves for the cheapest.
+        for person in &mut kept.people {
+            if person.goal.as_ref().is_some_and(|goal| rewards.iter().all(|reward| reward.id != *goal)) {
+                person.goal = None;
+            }
+        }
         kept.rewards = rewards;
         self.save(&kept);
         Ok(())
@@ -595,12 +673,45 @@ impl Todo {
         Ok(())
     }
 
-    /// Give someone points, or take some away, for a reason. Blocking.
-    pub fn adjust(&self, who: &EventId, change: PointChange, why: &Title) -> Result<(), TodoError> {
+    /// Give someone points, or take some away, for a reason. Points given are to be
+    /// celebrated. Blocking.
+    pub fn adjust(&self, who: &EventId, change: PointChange, why: &Title) -> Result<Option<Cheer>, TodoError> {
         let mut kept = self.kept();
-        kept.credit(who, i64::from(change.get()), why.as_str().to_string())?;
+        let change = i64::from(change.get());
+        kept.credit(who, change, why.as_str().to_string())?;
+        let cheer = kept.cheer(who, change, why.as_str()).filter(|_| change > 0);
+        self.save(&kept);
+        Ok(cheer)
+    }
+
+    /// Keep exactly these quick awards. Blocking.
+    pub fn set_awards(&self, given: Vec<AwardGiven>) -> Result<(), TodoError> {
+        if given.len() > MOST_AWARDS {
+            return Err(TodoError::TooMany(MOST_AWARDS));
+        }
+        let mut kept = self.kept();
+        let mut awards: Vec<Award> = Vec::new();
+        for one in given {
+            let known = one.id.filter(|id| kept.awards.iter().any(|award| award.id == *id));
+            let taken: Vec<&EventId> = kept.awards.iter().chain(&awards).map(|award| &award.id).collect();
+            let id = known.unwrap_or_else(|| new_id(one.title.as_str(), &taken));
+            awards.push(Award { id, title: one.title, points: one.points });
+        }
+        kept.awards = awards;
         self.save(&kept);
         Ok(())
+    }
+
+    /// Give someone a quick award: its points, and a celebration, even for an award worth
+    /// none. Blocking.
+    pub fn award(&self, who: &EventId, award: &EventId) -> Result<Cheer, TodoError> {
+        let mut kept = self.kept();
+        let award = kept.awards.iter().find(|a| a.id == *award).ok_or(TodoError::NoSuchAward)?.clone();
+        let points = i64::from(award.points.get());
+        kept.credit(who, points, award.title.as_str().to_string())?;
+        let cheer = kept.cheer(who, points, award.title.as_str()).ok_or(TodoError::NoSuchPerson)?;
+        self.save(&kept);
+        Ok(cheer)
     }
 }
 
@@ -720,6 +831,54 @@ mod tests {
         let renamed = json!([{ "id": film, "title": "Cinema", "cost": 50 }]);
         todo.set_rewards(from_value(renamed).unwrap()).unwrap();
         assert_eq!(todo.view(day("2026-10-13"))["rewards"], json!([{ "id": film, "title": "Cinema", "cost": 50 }]));
+    }
+
+    #[test]
+    fn quick_awards_give_points_at_a_touch_and_are_cheered_towards_a_goal() {
+        let (todo, frame, ana, rui) = household("todo-awards");
+        let awards = json!([{ "title": "Shared a toy", "points": 1 }, { "title": "Well done", "points": 0 }]);
+        todo.set_awards(from_value(awards).unwrap()).unwrap();
+        let rewards = json!([{ "title": "Ice cream", "cost": 5 }, { "title": "Sticker", "cost": 2 }]);
+        todo.set_rewards(from_value(rewards).unwrap()).unwrap();
+        let view = todo.view(day("2026-10-13"));
+        let id = |list: &str, at: usize| from_value::<EventId>(view[list][at]["id"].clone()).unwrap();
+        let (shared, praise, ice, sticker) = (id("awards", 0), id("awards", 1), id("rewards", 0), id("rewards", 1));
+        assert_eq!(view["people"][0]["aim"], json!(sticker), "with nothing chosen, the cheapest");
+
+        let cheer = todo.award(&ana, &shared).unwrap();
+        let goal = Some(Goal { title: "Sticker".into(), cost: 2 });
+        assert_eq!(cheer, Cheer { name: "Ana".into(), what: "Shared a toy".into(), points: 1, has: 1, goal });
+        assert_eq!(todo.award(&ana, &praise).unwrap().points, 0, "praise worth no points is cheered all the same");
+        assert_eq!(todo.view(day("2026-10-13"))["history"][1]["what"], "Shared a toy");
+        assert_eq!(todo.award(&ana, &ana), Err(TodoError::NoSuchAward));
+        assert_eq!(todo.award(&shared, &shared), Err(TodoError::NoSuchPerson));
+
+        // Chosen for Rui, his goal is the ice cream; when it goes, he saves for the cheapest.
+        let people = json!([{ "id": ana, "name": "Ana" }, { "id": rui, "name": "Rui", "goal": ice }]);
+        todo.set_people(from_value(people).unwrap()).unwrap();
+        assert_eq!(todo.award(&rui, &shared).unwrap().goal, Some(Goal { title: "Ice cream".into(), cost: 5 }));
+        assert_eq!(Todo::load(&frame.0).view(day("2026-10-13"))["people"][1]["aim"], json!(ice), "it is kept");
+        todo.set_rewards(from_value(json!([{ "id": sticker, "title": "Sticker", "cost": 2 }])).unwrap()).unwrap();
+        let view = todo.view(day("2026-10-13"));
+        assert_eq!((&view["people"][1]["goal"], &view["people"][1]["aim"]), (&Value::Null, &json!(sticker)));
+        let unknown = json!([{ "name": "Ana", "goal": ice }]);
+        assert_eq!(todo.set_people(from_value(unknown).unwrap()), Err(TodoError::NoSuchReward));
+
+        // Points given by hand, or credited for a task, are cheered; points taken are not.
+        let why = Title::parse("Tidied up").unwrap();
+        assert_eq!(todo.adjust(&rui, PointChange::new(3).unwrap(), &why).unwrap().unwrap().has, 4);
+        assert_eq!(todo.adjust(&rui, PointChange::new(-1).unwrap(), &why).unwrap(), None);
+        let tasks = json!([{ "title": "Brush teeth", "who": ana, "points": 2, "repeat": { "once": null } }]);
+        todo.set_tasks(from_value(tasks).unwrap()).unwrap();
+        let teeth = task_id(&todo, "Brush teeth");
+        assert_eq!(todo.tick(&teeth, day("2026-10-13"), true, None).unwrap().unwrap().has, 3);
+        assert_eq!(todo.tick(&teeth, day("2026-10-13"), false, None).unwrap(), None);
+        todo.set_approval(true);
+        assert_eq!(todo.tick(&teeth, day("2026-10-13"), true, None).unwrap(), None, "only asked for");
+        assert_eq!(todo.approve(&teeth, day("2026-10-13"), true).unwrap().unwrap().what, "Brush teeth");
+
+        let many: Vec<Value> = (0..41).map(|n| json!({ "title": format!("Award {n}"), "points": 1 })).collect();
+        assert_eq!(todo.set_awards(from_value(json!(many)).unwrap()), Err(TodoError::TooMany(40)));
     }
 
     #[test]
