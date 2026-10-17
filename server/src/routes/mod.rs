@@ -43,6 +43,7 @@ use crate::routes::todo::{
     adjust_points, approve_tick, give_award, redeem, save_awards, save_people, save_rewards, save_rules, save_tasks,
     set_approval, tick_task, todo_view,
 };
+use crate::routes::yoto::{save_yoto_key, yoto_view};
 use crate::{auth, store};
 
 pub(crate) mod access;
@@ -53,6 +54,7 @@ pub(crate) mod home;
 pub(crate) mod pages;
 pub(crate) mod photos;
 pub(crate) mod todo;
+pub(crate) mod yoto;
 
 pub(crate) const MAX_BODY: usize = 60 * 1024 * 1024;
 pub(crate) const NO_STORE: HeaderValue = HeaderValue::from_static("no-store");
@@ -247,6 +249,8 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/home/report", post(home_report))
         .route("/api/home/key", post(new_home_key))
         .route("/api/home/forget", post(forget_home))
+        .route("/api/yoto", get(yoto_view))
+        .route("/api/yoto/key", post(save_yoto_key))
         .route("/api/duplicates", get(duplicates))
         .route("/api/analyse", post(analyse))
         .route("/api/watching", post(watching))

@@ -22,7 +22,9 @@
             corner of the pictures, and a touch on it, or a setting, gives it the
             whole screen), and Home: the house's alarm, sensors and cameras (home.js and
             home.css), there only once the house is connected. A ringing doorbell shows
-            over any tab.
+            over any tab. And Yoto: how much listening time each Yoto player has left
+            today, as a disc that shrinks, for a small child to see (yoto.js and
+            yoto.css), there only once Yoto Limiter can be read.
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
             asked for each time Settings is opened, on a keypad on the screen.
 
@@ -63,11 +65,12 @@
 <link rel="stylesheet" href="screen.css">
 <link rel="stylesheet" href="utilities.css">
 <link rel="stylesheet" href="home.css">
+<link rel="stylesheet" href="yoto.css">
 <link rel="stylesheet" href="music.css">
 <link rel="stylesheet" href="extras.css">
 <link rel="stylesheet" href="todo.css">
 </head>
-<body class="no-home" data-tab="pictures" data-view="month" data-part="pictures">
+<body class="no-home no-yoto" data-tab="pictures" data-view="month" data-part="pictures">
 
 <div class="view" id="pictures">
   <div class="slide" id="a"></div>
@@ -180,7 +183,7 @@
 <div class="view" id="utilities">
   <div class="top"><h1>Utilities</h1><div class="now" id="now-too"></div></div>
   <div class="switch" id="tools">
-    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button>
+    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button><button data-tool="yoto" data-icon="yoto">Yoto</button>
   </div>
 
   <div class="part" id="tool-timers">
@@ -215,6 +218,11 @@
       <div id="house-sensors"></div>
     </div>
     <div class="cameras" id="cameras"></div>
+  </div>
+
+  <div class="part" id="tool-yoto">
+    <p id="yoto-note"></p>
+    <div class="players" id="yoto-players"></div>
   </div>
 
   <div class="part" id="tool-pomodoro">
@@ -334,6 +342,7 @@
 <script src="screen.js"></script>
 <script src="utilities.js"></script>
 <script src="home.js"></script>
+<script src="yoto.js"></script>
 <script src="music.js"></script>
 <script src="actions.js"></script>
 <script src="extras.js"></script>

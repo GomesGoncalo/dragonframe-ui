@@ -11,7 +11,7 @@ use crate::app::{blocking, now_secs, Moment, Shared, DAY};
 use crate::routes::photos::{start_sync, BIN_DAYS};
 use crate::store::Settings;
 use crate::types::Screen;
-use crate::{device, faces, gphotos, index, night, store};
+use crate::{device, faces, gphotos, index, night, store, yoto};
 
 /// The face models are dropped after this long without use.
 const MODELS_IDLE: Duration = Duration::from_mins(5);
@@ -269,4 +269,5 @@ pub(crate) async fn start(app: &Shared) {
     tokio::spawn(fall_back_if_quiet(Arc::clone(app)));
     tokio::spawn(keep_night(Arc::clone(app)));
     tokio::spawn(Arc::clone(&app.spotify).run(Arc::clone(&app.cfg)));
+    tokio::spawn(Arc::clone(&app.yoto).keep_following(yoto::stream_client(), Arc::clone(&app.cfg)));
 }

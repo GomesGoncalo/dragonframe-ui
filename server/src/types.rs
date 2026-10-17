@@ -1476,6 +1476,42 @@ impl<'de> Deserialize<'de> for RoadsKey {
     }
 }
 
+/// A key for Yoto Limiter's API, as made in its app (Settings, API keys): `yl_` and then 8 to
+/// 200 letters, digits, dashes and underscores. The frame only ever reads with it, so a key
+/// with the `read` scope alone is enough. It is kept on the frame and never handed back out.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct YotoKey(String);
+
+impl YotoKey {
+    pub fn parse(text: &str) -> Option<YotoKey> {
+        let text = text.trim();
+        let rest = text.strip_prefix("yl_")?;
+        let usable = (8..=200).contains(&rest.len())
+            && rest.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
+        usable.then(|| YotoKey(text.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A key is never printed in logs or debug output.
+impl fmt::Debug for YotoKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("YotoKey(****)")
+    }
+}
+
+impl<'de> Deserialize<'de> for YotoKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        YotoKey::parse(&text)
+            .ok_or_else(|| de::Error::custom("that does not look like a Yoto Limiter key, which starts with yl_"))
+    }
+}
+
 /// How someone gets to an event: every event with this name and this location is reached
 /// this way. The frame works out when to leave and says so ahead of time.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
@@ -2406,6 +2442,17 @@ mod tests {
         for bad in ["", "short", "has spaces in the middle of it", "semi;colon;semi;colon;semi"] {
             assert_eq!(RoadsKey::parse(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_yoto_limiter_key_starts_with_yl_and_is_never_printed() {
+        let key = YotoKey::parse(" yl_AbCdEf0123456789-_xyz ").unwrap();
+        assert_eq!(key.as_str(), "yl_AbCdEf0123456789-_xyz");
+        assert_eq!(format!("{key:?}"), "YotoKey(****)");
+        for bad in ["", "yl_", "yl_short", "AbCdEf0123456789xyz", "yl_has spaces in it", "yl_semi;colon;semi"] {
+            assert_eq!(YotoKey::parse(bad), None, "{bad:?}");
+        }
+        assert!(serde_json::from_value::<YotoKey>(json!("nope")).unwrap_err().to_string().contains("yl_"));
     }
 
     #[test]

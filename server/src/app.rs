@@ -18,7 +18,8 @@ use crate::todo::Todo;
 use crate::travel::Travel;
 use crate::types::Screen;
 use crate::weather::Weather;
-use crate::{auth, faces, gphotos, radio, spotify, store, weather};
+use crate::yoto::Yoto;
+use crate::{auth, faces, gphotos, radio, spotify, store, weather, yoto};
 
 pub(crate) const DAY: u64 = 24 * 60 * 60;
 
@@ -61,6 +62,8 @@ pub(crate) struct App {
     pub(crate) radio: Radio,
     /// The frame as a speaker for Spotify's apps.
     pub(crate) spotify: Arc<Spotify>,
+    /// How much listening time the Yoto players have left, as Yoto Limiter says.
+    pub(crate) yoto: Arc<Yoto>,
     /// How many times the calendar has been changed from the page (an event, a calendar, a
     /// rule, a trip), so the screen can tell there is something new to fetch.
     pub(crate) calendar_changes: AtomicU64,
@@ -124,6 +127,7 @@ impl App {
             acts: Acts::default(),
             radio: Radio::new(radio::STATIONS_URL),
             spotify,
+            yoto: Arc::new(Yoto::new(&std::env::var("FRAME_YOTO_URL").unwrap_or_else(|_| yoto::YOTO_URL.into()))),
             calendar_changes: AtomicU64::new(0),
             todo_changes: AtomicU64::new(0),
         })

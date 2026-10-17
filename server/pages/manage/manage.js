@@ -882,6 +882,10 @@ async function loadFrame() {
   setText($("frHouse"), !d.home ? "The house is not connected." : d.home_in_touch ? "The house is connected and its relay is in touch." : "The house is connected, but its relay has not been heard from in the last minute and a half.");
   setText($("frConnect"), d.home ? "Make a new key" : "Connect the house");
   show($("frDisconnect"), d.home);
+  const yt = d.yoto_now, players = yt.players.map(p => p.name).join(", ");
+  setText($("ytSaid"), !d.yoto ? "Not set up." : yt.problem ? `Set up, but: ${yt.problem}.` : !yt.in_touch ? "Set up; waiting to hear from Yoto Limiter." : yt.players.length ? `Reading Yoto Limiter. Players: ${players}.` : "Reading Yoto Limiter, which lists no players for this account.");
+  setText($("ytSave"), d.yoto ? "Use a new key" : "Use this key");
+  show($("ytForget"), d.yoto);
   setText($("frLight"), typeof d.light === "number" ? `The room now measures ${Math.round(d.light)} lux. Under 4 counts as dark.` : "");
   const place = d.place ? `Showing the weather for ${d.place}.` : "No place chosen, so no weather is shown.";
   setText($("frPlace"), w.now ? `${place} Now ${Math.round(w.now.temp)}°.` : place);
@@ -1059,6 +1063,14 @@ $("frConnect").onclick = async () => {
   } catch (e) { toast(e.message); }
   loadFrame();
 };
+async function saveYotoKey(key) {
+  $("ytSave").disabled = true;
+  try { await api("/api/yoto/key", { key }); toast(key ? "Key saved. Yoto is now in Utilities on the frame." : "The key is forgotten. Yoto is gone from the frame."); $("ytKey").value = ""; } catch (e) { toast(e.message); }
+  $("ytSave").disabled = false; loadFrame();
+}
+$("ytSave").onclick = () => { const key = $("ytKey").value.trim(); if (key) saveYotoKey(key); else { toast("Paste the key first."); $("ytKey").focus(); } };
+$("ytKey").onkeydown = e => { if (e.key === "Enter") $("ytSave").onclick(); };
+$("ytForget").onclick = () => { if (confirm("Forget the Yoto Limiter key? Yoto goes from the frame's Utilities.")) saveYotoKey(null); };
 $("frDisconnect").onclick = () => { if (confirm("Disconnect the house? The frame forgets what it knew and stops listening to the relay.")) { show($("frKey"), false); saveFrame("/api/home/forget", {}, "The house is disconnected."); } };
 for (const button of document.querySelectorAll("[data-act]")) button.onclick = () => tell(JSON.parse(button.dataset.act));
 $("rcPause").onclick = () => tell({ do: acting && acting.said && acting.said.paused ? "resume" : "pause" });

@@ -1,0 +1,50 @@
+/* How Yoto looks, a part of the Utilities tab: a disc for each Yoto player that shrinks as
+   its listening time is used, big enough to see from across the room. */
+body[data-tool="yoto"] #tool-yoto { display: block; }
+/* Until Yoto Limiter can be read there is no Yoto to go to. */
+body.no-yoto [data-tool="yoto"] { display: none; }
+
+#yoto-note { margin: 0 0 1.4vmin; font-size: 2.5vmin; color: var(--orange); text-align: center; }
+#yoto-note:empty { display: none; }
+
+.players { text-align: center; white-space: nowrap; }
+.player { display: inline-block; vertical-align: top; white-space: normal; width: 46%; margin: 0 1.5%; }
+.players.count-1 .player { width: 80%; }
+.players.count-3 .player { width: 30%; }
+.player .name { font-size: 3.6vmin; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player .offline { margin-left: 1.6vmin; padding: .2vmin 1.2vmin; border-radius: 1vmin; font-size: 2vmin; font-weight: 400; background: var(--press); color: var(--soft); vertical-align: middle; }
+
+.player .face { margin: 1.4vmin auto 1.2vmin; width: 44vmin; height: 44vmin; }
+.players.count-3 .player .face { width: 36vmin; height: 36vmin; }
+.disc { display: block; width: 100%; height: 100%; }
+.disc .used { fill: var(--panel); stroke: var(--line); stroke-width: .8; }
+.disc .left { fill: var(--green); }
+.disc.nearly .left { fill: var(--orange); }
+.disc.last .left { fill: var(--red); }
+.disc.resting .left { fill: var(--blue); opacity: .55; }
+.disc .hub { fill: var(--bg); }
+.disc .middle { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.disc .middle circle, .disc .middle .go { fill: var(--ink); }
+.disc .middle.sleeping path { fill: var(--gold); stroke: var(--gold); }
+.disc .middle.sleeping .star { stroke-width: .6; }
+
+/* The notes bob up and down, one after the other, while the player plays. */
+@keyframes yoto-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.6px); } }
+.disc .tune { animation: yoto-bob 1.2s ease-in-out infinite; }
+.disc .tune.two { animation-delay: .6s; }
+
+.player .said { font-size: 4.6vmin; font-weight: 300; }
+.player.nearly .said { color: var(--orange); }
+.player.last .said { color: var(--red); }
+.player .more { margin-top: .6vmin; font-size: 2.4vmin; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Standing up, two to a row, or one large. */
+@media (orientation: portrait) {
+  .players { white-space: normal; }
+  .player, .players.count-3 .player { width: 47%; margin: 0 1.5% 4vmin; }
+  .players.count-1 .player { width: 100%; }
+  .player .face, .players.count-3 .player .face { width: 38vmin; height: 38vmin; }
+  .players.count-1 .player .face { width: 60vmin; height: 60vmin; }
+  .player .said { font-size: 4vmin; }
+  .player .more { white-space: normal; }
+}

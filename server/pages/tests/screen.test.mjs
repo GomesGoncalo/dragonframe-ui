@@ -26,6 +26,12 @@ describe('loading', () => {
     assert.deepEqual(page.errors, []);
   });
 
+  test('Yoto is not offered in Utilities until Yoto Limiter can be read', async () => {
+    await until('the server being heard', () => page.eval('heard'));
+    assert.equal(await page.eval('document.body.classList.contains("no-yoto")'), true);
+    assert.equal(await page.eval('getComputedStyle(document.querySelector("[data-tool=yoto]")).display'), 'none');
+  });
+
   test('with no photos it says it is waiting for them', async () => {
     await until('the notice', () => page.eval('$("notice").textContent.includes("No photos")'));
   });

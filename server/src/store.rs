@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 
 use crate::types::{
     hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Reminder, Restore, RoadsKey, Screen,
-    Slideshow, Source, Spot, Station, SyncedName, Trip, SYNC_SUBDIR,
+    Slideshow, Source, Spot, Station, SyncedName, Trip, YotoKey, SYNC_SUBDIR,
 };
 
 const MEDIA_URI: &str = "content://media/external/images/media";
@@ -546,6 +546,8 @@ pub struct Settings {
     pub stations: Vec<Station>,
     /// Whether Spotify's apps may play on the frame.
     pub spotify: bool,
+    /// The key for reading Yoto Limiter: how much listening time the Yoto players have left.
+    pub yoto_key: Option<YotoKey>,
 }
 
 /// How the most recent sync went.
@@ -617,6 +619,7 @@ impl Settings {
                 .filter_map(|station| serde_json::from_value(station.clone()).ok())
                 .collect(),
             spotify: saved["spotify"].as_bool().unwrap_or(false),
+            yoto_key: saved["yoto_key"].as_str().and_then(YotoKey::parse),
         }
     }
 
@@ -644,6 +647,7 @@ impl Settings {
             "roads_key": self.roads_key,
             "stations": self.stations,
             "spotify": self.spotify,
+            "yoto_key": self.yoto_key,
         })
     }
 }
@@ -1043,6 +1047,7 @@ mod tests {
             ]))
             .unwrap(),
             spotify: true,
+            yoto_key: YotoKey::parse("yl_0123456789abcdefABCDEF"),
         };
         save_settings(&frame.0, &settings);
         assert_eq!(load_settings(&frame.0), settings);

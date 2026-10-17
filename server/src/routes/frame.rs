@@ -56,6 +56,9 @@ pub(crate) async fn device_view(State(app): State<Shared>) -> Json<Value> {
                 // Whether the house is connected (a key was given out), and whether its relay is in touch.
                 "home": settings.home_key.is_some(),
                 "home_in_touch": app.home.view()["connected"],
+                // Whether Yoto Limiter is read (a key is kept), and how that is going.
+                "yoto": settings.yoto_key.is_some(),
+                "yoto_now": app.yoto.view(),
                 "address": wifi.as_ref().and_then(|wifi| wifi.address.as_deref()).map(|at| manage_address(at, app.port)),
                 "wifi": wifi,
                 "screen": settings.screen,
@@ -119,6 +122,8 @@ pub(crate) async fn alive(State(app): State<Shared>, Query(query): Query<HashMap
         "asleep": asleep,
         "weather": weather,
         "home": settings.home_key.is_some(),
+        // Yoto, in Utilities, likewise once Yoto Limiter can be read.
+        "yoto": settings.yoto_key.is_some(),
         // Whether changing anything, a photo's mark included, takes the PIN.
         "pin": settings.protection.is_some(),
         "reminders": settings.reminders,

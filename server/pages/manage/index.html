@@ -328,6 +328,16 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
       </div>
     </div>
     <div class="card narrow">
+      <h2>Yoto</h2>
+      <p class="muted" id="ytSaid"></p>
+      <p class="muted">The frame can show how much listening time each Yoto player has left today, as a disc that shrinks, in Utilities on its screen. It reads this from Yoto Limiter with an API key (Plus; in its app: Settings, API keys). The frame only reads, so make the key with the <b>read</b> scope alone. Pausing and adding time stay in Yoto Limiter's app. The key is kept on the frame and never shown again.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="password" id="ytKey" maxlength="210" placeholder="yl_…" autocomplete="off" aria-label="Yoto Limiter API key">
+        <button class="btn" id="ytSave">Use this key</button>
+        <button class="btn danger hidden" id="ytForget">Forget the key</button>
+      </div>
+    </div>
+    <div class="card narrow">
       <h2>Night</h2>
       <p class="muted">The frame switches its screen off for the night and back on in the morning. It can also go dark whenever the room does. A frame that was touched in the last five minutes stays on.</p>
       <label class="row"><input type="checkbox" id="frNight"> <span>Switch the screen off at night</span></label>

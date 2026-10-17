@@ -93,6 +93,8 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   is there over whatever tab is open, switching the screen on if night mode has it off.
   The frame only shows these things; it cannot arm or disarm anything. See
   [The house](#the-house).
+  And **Yoto**, once a Yoto Limiter key is given: how much listening time each Yoto
+  player has left today, as a disc that shrinks, for a small child to see. See [Yoto](#yoto).
 - **Settings**, in five parts. If a PIN is set, a keypad asks for it each time Settings
   is opened, and nothing is shown until it is right:
   - Pictures: which photos to show (everything, only the favourites, or one of the
@@ -351,6 +353,30 @@ Setting it up:
 The relay picks devices by what Home Assistant says they are, so it is not tied to eufy:
 alarm panels, door and window sensors, motion sensors, cameras that publish an "event
 image", and anything that reports "ringing".
+
+### Yoto
+
+Utilities can show how much listening time each Yoto player has left today, from
+[Yoto Limiter](https://yoto-limiter.com/developers). It is drawn for a small child: each
+player is a disc that shrinks as its time is used, like a children's kitchen timer. The disc is
+green while there is plenty, orange under 10 minutes and red under 3. In the middle,
+notes bob while the player plays, a play sign means it may play, a moon means it is
+asleep (all used up for today, or outside its allowed hours) and two bars mean it is
+paused. The words underneath ("37 min left of 1 h · Playing The Gruffalo") are for
+grown-ups.
+
+Setting it up: in Yoto Limiter's app (Plus), Settings, API keys, make a key with the
+**read** scope alone. On the management page: Frame tab, Yoto, paste it, "Use this key".
+The frame tries the key before keeping it, and Yoto appears in Utilities within half a
+minute. The frame only reads (`/api/status`, and the live `/api/events` stream, of which
+it keeps one open), so pausing and adding time stay in Yoto Limiter's app. The key is
+kept in the frame's settings and is never shown again or written to the logs. What
+Yoto Limiter says is kept in memory only. If the stream drops, the frame opens it again,
+waiting longer each time up to ten minutes. If the key stops working (deleted, or the
+account left Plus), the frame says so on that card and stops trying until a new key is given.
+
+For trying it in the simulator, `FRAME_YOTO_URL` points the server at a stand-in for
+Yoto Limiter instead of the real one.
 
 ## The management page
 
