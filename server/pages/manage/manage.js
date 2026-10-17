@@ -420,7 +420,7 @@ function calWhen(value) {
 }
 const calDay = date => date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 const calTime = date => date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-const REPEATS = { never: "", weekly: "every week", monthly: "every month", yearly: "every year" };
+const REPEATS = { never: "", daily: "every day", weekdays: "Monday to Friday", weekly: "every week", monthly: "every month", yearly: "every year" };
 function calRow(when, what, from, button) {
   const row = el("div"); row.append(el("span", "when", when), el("span", "what", what));
   if (from) row.append(el("span", "from", from));
@@ -457,6 +457,8 @@ async function loadCalendar() {
   }
   rules = c.reminders || [];
   renderRules(c.events);
+  eventPictures = c.event_pictures || [];
+  renderEventPictures(c.events);
   loadRemote();  // for the stations a rule can play
   travel = c.travel || null; ways = c.ways || []; tripEvents = c.events;
   renderTrips(); if (travel) { planTrips(); findPlaces(); }
@@ -506,6 +508,41 @@ async function addRule() {
   const rule = { words: $("rmWords").value, when, say: $("rmSay").value.trim() || null, chime: $("rmChime").checked, then: $("rmThen").value ? JSON.parse($("rmThen").value) : null };
   if (!rule.words.trim()) { toast("Say which words to look for in the names of events."); $("rmWords").focus(); return; }
   if (await saveRules(rules.concat([rule]), "Rule added. The frame picks it up within half a minute.")) { $("rmWords").value = ""; $("rmSay").value = ""; }
+}
+// --- pictures for events: what Now and Next shows ---------------------------------------------------
+let eventPictures = [];
+// Pictures to choose from with a touch; any emoji can be typed too.
+const PICTURE_CHOICES = ["🏫", "🍽️", "🥪", "🛁", "🛏️", "📖", "🏊", "⚽", "🎨", "🎵", "🛝", "🚗", "🚌", "🛒", "👵", "👴", "🎂", "🦷", "🩺", "🧸", "📺", "🌳", "🪥", "👕"];
+function renderEventPictures(events) {
+  const now = new Date();
+  // The next event each rule gives its picture to (the first rule that fits is the one that counts).
+  const next = eventPictures.map(rule => events.filter(e => e.picture && e.picture.words === rule.words && e.picture.picture === rule.picture).find(e => calWhen(e.end) > now));
+  if (!changed("eventPictures", [eventPictures, next.map(e => e && [e.title, e.start])])) return;
+  const box = $("pcRules"); box.textContent = "";
+  eventPictures.forEach((rule, i) => {
+    const remove = el("button", "btn small danger", "Delete");
+    remove.onclick = () => saveEventPictures(eventPictures.filter((_, k) => k !== i), "Picture deleted.");
+    const start = next[i] && calWhen(next[i].start);
+    const coming = !next[i] ? "no event in the next five weeks has these words" : `next: ${calDay(start)}${next[i].all_day ? "" : ` ${calTime(start)}`}, “${next[i].title}”`;
+    box.append(calRow(rule.picture, rule.say ? `${rule.words} → “${rule.say}”` : rule.words, coming, remove));
+  });
+}
+async function saveEventPictures(wanted, done) {
+  try { await api("/api/event-pictures", { rules: wanted }); toast(done); } catch (e) { toast(e.message); return false; }
+  loadCalendar();
+  return true;
+}
+async function addEventPicture() {
+  const rule = { words: $("pcWords").value, picture: $("pcPicture").value.trim(), say: $("pcSay").value.trim() || null };
+  if (!rule.words.trim()) { toast("Say which words to look for in the names of events."); $("pcWords").focus(); return; }
+  if (!rule.picture) { toast("Choose a picture below, or type an emoji."); $("pcPicture").focus(); return; }
+  if (await saveEventPictures(eventPictures.concat([rule]), "Picture added. The frame shows it within a few seconds.")) { for (const id of ["pcWords", "pcPicture", "pcSay"]) $(id).value = ""; }
+}
+for (const picture of PICTURE_CHOICES) {
+  const choice = el("button", "", picture);
+  choice.type = "button";
+  choice.onclick = () => { $("pcPicture").value = picture; };
+  $("pcChoices").append(choice);
 }
 // --- things to do: people, tasks, points and rewards -------------------------------------------
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -1035,6 +1072,7 @@ $("optAuto").onchange = e => api("/api/auto", { enabled: e.target.checked }).the
 $("calLinks").onchange = () => api("/api/calendars", { links: $("calLinks").value.split("\n") }).then(() => { toast("Calendars saved. The frame is fetching them."); drawn.delete("calLinks"); loadCalendar(); setTimeout(loadCalendar, 4000); }, e => toast(e.message));
 $("evAdd").onclick = addEvent;
 $("rmAdd").onclick = addRule;
+$("pcAdd").onclick = addEventPicture;
 $("tdApproval").onchange = e => saveTodo("/api/todo/approval", { on: e.target.checked }, e.target.checked ? "Points now wait for approval." : "Points are now added at once; what was waiting has been added.");
 $("tdAddRule").onclick = addEventRule;
 $("tdWords").onkeydown = e => { if (e.key === "Enter") addEventRule(); };
@@ -1050,6 +1088,7 @@ $("trKeySave").onclick = () => { if ($("trKey").value.trim()) saveRoadsKey($("tr
 $("trKeyForget").onclick = () => { if (confirm("Forget the key? Trips by car stay listed but can no longer be worked out.")) saveRoadsKey(null); };
 $("rmWhen").onchange = () => show($("rmAt"), $("rmWhen").value[0] === "d");
 for (const id of ["rmWords", "rmSay"]) $(id).onkeydown = e => { if (e.key === "Enter") addRule(); };
+for (const id of ["pcWords", "pcPicture", "pcSay"]) $(id).onkeydown = e => { if (e.key === "Enter") addEventPicture(); };
 for (const id of ["frNight", "frFrom", "frUntil", "frDark"]) $(id).onchange = saveNight;
 for (const id of ["frShow", "frEvery", "frOrder", "frHome", "frMemories", "frWeather", "frMorning"]) $(id).onchange = savePictures;
 $("frChime").onchange = e => saveFrame("/api/chime", { before: e.target.value === "" ? null : Number(e.target.value) }, "Chime saved.");

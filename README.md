@@ -360,6 +360,25 @@ The relay picks devices by what Home Assistant says they are, so it is not tied 
 alarm panels, door and window sensors, motion sensors, cameras that publish an "event
 image", and anything that reports "ringing".
 
+### Now and Next
+
+For a child who cannot read a clock yet, Utilities can show what is happening now and what
+comes next, as pictures. On the management page (Calendar tab, Pictures for events), give
+a picture to the events a child cares about: words in the event's name, as for reminders
+("nursery, school"), an emoji (🏫), and optionally what to call it ("Bedtime"). Only events
+with a picture are shown, so the grown-ups' events stay out of it.
+
+Each one is a disc with its picture in the middle, the same disc as the picture timers.
+What is on now empties as it nears its end. What comes next stays full until its last
+hour, then empties until it starts. With nothing left today, the first of tomorrow's is
+shown instead. An event with no end time (such as those added on the management page)
+lasts until the next event with a picture begins, or the end of the day. For everyday
+things such as lunch, bath and bed, add an event that repeats every day.
+
+It is meant to be glanced at, not watched: on the pictures, a line under the clock shows
+the same two pictures ("Now 🛁 → Next 🛏️ 23:15"), and touching it opens Now and Next.
+Now & Next appears in Utilities only once there is a picture rule.
+
 ### Yoto
 
 Utilities can show how much listening time each Yoto player has left today, from
@@ -403,7 +422,8 @@ Open `http://<frame address>:8080` from a phone or computer on the same Wi-Fi.
   - Some calendar servers only offer an old style of encryption that the server's usual
     TLS library refuses. Those are fetched with a second, more tolerant client (OpenSSL)
     that is only tried when the usual one cannot connect.
-  - Add an event: title, date, optional time, and once, weekly, monthly or yearly.
+  - Add an event: title, date, optional time, and once, every day, Monday to Friday, weekly, monthly or yearly.
+  - Pictures for events: words in an event's name and an emoji, for Now and Next.
     These are stored on the frame.
   - Reminders: the rules described under [Reminders](#reminders). Each rule shows the
     next event it will fire for, which is the quick way to check its words.

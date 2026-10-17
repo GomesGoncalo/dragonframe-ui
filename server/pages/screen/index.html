@@ -26,7 +26,10 @@
             home.css), there only once the house is connected. A ringing doorbell shows
             over any tab. And Yoto: how much listening time each Yoto player has left
             today, as a disc that shrinks, for a small child to see (yoto.js and
-            yoto.css), there only once Yoto Limiter can be read.
+            yoto.css), there only once Yoto Limiter can be read. And Now & Next: what is
+            on now and what comes next, as pictures, from the events a picture rule is
+            about (nownext.js and nownext.css; also a line under the clock on the
+            pictures), there only once there are picture rules.
   Settings  in parts: Pictures, Night, Sound, Wi-Fi and Frame. If a PIN is set, it is
             asked for each time Settings is opened, on a keypad on the screen.
 
@@ -68,11 +71,12 @@
 <link rel="stylesheet" href="utilities.css">
 <link rel="stylesheet" href="home.css">
 <link rel="stylesheet" href="yoto.css">
+<link rel="stylesheet" href="nownext.css">
 <link rel="stylesheet" href="music.css">
 <link rel="stylesheet" href="extras.css">
 <link rel="stylesheet" href="todo.css">
 </head>
-<body class="no-home no-yoto" data-tab="pictures" data-view="month" data-part="pictures">
+<body class="no-home no-yoto no-nownext" data-tab="pictures" data-view="month" data-part="pictures">
 
 <div class="view" id="pictures">
   <div class="slide" id="a"></div>
@@ -83,6 +87,7 @@
     <div class="time" id="time"></div>
     <div class="date"><span id="date"></span><span class="weather" id="sky"></span></div>
     <div class="morning" id="morning"></div>
+    <div class="nownext" id="nownext-line"></div>
   </div>
   <div class="running" id="running"></div>
   <div class="playing" id="playing" style="display: none"><img id="playing-cover" alt=""><span class="words"><b id="playing-name"></b><i id="playing-by"></i></span><button class="only" id="playing-skip" data-icon="skip" aria-label="Next station"></button><button class="only" id="playing-stop" data-icon="stop" aria-label="Stop the music"></button></div>
@@ -185,7 +190,7 @@
 <div class="view" id="utilities">
   <div class="top"><h1>Utilities</h1><div class="now" id="now-too"></div></div>
   <div class="switch" id="tools">
-    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button><button data-tool="yoto" data-icon="yoto">Yoto</button>
+    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button><button data-tool="nownext" data-icon="nownext">Now &amp; Next</button><button data-tool="yoto" data-icon="yoto">Yoto</button>
   </div>
 
   <div class="part" id="tool-timers">
@@ -221,6 +226,12 @@
       <div id="house-sensors"></div>
     </div>
     <div class="cameras" id="cameras"></div>
+  </div>
+
+  <div class="part" id="tool-nownext">
+    <p id="nownext-today"></p>
+    <p id="nownext-note"></p>
+    <div class="panels" id="nownext-panels"></div>
   </div>
 
   <div class="part" id="tool-yoto">
@@ -352,6 +363,7 @@
 <script src="utilities.js"></script>
 <script src="home.js"></script>
 <script src="yoto.js"></script>
+<script src="nownext.js"></script>
 <script src="music.js"></script>
 <script src="actions.js"></script>
 <script src="extras.js"></script>

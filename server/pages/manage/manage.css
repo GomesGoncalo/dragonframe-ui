@@ -175,3 +175,4 @@ details.hint p { margin-top: 8px; }
 }
 .pager { display: flex; align-items: center; gap: 8px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.chips.pictures button { font-size: 22px; min-height: 40px; padding: 0 8px; }

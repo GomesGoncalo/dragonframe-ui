@@ -686,6 +686,9 @@ impl<'de> Deserialize<'de> for ClockTime {
 pub enum Repeat {
     #[default]
     Never,
+    Daily,
+    /// Monday to Friday.
+    Weekdays,
     Weekly,
     Monthly,
     Yearly,
@@ -959,9 +962,8 @@ impl Words {
 impl<'de> Deserialize<'de> for Words {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        Words::parse(&text).ok_or_else(|| {
-            de::Error::custom("a reminder needs one to eight words to look for, with commas between them")
-        })
+        Words::parse(&text)
+            .ok_or_else(|| de::Error::custom("a rule needs one to eight words to look for, with commas between them"))
     }
 }
 
@@ -1012,6 +1014,45 @@ impl<'de> Deserialize<'de> for Ahead {
 
 /// The reminder rules: at most twenty.
 pub type Reminders = Bounded<Reminder, 0, 20>;
+
+/// A rule that gives calendar events a picture: every event whose name has one of the rule's
+/// words is shown with it, and the events with a picture are the ones Now and Next shows, for
+/// a child who cannot read yet. "Nursery" with 🏫 is one; "swimming" with 🏊 another.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct EventPicture {
+    pub words: Words,
+    pub picture: Picture,
+    /// What to call it on Now and Next, in a child's words; without it, the event's own name.
+    #[serde(default)]
+    pub say: Option<Title>,
+}
+
+/// A picture for an event: an emoji, or a few of them ("👵👴"). No letters or digits, which
+/// would be words rather than a picture.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Picture(String);
+
+impl Picture {
+    const MOST_CHARS: usize = 12;
+
+    pub fn parse(text: &str) -> Option<Picture> {
+        let text = text.trim();
+        let length = text.chars().count();
+        let usable = (1..=Self::MOST_CHARS).contains(&length)
+            && !text.chars().any(|c| c.is_ascii() || c.is_control() || c.is_whitespace() || c.is_alphanumeric());
+        usable.then(|| Picture(text.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for Picture {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer, Picture::parse, "a picture is an emoji, or a few of them")
+    }
+}
+
+/// The picture rules: at most forty.
+pub type EventPictures = Bounded<EventPicture, 0, 40>;
 
 // --- things the frame can be told to do ------------------------------------------------------------
 
@@ -2245,6 +2286,23 @@ mod tests {
         assert_eq!(from_value::<Mark>(json!("favourite")).unwrap(), Mark::Favourite);
         assert_eq!(json!(Mark::Hidden), json!("hidden"));
         assert!(from_value::<Mark>(json!("loved")).is_err());
+    }
+
+    #[test]
+    fn a_picture_is_emoji_and_never_words() {
+        for good in ["🏫", " 🏊 ", "👵👴", "👨‍👩‍👧", "🍽️"] {
+            assert!(Picture::parse(good).is_some(), "{good}");
+        }
+        for bad in ["", "  ", "bus", "🏫 nursery", "🚌1", "é", "🏫 🏫", "🏫🏫🏫🏫🏫🏫🏫🏫🏫🏫🏫🏫🏫"]
+        {
+            assert!(Picture::parse(bad).is_none(), "{bad:?}");
+        }
+        let rule = from_value::<EventPicture>(json!({ "words": "nursery", "picture": "🏫" })).unwrap();
+        assert_eq!((rule.picture, rule.say), (Picture("🏫".into()), None));
+        assert!(from_value::<EventPicture>(json!({ "words": "nursery", "picture": "school" })).is_err());
+        assert!(from_value::<EventPicture>(json!({ "words": "", "picture": "🏫" })).is_err());
+        let many: Vec<_> = (0..41).map(|_| json!({ "words": "a", "picture": "🏫" })).collect();
+        assert!(from_value::<EventPictures>(json!(many)).is_err());
     }
 
     #[test]

@@ -149,6 +149,31 @@ describe('told from elsewhere', () => {
   });
 });
 
+describe('now and next', () => {
+  test('Now and Next is offered once events have pictures, and shows tomorrow\'s when nothing is left today', async () => {
+    assert.equal(await page.eval('getComputedStyle(document.querySelector("[data-tool=nownext]")).display'), 'none');
+    const tomorrow = await page.eval('dayKey(dayAfter(new Date(), 1)).split("-").map((n) => n.padStart(2, "0")).join("-")');
+    await server.api('/api/events/add', { title: 'Swimming lesson', day: tomorrow, time: '10:00' });
+    await server.api('/api/event-pictures', { rules: [{ words: 'swimming', picture: '🏊', say: 'Swimming' }] });
+    await page.eval('refreshCalendar()');
+    await until('Now and Next offered', () => page.eval('!document.body.classList.contains("no-nownext")'));
+    await page.eval('showNowNext()');
+    const shown = await page.eval(`[document.querySelector('#nownext-panels .heading').textContent,
+      document.querySelector('#nownext-panels .disc .picture').textContent,
+      document.querySelector('#nownext-panels .called').textContent,
+      document.querySelector('#nownext-panels .more').textContent,
+      getComputedStyle($('tool-nownext')).display]`);
+    assert.deepEqual(shown, ['Tomorrow', '🏊', 'Swimming', 'at 10:00', 'block']);
+    // The calendar shows the picture beside the event's name too.
+    await page.eval('showTab("calendar")');
+    await until('the picture in Coming up', () => page.eval('$("agenda").textContent.includes("🏊  Swimming lesson")'));
+    await server.api('/api/event-pictures', { rules: [] });
+    await page.eval('refreshCalendar()');
+    await until('Now and Next gone again', () => page.eval('document.body.classList.contains("no-nownext")'));
+    await page.eval('showTab("pictures")');
+  });
+});
+
 describe('settings', () => {
   test('with a PIN, Settings is hidden until the PIN is typed on the keypad', async () => {
     await server.api('/api/pin', { pin: '2468' });

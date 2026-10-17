@@ -107,6 +107,8 @@ impl Added {
         };
         let rule = match self.repeat {
             Repeat::Never => None,
+            Repeat::Daily => Some("FREQ=DAILY"),
+            Repeat::Weekdays => Some("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"),
             Repeat::Weekly => Some("FREQ=WEEKLY"),
             Repeat::Monthly => Some("FREQ=MONTHLY"),
             Repeat::Yearly => Some("FREQ=YEARLY"),
@@ -557,6 +559,31 @@ mod tests {
         assert!(matches!(refusal(&shared, 500), FeedError::Refused(500)));
         let elsewhere = CalendarLink::parse("https://example.org/family.ics").unwrap();
         assert!(matches!(refusal(&elsewhere, 404), FeedError::Refused(404)));
+    }
+
+    #[test]
+    fn an_added_event_can_come_every_day_or_monday_to_friday() {
+        let frame = TempFrame::new("calendar-daily");
+        let calendars = Calendars::load(&frame.0, &[]);
+        calendars.add(new_event("Lunch", "2026-10-30", Some("12:00"), Repeat::Daily)).unwrap();
+        calendars.add(new_event("Nursery", "2026-10-29", Some("09:00"), Repeat::Weekdays)).unwrap();
+        let listed: Vec<String> = calendars
+            .between(OCTOBER)
+            .iter()
+            .map(|e| format!("{} {}", e["title"].as_str().unwrap(), e["start"].as_str().unwrap()))
+            .collect();
+        // The nursery on Thursday 29 and Friday 30 October, not the weekend; lunch every day,
+        // to 1 November, as clock times are matched a day generously.
+        assert_eq!(
+            listed,
+            [
+                "Nursery 2026-10-29T09:00:00",
+                "Nursery 2026-10-30T09:00:00",
+                "Lunch 2026-10-30T12:00:00",
+                "Lunch 2026-10-31T12:00:00",
+                "Lunch 2026-11-01T12:00:00",
+            ]
+        );
     }
 
     #[test]

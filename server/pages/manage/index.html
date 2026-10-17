@@ -125,6 +125,8 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <input type="time" id="evTime" aria-label="Time (optional)">
         <select id="evRepeat" aria-label="Repeats">
           <option value="never">Once</option>
+          <option value="daily">Every day</option>
+          <option value="weekdays">Monday to Friday</option>
           <option value="weekly">Every week</option>
           <option value="monthly">Every month</option>
           <option value="yearly">Every year</option>
@@ -156,6 +158,18 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <button class="btn primary" id="rmAdd">Add rule</button>
       </div>
       <div class="rows" id="rmRules" style="margin-top: 14px"></div>
+    </div>
+    <div class="card narrow">
+      <h2>Pictures for events</h2>
+      <p class="muted">Give the events a child cares about a picture, and the frame shows them as Now and Next (on its screen under Utilities, and in a line under the clock on the pictures): what is on now and what comes next, each in a disc that empties as the time comes, for a child who cannot read yet. Only events with a picture are shown there. Each rule applies to every event whose name has one of its words, as reminders do; the first rule that fits an event is the one it gets. For everyday things such as lunch or bath time, add an event that repeats every day.</p>
+      <div class="bar" style="margin: 14px 0 0">
+        <input type="text" id="pcWords" maxlength="300" placeholder="Words in the event's name, e.g. nursery, school" aria-label="Words to look for">
+        <input type="text" id="pcPicture" maxlength="40" placeholder="Picture: an emoji" aria-label="Picture" style="width: 9em">
+        <input type="text" id="pcSay" maxlength="120" placeholder="What to call it (optional)" aria-label="What to call it">
+        <button class="btn primary" id="pcAdd">Add picture</button>
+      </div>
+      <div class="chips pictures" id="pcChoices" style="margin-top: 10px"></div>
+      <div class="rows" id="pcRules" style="margin-top: 14px"></div>
     </div>
     <div class="card narrow">
       <h2>Getting there</h2>

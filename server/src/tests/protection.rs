@@ -40,6 +40,7 @@ async fn with_a_pin_changes_need_an_unlocked_session_but_viewing_does_not() {
         ("/api/auto", "{}"),
         ("/api/mark", r#"{"photo":"frame-sync/fs_0123456789abcdef.jpg","mark":"hidden"}"#),
         ("/api/reminders", r#"{"rules":[]}"#),
+        ("/api/event-pictures", r#"{"rules":[]}"#),
         ("/api/travel", r#"{"home":null,"trips":[]}"#),
         ("/api/travel/key", r#"{"key":null}"#),
     ] {

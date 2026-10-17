@@ -16,8 +16,8 @@ use sha1::{Digest as _, Sha1};
 use tracing::{debug, info, warn};
 
 use crate::types::{
-    hex, AlbumLink, CalendarLink, Chime, Digest, HomeKey, Night, PhotoPath, Place, Reminder, Restore, RoadsKey, Screen,
-    Slideshow, Source, Spot, Station, SyncedName, Trip, YotoKey, SYNC_SUBDIR,
+    hex, AlbumLink, CalendarLink, Chime, Digest, EventPicture, HomeKey, Night, PhotoPath, Place, Reminder, Restore,
+    RoadsKey, Screen, Slideshow, Source, Spot, Station, SyncedName, Trip, YotoKey, SYNC_SUBDIR,
 };
 
 const MEDIA_URI: &str = "content://media/external/images/media";
@@ -536,6 +536,8 @@ pub struct Settings {
     pub home_key: Option<HomeKey>,
     /// The rules that turn calendar events into reminders.
     pub reminders: Vec<Reminder>,
+    /// The rules that give calendar events a picture, for Now and Next.
+    pub event_pictures: Vec<EventPicture>,
     /// Where trips start unless they say otherwise.
     pub home: Option<Spot>,
     /// How the events that are travelled to are reached.
@@ -604,6 +606,12 @@ impl Settings {
                 .flatten()
                 .filter_map(|rule| serde_json::from_value(rule.clone()).ok())
                 .collect(),
+            event_pictures: saved["event_pictures"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|rule| serde_json::from_value(rule.clone()).ok())
+                .collect(),
             home: saved["home"].as_str().and_then(Spot::parse),
             trips: saved["trips"]
                 .as_array()
@@ -642,6 +650,7 @@ impl Settings {
             "place": self.place,
             "home_key": self.home_key,
             "reminders": self.reminders,
+            "event_pictures": self.event_pictures,
             "home": self.home,
             "trips": self.trips,
             "roads_key": self.roads_key,
@@ -1032,6 +1041,11 @@ mod tests {
                 { "words": "bin, recycling", "when": { "days": 1, "at": "19:00" }, "say": "Bins out", "chime": true },
                 { "words": "swimming", "when": { "minutes": 45 } },
                 { "words": "wake up", "when": { "minutes": 0 }, "then": { "do": "play", "station": "Radio Four" } },
+            ]))
+            .unwrap(),
+            event_pictures: serde_json::from_value(json!([
+                { "words": "nursery, school", "picture": "🏫" },
+                { "words": "grandma", "picture": "👵", "say": "Grandma's house" },
             ]))
             .unwrap(),
             home: Spot::parse("BR6 0AA"),

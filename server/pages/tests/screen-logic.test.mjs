@@ -303,3 +303,61 @@ describe('reminders', () => {
     assert.deepEqual(await notesAt(twice, 'new Date(2026, 9, 14, 14, 30).getTime()'), ['Dentist | Today  ·  15:00']);
   });
 });
+
+// --- now and next -------------------------------------------------------------------------------
+
+describe('now and next', () => {
+  /// What Now and Next makes of these events at `now`, the page's own events put back after.
+  const shownAt = (now) => page.eval(`(() => {
+    const kept = events;
+    const at = (h, m) => new Date(2026, 9, 14, h, m || 0);
+    const event = (title, picture, start, end, allDay) => ({ title: title, called: title, picture: picture, allDay: !!allDay, start: start, end: end });
+    events = [
+      event('Bin day', '', new Date(2026, 9, 14), new Date(2026, 9, 15), true),
+      event('Birthday', '🎂', new Date(2026, 9, 14), new Date(2026, 9, 15), true),
+      event('Dentist', '', at(9), at(10)),
+      event('Nursery', '🏫', at(9), at(12)),
+      event('Lunch', '🍽️', at(12), at(13)),
+      event('Swimming', '🏊', new Date(2026, 9, 15, 10), new Date(2026, 9, 15, 11)),
+      // Added on the phone page, so with no length: on until the next with a picture, or the day's end.
+      event('Bath', '🛁', at(18), at(18)),
+      event('Bed', '🛏️', at(19), at(19)),
+    ];
+    try {
+      const now = ${now};
+      const found = nowAndNext(now);
+      return {
+        now: found.now && found.now.title, next: found.next && found.next.title,
+        tomorrow: found.tomorrow && found.tomorrow.title, today: found.today.map((e) => e.title),
+        panels: panelsOf(found, now).map((p) => [p.heading, p.event.picture, Math.round(p.share * 100), p.more]),
+      };
+    } finally {
+      events = kept;
+    }
+  })()`);
+
+  test('only events with a picture count, and what is on now empties as it nears its end', async () => {
+    const shown = await shownAt('new Date(2026, 9, 14, 11, 30)');
+    assert.deepEqual([shown.now, shown.next, shown.tomorrow, shown.today], ['Nursery', 'Lunch', null, ['Birthday']]);
+    assert.deepEqual(shown.panels, [['Now', '🏫', 17, 'until 12:00'], ['Next', '🍽️', 50, 'at 12:00  ·  in 30 min']]);
+  });
+
+  test('what comes next stays whole until its last hour', async () => {
+    const shown = await shownAt('new Date(2026, 9, 14, 7)');
+    assert.deepEqual(shown.panels, [['Next', '🏫', 100, 'at 09:00  ·  in 2 h']]);
+  });
+
+  test('an event with no length lasts until the next with a picture, or the end of the day', async () => {
+    assert.deepEqual((await shownAt('new Date(2026, 9, 14, 18, 30)')).panels,
+      [['Now', '🛁', 50, 'until 19:00'], ['Next', '🛏️', 50, 'at 19:00  ·  in 30 min']]);
+    assert.deepEqual((await shownAt('new Date(2026, 9, 14, 21)')).panels,
+      [['Now', '🛏️', 60, 'for the rest of today'], ['Tomorrow', '🏊', 100, 'at 10:00']]);
+  });
+
+  test('with nothing on today or tomorrow, there is nothing to show', async () => {
+    const shown = await shownAt('new Date(2026, 9, 15, 12)');
+    assert.deepEqual([shown.now, shown.next, shown.tomorrow], [null, null, null]);
+    assert.deepEqual(shown.panels, []);
+  });
+});
+

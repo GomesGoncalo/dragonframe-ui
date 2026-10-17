@@ -1,0 +1,32 @@
+/* How Now and Next looks, a part of the Utilities tab: a disc for what is on now and one for
+   what comes next, each with the event's picture in the middle, big enough to see across
+   the room; and its line under the clock on the pictures. */
+body[data-tool="nownext"] #tool-nownext { display: block; }
+/* Until some events have a picture there is nothing to show. */
+body.no-nownext [data-tool="nownext"] { display: none; }
+
+#nownext-today { margin: 0 0 1.4vmin; font-size: 4.4vmin; text-align: center; }
+#nownext-today:empty, #nownext-note:empty { display: none; }
+#nownext-note { margin: 6vmin 0; font-size: 3vmin; color: var(--muted); text-align: center; }
+
+.panels { text-align: center; white-space: nowrap; }
+.panels .panel { display: inline-block; vertical-align: middle; white-space: normal; width: 40%; }
+.panels.count-1 .panel { width: 70%; }
+.panels .then { display: inline-block; vertical-align: middle; width: 10%; font-size: 9vmin; color: var(--muted); }
+.panel .heading { font-size: 4.4vmin; font-weight: 500; color: var(--muted); }
+.panel.now .heading { color: var(--ink); }
+.panel .face { margin: 1.2vmin auto; width: 42vmin; height: 42vmin; }
+.panels.count-1 .panel .face { width: 48vmin; height: 48vmin; }
+.panel .called { font-size: 4.6vmin; font-weight: 300; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel .more { margin-top: .6vmin; font-size: 2.4vmin; color: var(--muted); }
+
+/* Under the clock on the pictures; a touch on it opens Now and Next. */
+.clock .nownext { margin-top: 1vmin; font-size: 4vmin; pointer-events: auto; display: inline-block; }
+.clock .nownext:empty { display: none; }
+
+/* Standing up, one above the other. */
+@media (orientation: portrait) {
+  .panels .panel, .panels.count-1 .panel { display: block; width: 100%; margin-bottom: 2vmin; }
+  .panels .then { display: block; width: 100%; font-size: 6vmin; line-height: 1; transform: rotate(90deg); }
+  .panel .face, .panels.count-1 .panel .face { width: 46vmin; height: 46vmin; }
+}

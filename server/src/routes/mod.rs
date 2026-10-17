@@ -26,8 +26,8 @@ use crate::routes::acts::{
     act, acts_to_do, acts_view, find_stations, save_stations, set_spotify, spotify_order, spotify_stream,
 };
 use crate::routes::calendars::{
-    add_event, calendar_view, delete_event, find_place, map_tile, save_calendars, save_reminders, save_roads_key,
-    save_travel, travel_plan,
+    add_event, calendar_view, delete_event, find_place, map_tile, save_calendars, save_event_pictures, save_reminders,
+    save_roads_key, save_travel, travel_plan,
 };
 use crate::routes::frame::{
     address_code, alive, device_view, forget_place, open_wifi_settings, set_chime, set_night, set_place, set_screen,
@@ -209,6 +209,7 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/events/add", post(add_event))
         .route("/api/events/delete", post(delete_event))
         .route("/api/reminders", post(save_reminders))
+        .route("/api/event-pictures", post(save_event_pictures))
         .route("/api/travel", get(travel_plan).post(save_travel))
         .route("/api/travel/key", post(save_roads_key))
         .route("/api/travel/find", get(find_place))

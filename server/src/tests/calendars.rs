@@ -258,3 +258,39 @@ async fn reminder_rules_are_kept_and_each_event_says_which_rules_are_about_it() 
     post(&app, "/api/reminders", r#"{"rules":[]}"#).await;
     assert_eq!(get(&app, "/api/calendar").await.json()["reminders"], json!([]));
 }
+
+#[tokio::test]
+async fn picture_rules_give_events_a_picture_and_tell_the_screen_at_once() {
+    let (app, _frame) = app("event-pictures");
+    assert_eq!(get(&app, "/api/calendar").await.json()["event_pictures"], json!([]));
+    post(&app, "/api/events/add", r#"{"title":"Nursery","day":"2026-10-12","time":"09:00","repeat":"weekly"}"#).await;
+    post(&app, "/api/events/add", r#"{"title":"Dentist","day":"2026-10-13","time":"16:00"}"#).await;
+    let changes = get(&app, "/api/alive").await.json()["calendar"].clone();
+
+    let rules = json!([
+        { "words": "nursery, school", "picture": "🏫", "say": null },
+        { "words": "nursery", "picture": "🧸", "say": "Playgroup" },
+    ]);
+    let saved = post(&app, "/api/event-pictures", &json!({ "rules": rules }).to_string()).await;
+    assert_eq!((saved.status, saved.json()), (StatusCode::OK, json!({ "event_pictures": 2 })));
+    // The screen fetches the calendar again when it next reports in, as for an added event.
+    assert_ne!(get(&app, "/api/alive").await.json()["calendar"], changes);
+
+    let calendar = get(&app, &format!("/api/calendar?{OCTOBER_2026}")).await.json();
+    assert_eq!(calendar["event_pictures"], rules);
+    for event in calendar["events"].as_array().unwrap() {
+        // The first rule about an event is the one it gets; an event no rule is about has none.
+        let picture = if event["title"] == "Nursery" { rules[0].clone() } else { Value::Null };
+        assert_eq!(event["picture"], picture, "{event}");
+    }
+
+    for bad in [
+        r#"{"rules":[{"words":"nursery","picture":"school"}]}"#,
+        r#"{"rules":[{"words":"","picture":"🏫"}]}"#,
+        r#"{"rules":[{"words":"nursery"}]}"#,
+        "{}",
+    ] {
+        assert_eq!(post(&app, "/api/event-pictures", bad).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    assert_eq!(get(&app, "/api/calendar").await.json()["event_pictures"], rules, "a refused change changes nothing");
+}

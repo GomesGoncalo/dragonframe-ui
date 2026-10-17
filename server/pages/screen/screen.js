@@ -76,6 +76,7 @@ const ICONS = {
   wifi: '<path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9 16.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r=".6"/>',
   frame: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/>',
   home: '<path d="M3.5 11L12 3.5l8.5 7.5M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>',
+  nownext: '<rect x="2.5" y="6" width="8" height="12" rx="2"/><rect x="13.5" y="8" width="6" height="8" rx="1.5"/><path d="M10.5 12h3"/>',
   yoto: '<rect x="4" y="6" width="16" height="15" rx="3"/><path d="M7.5 6V3.5M16.5 6V3.5"/><rect x="8" y="10" width="8" height="5.5" rx="1"/>',
   todo: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12.5l3 3 5.5-6.5"/>',
   utilities: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2.5M9.5 2.5h5"/>',
@@ -104,6 +105,7 @@ let paused = false;
 let over = false;   // something is open over the pictures (a photo's menu), so they wait
 let busy = false;
 let asleep = false;
+let pictureRules = 0;  // how many rules give events a picture, for Now and Next
 let events = [];    // the calendar around today: { title, place, allDay, start, end, colour, from }
 // Looking around the calendar: the month or week it has been moved to (null for this one), the
 // events of that month or week, and the day that was picked to see what is on it.
@@ -203,16 +205,21 @@ function discSlice(share) {
 
 /// Draw a disc in `box`, or move on the one already there. `looks` is { share, colour, middle }:
 /// the colour is plenty, nearly, last or resting, and the middle one of DISC_MIDDLES (or none).
+/// With `picture` (an event's emoji) in `looks`, that is in the middle instead, larger.
 /// From one moment to the next only the slice changes, so what moves in the middle moves smoothly.
 function drawDisc(box, looks) {
   let disc = box.firstElementChild;
-  const middle = looks.middle || '';
-  if (!disc || disc.getAttribute('data-middle') !== middle) {
-    box.innerHTML = '<svg class="disc" data-middle="' + middle + '" viewBox="0 0 100 100">'
+  const middle = looks.picture ? 'picture' : looks.middle || '';
+  const drawn = middle + (looks.picture || '');
+  if (!disc || disc.getAttribute('data-middle') !== drawn) {
+    box.innerHTML = '<svg class="disc" viewBox="0 0 100 100">'
       + '<circle class="used" cx="50" cy="50" r="47"/><path class="left"/>'
-      + (middle ? '<circle class="hub" cx="50" cy="50" r="19"/><g class="middle ' + middle + '" transform="translate(32 32) scale(1.5)">' + DISC_MIDDLES[middle] + '</g>' : '')
+      + (middle === 'picture' ? '<circle class="hub" cx="50" cy="50" r="31"/><text class="picture" x="50" y="52"></text>'
+        : middle ? '<circle class="hub" cx="50" cy="50" r="19"/><g class="middle ' + middle + '" transform="translate(32 32) scale(1.5)">' + DISC_MIDDLES[middle] + '</g>' : '')
       + '</svg>';
     disc = box.firstElementChild;
+    disc.setAttribute('data-middle', drawn);
+    if (looks.picture) disc.querySelector('.picture').textContent = looks.picture;
   }
   disc.setAttribute('class', 'disc ' + looks.colour);
   disc.querySelector('.left').setAttribute('d', discSlice(looks.share));
@@ -614,8 +621,12 @@ async function fetchEvents(first, days) {
   const reply = await fetch('/api/calendar?from=' + from + '&to=' + (from + days * 24 * 60 * 60), { cache: 'no-store' });
   if (!reply.ok) throw new Error('calendar ' + reply.status);
   const found = await reply.json();
+  // Now and Next, in Utilities, is there only once some events have a picture.
+  pictureRules = (found.event_pictures || []).length;
   return (found.events || []).map((e) => ({
     title: e.title, place: e.place, allDay: e.all_day, start: when(e.start), end: when(e.end),
+    // Its picture, if a picture rule is about it, and what to call it beside that (see nownext.js).
+    picture: e.picture ? e.picture.picture : '', called: e.picture && e.picture.say ? e.picture.say : e.title,
     colour: typeof e.feed === 'number' ? COLOURS[e.feed % COLOURS.length] : ADDED_COLOUR,
     // Which calendar it is on, to say so beside it.
     from: e.added ? 'Added here' : e.calendar || '',
@@ -640,6 +651,7 @@ async function refreshCalendar() {
     if (!cursor) browsed = events;
     drawCalendar(new Date(), true);
     remind(Date.now());
+    nowNextNews();
   } catch (error) {
     again = RETRY_MS;
   }
@@ -723,7 +735,7 @@ function item(event, text) {
   const node = element('div', 'item', '');
   node.style.borderLeftColor = event.colour;
   if (text) node.appendChild(element('div', 'when', text));
-  node.appendChild(element('div', 'what', event.title));
+  node.appendChild(element('div', 'what', (event.picture ? event.picture + '  ' : '') + event.title));
   return node;
 }
 

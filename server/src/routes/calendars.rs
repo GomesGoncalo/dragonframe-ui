@@ -14,7 +14,7 @@ use tracing::info;
 
 use crate::app::{blocking, now_secs, Shared};
 use crate::routes::{header, ApiError, ApiResult, Asked, Parsed};
-use crate::types::{Arrival, CalendarLinks, EventId, How, Reminders, RoadsKey, Spot, Trips, Window};
+use crate::types::{Arrival, CalendarLinks, EventId, EventPictures, How, Reminders, RoadsKey, Spot, Trips, Window};
 use crate::{auth, calendar, store, travel};
 
 /// A place typed for a trip, to look up: `?place=`.
@@ -41,6 +41,11 @@ pub(crate) struct CalendarsRequest {
 #[derive(Deserialize)]
 pub(crate) struct RemindersRequest {
     pub(crate) rules: Reminders,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct EventPicturesRequest {
+    pub(crate) rules: EventPictures,
 }
 
 #[derive(Deserialize)]
@@ -83,6 +88,8 @@ pub(crate) async fn calendar_view(
                     .filter(|&rule| settings.reminders[rule].words.found_in(&title))
                     .collect();
                 event["remind"] = json!(about);
+                // Its picture, from the first picture rule about it, for Now and Next.
+                event["picture"] = json!(settings.event_pictures.iter().find(|rule| rule.words.found_in(&title)));
                 // And which trip, if any, says how it is reached.
                 let place = event["place"].as_str().map(str::to_string);
                 event["trip"] = json!(settings.trips.iter().position(|trip| trip.is_for(&title, place.as_deref())));
@@ -92,6 +99,7 @@ pub(crate) async fn calendar_view(
                 "feeds": app.calendars.feeds(may_change),
                 "added": app.calendars.added(),
                 "reminders": settings.reminders,
+                "event_pictures": settings.event_pictures,
                 // Home and the trips are addresses, and are shown like the calendar links are:
                 // to whoever may change them.
                 "travel": may_change.then(|| json!({ "home": settings.home, "trips": settings.trips })),
@@ -153,6 +161,23 @@ pub(crate) async fn save_reminders(
     blocking(move || app.update_settings(|settings| settings.reminders = rules)).await;
     info!(rules = count, "reminder rules saved");
     Json(json!({ "reminders": count }))
+}
+
+/// Keep exactly these picture rules. Like an added event, they show on the frame's screen
+/// within a few seconds.
+pub(crate) async fn save_event_pictures(
+    State(app): State<Shared>,
+    Parsed(request): Parsed<EventPicturesRequest>,
+) -> Json<Value> {
+    let rules = request.rules.into_inner();
+    let count = rules.len();
+    blocking(move || {
+        app.update_settings(|settings| settings.event_pictures = rules);
+        app.calendar_changed();
+    })
+    .await;
+    info!(rules = count, "picture rules saved");
+    Json(json!({ "event_pictures": count }))
 }
 
 /// Keep where home is and exactly these trips. A trip with a car in it needs the driving key.
