@@ -109,6 +109,37 @@ describe('photos sharing the screen', () => {
 
 // --- the calendar -------------------------------------------------------------------------
 
+describe('the order photos come in', () => {
+  /// How many times each photo comes round in one round of `order`, for photos taken this
+  /// many days ago (with `fav` making one a favourite).
+  async function turns(order, photos) {
+    return page.eval(`(() => {
+      const now = Date.UTC(2026, 9, 17);
+      const photos = ${JSON.stringify(photos)}.map((p) => [p.name, (now - p.days * DAY_MS) / 1000, 1, 1, !!p.fav]);
+      const counts = {};
+      round(photos, '${order}', now).forEach((p) => { counts[p[0]] = (counts[p[0]] || 0) + 1; });
+      return counts;
+    })()`);
+  }
+  const photos = [
+    { name: 'week', days: 7 }, { name: 'season', days: 100 }, { name: 'old', days: 900 },
+    { name: 'old-fav', days: 900, fav: true }, { name: 'week-fav', days: 7, fav: true },
+  ];
+
+  test('shuffled, each photo comes once and a favourite twice', async () => {
+    assert.deepEqual(await turns('shuffled', photos), { week: 1, season: 1, old: 1, 'old-fav': 2, 'week-fav': 2 });
+  });
+
+  test('recent more often: three times for the last month, twice for the last year, a favourite once more', async () => {
+    assert.deepEqual(await turns('recent', photos), { week: 3, season: 2, old: 1, 'old-fav': 2, 'week-fav': 4 });
+  });
+
+  test('newest first, each photo once, newest at the front', async () => {
+    const order = await page.eval(`round([['a', 1], ['b', 3], ['c', 2]], 'newest', 0).map((p) => p[0])`);
+    assert.deepEqual(order, ['b', 'c', 'a']);
+  });
+});
+
 describe('the calendar', () => {
   test('times from the server: a number is a moment, text is a day or a time here', async () => {
     const read = await page.eval(`[

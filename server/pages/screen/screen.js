@@ -30,7 +30,9 @@ const MORNING_FROM = 6, MORNING_UNTIL = 10, MORNING_ITEMS = 3;
 // A note about an event stays up this long; one that is found later than this is not sounded.
 const SOON_MS = 60 * 1000, LATE_MS = 90 * 1000;
 const PACES = [[10, '10 s'], [15, '15 s'], [30, '30 s'], [60, '1 min'], [300, '5 min']];
-const ORDERS = [['shuffled', 'Shuffled'], ['newest', 'Newest first']];
+const ORDERS = [['shuffled', 'Shuffled'], ['recent', 'Recent more often'], ['newest', 'Newest first']];
+// In "Recent more often", a photo taken within this many days comes round this many times a round.
+const RECENT_TURNS = [[31, 3], [365, 2]];
 const ON_OFF = [[true, 'On'], [false, 'Off']];
 const RESTS = [[1, '1 min'], [2, '2 min'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [null, 'Never']];
 // Light colours or dark, kept by each browser: always one, or light by day and dark by night.
@@ -138,7 +140,7 @@ let standingChanged = () => {};
 const url = (kind, path) => '/' + kind + '?p=' + encodeURIComponent(path);
 const shape = (photo) => (photo[2] && photo[3] ? photo[2] / photo[3] : 0);
 const everyMs = () => Math.max(3, Number(params.get('every')) || slideshow.every) * 1000;
-const newestFirst = () => (params.get('order') || slideshow.order) === 'newest';
+const orderNow = () => params.get('order') || slideshow.order;
 const yearOf = (photo) => new Date(photo[1] * 1000).getFullYear();
 const sameChoice = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -289,13 +291,24 @@ function arrange(head, others, screen) {
   return layOut(shuffle(best.columns.map(shuffle)));
 }
 
+/// One time round the photos, in the order asked for. Shuffled, a favourite comes round once more
+/// than it would otherwise; recent photos more often still in "Recent more often".
+function round(some, order, now) {
+  if (order === 'newest') return some.slice().sort((x, y) => y[1] - x[1]);
+  const line = [];
+  some.forEach((p) => {
+    const days = (now - p[1] * 1000) / DAY_MS;
+    const recent = order === 'recent' ? RECENT_TURNS.find((turns) => days <= turns[0]) : null;
+    const turns = (recent ? recent[1] : 1) + (p[4] ? 1 : 0);
+    for (let i = 0; i < turns; i++) line.push(p);
+  });
+  return shuffle(line);
+}
+
 /// The next screen: the photo at the head of the line and whatever goes well beside it.
 async function nextScreen() {
   if (!queue.length) {
-    queue = chosen().slice();
-    if (newestFirst()) queue.sort((x, y) => y[1] - x[1]);
-    // Shuffled, a favourite comes round twice as often as the rest.
-    else shuffle(queue = queue.concat(queue.filter((p) => p[4])));
+    queue = round(chosen(), orderNow(), Date.now());
     memoriesFirst();
   }
   const head = queue.shift();

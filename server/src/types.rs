@@ -709,6 +709,8 @@ pub enum Screen {
 pub enum Order {
     #[default]
     Shuffled,
+    /// Shuffled, with photos taken in the last month or year coming round more often.
+    Recent,
     Newest,
 }
 
@@ -1868,6 +1870,7 @@ mod tests {
             Slideshow { every: Pace::new(60).unwrap(), order: Order::Newest, memories: false, ..Slideshow::default() };
         assert_eq!(chosen, expected);
         assert_eq!(from_value::<Slideshow>(json!({})).unwrap(), Slideshow::default());
+        assert_eq!(from_value::<Order>(json!("recent")).unwrap(), Order::Recent);
         assert_eq!(
             json!(from_value::<Slideshow>(json!({ "home_after": null })).unwrap())["home_after"],
             json!(null),

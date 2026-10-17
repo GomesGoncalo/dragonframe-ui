@@ -95,7 +95,9 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
 - **Settings**, in five parts. If a PIN is set, a keypad asks for it each time Settings
   is opened, and nothing is shown until it is right:
   - Pictures: which photos to show (everything, only the favourites, or one of the
-    years there are photos from), how often they change, the order, how long before the
+    years there are photos from), how often they change, the order (shuffled; shuffled
+    with recent photos more often, three times a round for the last month and twice for
+    the last year; or newest first), how long before the
     screen goes back to Pictures, and whether to show memories first, the weather, and
     the morning list. A choice no photo answers to shows everything.
   - Night: switch the screen off between two times, and optionally whenever the room
