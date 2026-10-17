@@ -77,6 +77,12 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   corner of Pictures, keeps the screen on through night mode, and keeps its tab open.
   An alarm switches the screen on if night mode has it off. These are kept on the frame
   itself and need no PIN.
+  Timers can be shown as **numbers** or as a **picture** (a choice under Timers, kept by
+  each screen), for a child too young to read a clock. As a picture, each timer is a disc
+  that empties as the time passes, like a children's kitchen timer. It is green, then
+  orange in the last quarter and red in the last tenth. A timer that is started fills the
+  whole screen with its disc until it ends or "Back" is touched, and touching a timer's
+  disc brings it back. The corner of Pictures shows a small disc too.
   Utilities also holds **Music**: the radio stations, a touch on one to play it, what
   Spotify is playing (with its cover, and buttons for pause and the next and previous
   track), and the volume. What is playing shows in the corner of Pictures: the cover,

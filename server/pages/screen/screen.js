@@ -177,6 +177,46 @@ function label(button, icon, words) {
   button.appendChild(document.createTextNode(words));
 }
 
+// --- a disc that empties as time passes, for those too young to read a clock ------------
+// Used by Yoto (listening time left) and by the timers drawn as a picture. The coloured slice
+// is the time left, from twelve o'clock round as on a clock, like a children's kitchen timer.
+
+// What can be drawn in the middle of a disc, in the same 24 by 24 grid as ICONS.
+const DISC_MIDDLES = {
+  playing: '<path class="tune one" d="M7 16.5V8l5-1.2v8"/><circle class="tune one" cx="5.6" cy="16.6" r="1.6"/><circle class="tune one" cx="10.6" cy="15" r="1.6"/>'
+    + '<path class="tune two" d="M17.5 13.5V6.5"/><circle class="tune two" cx="16" cy="13.6" r="1.6"/>',
+  sleeping: '<path class="moon" d="M16.5 15.5A6 6 0 1 1 10 6a4.8 4.8 0 0 0 6.5 9.5z"/><path class="moon star" d="M17 5.5l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/>',
+  paused: '<path d="M9.5 7.5v9M14.5 7.5v9"/>',
+  waiting: '<path class="solid" d="M9.5 7.5l7 4.5-7 4.5z"/>',
+  sand: '<path d="M7 4h10M7 20h10M8.5 4c0 4.5 3.5 5 3.5 8s-3.5 3.5-3.5 8M15.5 4c0 4.5-3.5 5-3.5 8s3.5 3.5 3.5 8"/><path class="solid sand" d="M9.8 19.6h4.4L12 16.5z"/>',
+};
+
+/// The outline of the slice for a share of the time (0 to 1) still to go.
+function discSlice(share) {
+  if (share >= 0.999) return 'M50 3A47 47 0 1 1 50 97A47 47 0 1 1 50 3Z';
+  if (share <= 0.001) return 'M50 50';
+  const angle = share * 2 * Math.PI;
+  return 'M50 50L50 3A47 47 0 ' + (share > 0.5 ? 1 : 0) + ' 1 ' + (50 + 47 * Math.sin(angle)).toFixed(2)
+    + ' ' + (50 - 47 * Math.cos(angle)).toFixed(2) + 'Z';
+}
+
+/// Draw a disc in `box`, or move on the one already there. `looks` is { share, colour, middle }:
+/// the colour is plenty, nearly, last or resting, and the middle one of DISC_MIDDLES (or none).
+/// From one moment to the next only the slice changes, so what moves in the middle moves smoothly.
+function drawDisc(box, looks) {
+  let disc = box.firstElementChild;
+  const middle = looks.middle || '';
+  if (!disc || disc.getAttribute('data-middle') !== middle) {
+    box.innerHTML = '<svg class="disc" data-middle="' + middle + '" viewBox="0 0 100 100">'
+      + '<circle class="used" cx="50" cy="50" r="47"/><path class="left"/>'
+      + (middle ? '<circle class="hub" cx="50" cy="50" r="19"/><g class="middle ' + middle + '" transform="translate(32 32) scale(1.5)">' + DISC_MIDDLES[middle] + '</g>' : '')
+      + '</svg>';
+    disc = box.firstElementChild;
+  }
+  disc.setAttribute('class', 'disc ' + looks.colour);
+  disc.querySelector('.left').setAttribute('d', discSlice(looks.share));
+}
+
 /// Ask the frame's server to change something. With a PIN set, that takes the token the PIN bought.
 async function send(path, body) {
   const headers = { 'X-Frame-App': '1', 'Content-Type': 'application/json' };

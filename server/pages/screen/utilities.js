@@ -1,5 +1,10 @@
 // The Utilities tab of the frame's screen: timers, alarms and a pomodoro clock.
 //
+// Timers can be shown as numbers or as a picture: a disc that empties as the time passes
+// (screen.js `drawDisc`), green, then orange in the last quarter and red in the last tenth,
+// for a child too young to read a clock. Shown as a picture, a timer that is started also
+// fills the screen until it ends or "Back" is touched; touching a timer's disc brings it back.
+//
 // Everything here is kept in this browser's own storage, so it survives the page being
 // loaded again and needs neither the server nor the PIN. The server is only told, each
 // time the page says it is running, what this needs of the display: to stay on while
@@ -40,6 +45,8 @@ let pomodoro = Object.assign(
   { focus: 25, short: 5, long: 15, phase: 'idle', round: 1, ends: 0, left: 0 },
   kept.read('framePomodoro', {}),
 );
+let pictureTimers = kept.read('framePictureTimers', false);  // timers shown as discs rather than numbers
+let bigTimer = null;                         // the id of the timer filling the screen, if one is
 let customMinutes = 20;                      // the timer being set by hand
 let draft = { hour: 7, minute: 0, repeat: 'daily' };  // the alarm being set
 let ringing = [];                            // what is ringing, first come first: { title, detail, alarm }
@@ -97,26 +104,64 @@ function stopRinging(snooze) {
 
 function startTimer(minutes) {
   if (timers.length >= MOST_TIMERS) return;
-  timers.push({ id: newId(), minutes: minutes, ends: Date.now() + minutes * MINUTE_MS });
+  const timer = { id: newId(), minutes: minutes, ends: Date.now() + minutes * MINUTE_MS };
+  timers.push(timer);
   kept.write('frameTimers', timers);
   drawTimers();
+  if (pictureTimers) showBigTimer(timer.id);
+}
+
+/// How a timer's disc looks `now`: how much is left, and its colour.
+function timerLooks(timer, now) {
+  const share = Math.max(0, Math.min(1, (timer.ends - now) / (timer.minutes * MINUTE_MS)));
+  return { share: share, colour: share > 0.25 ? 'plenty' : share > 0.1 ? 'nearly' : 'last', middle: 'sand' };
+}
+
+/// A timer over the whole screen, a large disc, for a child to watch.
+function showBigTimer(id) {
+  bigTimer = id;
+  $('big-timer').classList.add('on');
+  everySecond();
+}
+function closeBigTimer() {
+  bigTimer = null;
+  $('big-timer').classList.remove('on');
 }
 
 function drawTimers() {
   $('timer-custom').textContent = minutesText(customMinutes);
+  choices($('timer-shows'), [[false, 'Numbers'], [true, 'Picture']], pictureTimers, (picture) => {
+    pictureTimers = picture;
+    kept.write('framePictureTimers', picture);
+    if (!picture) closeBigTimer();
+    drawTimers();
+  });
   const list = $('timers');
   list.textContent = '';
+  list.className = pictureTimers ? 'pictures' : '';
   if (!timers.length) list.appendChild(element('p', '', 'No timer is running. Touch a length to start one; up to ' + MOST_TIMERS + ' can run at once.'));
   timers.forEach((timer) => {
-    const entry = element('div', 'entry', '');
-    entry.appendChild(element('span', 'big', '')).id = 'left-' + timer.id;
-    entry.appendChild(element('span', 'about', minutesText(timer.minutes) + ' timer'));
     const cancel = element('button', 'press', 'Cancel');
-    cancel.onclick = () => {
+    cancel.onclick = (event) => {
+      event.stopPropagation();
       timers = timers.filter((t) => t.id !== timer.id);
       kept.write('frameTimers', timers);
       drawTimers();
     };
+    if (pictureTimers) {
+      // The disc, the time left for grown-ups, and Cancel; a touch on it fills the screen with it.
+      const tile = element('div', 'tile', '');
+      tile.appendChild(element('div', 'face', '')).id = 'face-' + timer.id;
+      const side = tile.appendChild(element('div', 'side', ''));
+      side.appendChild(element('div', 'count', '')).id = 'left-' + timer.id;
+      side.appendChild(cancel);
+      tile.onclick = () => showBigTimer(timer.id);
+      list.appendChild(tile);
+      return;
+    }
+    const entry = element('div', 'entry', '');
+    entry.appendChild(element('span', 'big', '')).id = 'left-' + timer.id;
+    entry.appendChild(element('span', 'about', minutesText(timer.minutes) + ' timer'));
     entry.appendChild(cancel);
     list.appendChild(entry);
   });
@@ -265,9 +310,17 @@ function everySecond() {
     drawTimers();
   }
   timers.forEach((timer) => {
-    const left = $('left-' + timer.id);
+    const left = $('left-' + timer.id), face = $('face-' + timer.id);
     if (left) left.textContent = countdown(timer.ends - now);
+    if (face) drawDisc(face, timerLooks(timer, now));
   });
+  // The timer filling the screen goes when it ends (and rings) or is cancelled.
+  const big = timers.filter((timer) => timer.id === bigTimer)[0];
+  if (bigTimer && !big) closeBigTimer();
+  if (big) {
+    drawDisc($('big-timer-face'), timerLooks(big, now));
+    $('big-timer-count').textContent = countdown(big.ends - now) + ' left of ' + minutesText(big.minutes);
+  }
   if (pomodoroRunning() && now >= pomodoro.ends) nextPhase(true);
   const pomodoroLeft = pomodoro.phase === 'idle' ? pomodoro.focus * MINUTE_MS : pomodoro.left || pomodoro.ends - now;
   $('pomo-count').textContent = countdown(pomodoroLeft);
@@ -277,10 +330,19 @@ function everySecond() {
   // Over the pictures: the timer that ends first, and the pomodoro if it is running.
   const soonest = timers.slice().sort((x, y) => x.ends - y.ends)[0];
   const showing = [];
-  if (soonest) showing.push('⏱ ' + countdown(soonest.ends - now));
+  // Shown as a picture, the timer's disc comes first, small.
+  const disc = pictureTimers && soonest;
+  if (soonest) showing.push((disc ? '' : '⏱ ') + countdown(soonest.ends - now));
   if (pomodoroRunning()) showing.push(PHASES[pomodoro.phase] + ' ' + countdown(pomodoro.ends - now));
-  const text = showing.join('   ·   ');
-  if ($('running').textContent !== text) $('running').textContent = text;
+  const text = showing.join('   ·   '), running = $('running');
+  if (running.getAttribute('data-shows') !== (disc ? 'disc ' : '') + text) {
+    running.setAttribute('data-shows', (disc ? 'disc ' : '') + text);
+    running.textContent = '';
+    if (disc) running.appendChild(element('span', 'mini', ''));
+    if (text) running.appendChild(document.createTextNode(text));
+  }
+  // Too small for the hourglass: only the slice.
+  if (disc) drawDisc(running.firstChild, Object.assign(timerLooks(soonest, now), { middle: '' }));
 }
 
 // What this needs of the display, said to the server each time the page reports in: to
@@ -349,6 +411,7 @@ $('pomo-reset').onclick = () => {
   drawPomodoro();
 };
 
+$('big-timer-back').onclick = closeBigTimer;
 $('ring-stop').onclick = () => stopRinging(false);
 $('ring-snooze').onclick = () => stopRinging(true);
 $('tools').addEventListener('click', (event) => {

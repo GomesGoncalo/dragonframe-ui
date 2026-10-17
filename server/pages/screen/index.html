@@ -16,7 +16,9 @@
             what is on it.
   To do     today's tasks for each person, their points, and the rewards points buy
             (todo.js and todo.css). Kept by the server, so tasks are added from anywhere.
-  Utilities timers, alarms and a pomodoro clock (utilities.js and utilities.css), Music:
+  Utilities timers (as numbers, or as a picture a toddler can follow: a disc that empties,
+            which also fills the screen while it runs), alarms and a pomodoro clock
+            (utilities.js and utilities.css), Music:
             radio stations, and Spotify when someone chooses the frame as the speaker
             in their Spotify app (music.js and music.css; what is playing shows in a
             corner of the pictures, and a touch on it, or a setting, gives it the
@@ -189,6 +191,7 @@
   <div class="part" id="tool-timers">
     <div class="row"><span class="label">Start a timer for</span><span id="timer-presets"></span></div>
     <div class="row"><span class="label">Or for</span><button class="press" data-custom="-5">−5</button><button class="press" data-custom="-1">−1</button><span class="hours" id="timer-custom"></span><button class="press" data-custom="1">+1</button><button class="press" data-custom="5">+5</button><button class="press on spaced" id="timer-start">Start</button></div>
+    <div class="row"><span class="label">Show timers as (kept by this screen only)</span><span id="timer-shows"></span></div>
     <div id="timers"></div>
   </div>
 
@@ -329,6 +332,12 @@
   <div class="what" id="cheer-what"></div>
   <div id="cheer-towards"></div>
   <div class="goal" id="cheer-goal"></div>
+</div>
+
+<div class="big-timer" id="big-timer">
+  <div class="face" id="big-timer-face"></div>
+  <div class="count" id="big-timer-count"></div>
+  <button class="press" id="big-timer-back">Back</button>
 </div>
 
 <div class="ring" id="ring">

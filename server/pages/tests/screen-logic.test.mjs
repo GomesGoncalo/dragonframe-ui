@@ -228,6 +228,34 @@ describe('alarms and timers', () => {
     assert.equal(await next({ on: true, time: '07:00', repeat: 'daily' }, 'new Date(2026, 9, 24, 23)'), 'Sun Oct 25 2026 07:00');
   });
 
+  test('a disc empties from twelve o\'clock round, and turns orange then red near the end', async () => {
+    const slices = await page.eval('[discSlice(1), discSlice(0.25), discSlice(0.75), discSlice(0)]');
+    assert.deepEqual(slices, ['M50 3A47 47 0 1 1 50 97A47 47 0 1 1 50 3Z', 'M50 50L50 3A47 47 0 0 1 97.00 50.00Z', 'M50 50L50 3A47 47 0 1 1 3.00 50.00Z', 'M50 50']);
+    const colours = await page.eval(`[0.5, 0.2, 0.05].map((share) => {
+      const timer = { minutes: 10, ends: 1000000 + share * 10 * MINUTE_MS };
+      return timerLooks(timer, 1000000).colour;
+    })`);
+    assert.deepEqual(colours, ['plenty', 'nearly', 'last']);
+  });
+
+  test('a timer shown as a picture fills the screen when started, and goes when cancelled', async () => {
+    const shown = await page.eval(`(() => {
+      showTab('utilities');
+      choose('tools', 'tool', 'timers');
+      $('timer-shows').children[1].click();
+      startTimer(5);
+      const said = [$('big-timer').classList.contains('on'), !!$('big-timer-face').querySelector('.disc.plenty .left'),
+        $('big-timer-count').textContent, document.querySelectorAll('#timers .tile .disc').length];
+      $('big-timer-back').click();
+      said.push($('big-timer').classList.contains('on'));
+      document.querySelector('#timers .tile .press').click();
+      $('timer-shows').children[0].click();
+      showTab('pictures');
+      return said.concat(timers.length, pictureTimers);
+    })()`);
+    assert.deepEqual(shown, [true, true, '5:00 left of 5 min', 1, false, 0, false]);
+  });
+
   test('time left reads as minutes and seconds, with hours when there are any', async () => {
     const read = await page.eval('[countdown(299001), countdown(60000), countdown(3725000), countdown(-5), minutesText(60), minutesText(25)]');
     assert.deepEqual(read, ['5:00', '1:00', '1:02:05', '0:00', '1 hour', '25 min']);

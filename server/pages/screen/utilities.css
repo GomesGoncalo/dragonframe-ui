@@ -20,6 +20,21 @@ body[data-tool="timers"] #tool-timers, body[data-tool="alarms"] #tool-alarms, bo
 .lengths { margin-top: 2vmin; text-align: center; }
 .lengths > div { text-align: left; }
 
+/* Timers as a picture: a disc each, the time left under it for grown-ups, and Cancel. */
+#timers.pictures { white-space: nowrap; }
+.tile { display: inline-block; vertical-align: top; width: 23%; margin-right: 2%; white-space: nowrap; }
+.tile .face { display: inline-block; vertical-align: middle; width: 14vmin; height: 14vmin; margin-right: 1.6vmin; }
+.tile .side { display: inline-block; vertical-align: middle; }
+.tile .count { font-size: 3.6vmin; font-weight: 300; font-variant-numeric: tabular-nums; margin-bottom: 1vmin; }
+.tile .press { margin: 0; }
+
+/* A timer over the whole screen, for a child to watch the time go. */
+.big-timer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; background: var(--bg); text-align: center; }
+.big-timer.on { display: block; }
+.big-timer .face { width: 72vmin; height: 72vmin; margin: 6vmin auto 2.4vmin; }
+.big-timer .count { font-size: 3.4vmin; color: var(--muted); font-variant-numeric: tabular-nums; }
+.big-timer .press { position: absolute; bottom: 4vmin; left: 50%; transform: translateX(-50%); margin: 0; font-size: 3.2vmin; padding: 2vmin 5vmin; }
+
 /* Something is ringing: over everything, until it is stopped. */
 .ring {
   position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; text-align: center;
@@ -36,8 +51,13 @@ body[data-tool="timers"] #tool-timers, body[data-tool="alarms"] #tool-alarms, bo
   font-size: 3.2vmin; background: rgba(0, 0, 0, .46); color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .running:empty { display: none; }
+.running .mini { display: inline-block; width: 4.4vmin; height: 4.4vmin; margin-right: 1.4vmin; vertical-align: middle; }
 
 @media (orientation: portrait) {
+  #timers.pictures { white-space: normal; }
+  .tile { width: 46%; margin-bottom: 3vmin; }
+  .tile .face { width: 18vmin; height: 18vmin; }
+  .big-timer .face { width: 84vmin; height: 84vmin; margin-top: 30vmin; }
   .entry .about { min-width: 0; display: block; margin: .4vmin 0 1vmin; }
   .ring { padding-top: 34vh; }
 }
