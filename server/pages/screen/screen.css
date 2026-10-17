@@ -215,8 +215,11 @@ body.asleep .asleep { display: block; }
   .day .name, .day .number, .day .sky { display: inline-block; vertical-align: baseline; margin: 0 1.6vmin .6vmin 0; min-height: 0; }
   .day .number { font-size: 3.4vmin; }
   .day .item { display: inline-block; vertical-align: top; width: 26vmin; margin-right: 1.4vmin; }
-  .switch { overflow: hidden; }
-  .switch button { padding: 1.1vmin 2.1vmin; margin-right: .7vmin; }
+  /* Standing up, a row of choices that is too wide wraps onto a second line, never hiding
+     any (Utilities has six with the house and Yoto); what is under it starts lower to make room. */
+  .switch { white-space: normal; }
+  .switch button { padding: 1.1vmin 2.1vmin; margin: 0 .7vmin 1.2vmin 0; }
+  .part { top: 30vmin; }
 }
 
 /* --- a disc that empties as time passes (screen.js `drawDisc`): Yoto, and timers as a picture --- */
