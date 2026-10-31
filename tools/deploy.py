@@ -180,23 +180,32 @@ def show_original_screen(frame):
 
 def start(frame):
     """Start the server now and wait until it answers. After a reboot, init starts it instead."""
-    # In the background and in its own session, so it outlives this adb connection. adb still
-    # does not return while it runs, so do not wait for it: drop the adb client once it answers.
-    starter = subprocess.Popen(
-        ["adb", "-s", frame.host, "shell", f"cd {INSTALL_DIR} && setsid ./frameserver >/dev/null 2>&1 < /dev/null &"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    # Through init when it knows the service, so init keeps it running and restarts it if it
+    # exits. Only before the first reboot after installing, when init has not read the .rc
+    # yet, is it started by hand: in the background and in its own session, so it outlives
+    # this adb connection. adb still does not return while it runs, so do not wait for it:
+    # drop the adb client once it answers.
+    if frame.shell("getprop init.svc.frameserver", check=False).strip():
+        frame.shell("start frameserver", check=False)
+        starter = None
+    else:
+        starter = subprocess.Popen(
+            ["adb", "-s", frame.host, "shell", f"cd {INSTALL_DIR} && setsid ./frameserver >/dev/null 2>&1 < /dev/null &"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     url = f"http://{frame.target[0]}/" if PORT == 80 else f"http://{frame.target[0]}:{PORT}/"
     for _ in range(40):
         time.sleep(0.5)
         try:
             urllib.request.urlopen(url + "api/state", timeout=3).read()
-            starter.terminate()
+            if starter:
+                starter.terminate()
             return url
         except OSError:
             pass
-    starter.terminate()
+    if starter:
+        starter.terminate()
     fs.die(f"installed, but {url} is not answering; see {INSTALL_DIR}/logs/ on the frame")
 
 
