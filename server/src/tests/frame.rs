@@ -50,6 +50,7 @@ async fn the_address_for_a_phone_is_given_as_text_and_as_a_qr_code() {
     let expected = qrcode::QrCode::new(address.as_bytes()).unwrap();
     assert_eq!(picture, expected.render::<qrcode::render::svg::Color>().min_dimensions(240, 240).build());
     assert_eq!(manage_address("192.168.4.23", 8080), "http://192.168.4.23:8080");
+    assert_eq!(manage_address("192.168.4.23", 80), "http://192.168.4.23");
 }
 
 #[tokio::test]

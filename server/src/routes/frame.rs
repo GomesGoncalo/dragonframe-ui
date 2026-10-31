@@ -76,9 +76,12 @@ pub(crate) async fn device_view(State(app): State<Shared>) -> Json<Value> {
     )
 }
 
-/// Where a phone or computer on the same network finds this app.
+/// Where a phone or computer on the same network finds this app. Port 80 goes unsaid.
 pub(crate) fn manage_address(frame: &str, port: u16) -> String {
-    format!("http://{frame}:{port}")
+    match port {
+        80 => format!("http://{frame}"),
+        _ => format!("http://{frame}:{port}"),
+    }
 }
 
 /// That address as a QR code, for a phone's camera. There is none while the frame is off Wi-Fi.

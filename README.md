@@ -405,7 +405,10 @@ Yoto Limiter instead of the real one.
 
 ## The management page
 
-Open `http://<frame address>:8080` from a phone or computer on the same Wi-Fi.
+Open `<frame address>` from a phone or computer on the same Wi-Fi; `http://` can be left
+out. The server listens on port 80 for this: Safari tries https first, finds nothing on
+443 and falls back to http. (On another port, such as the 8080 used before, it tries https
+on that port, gets turned away and gives up.)
 
 - **Photos, Duplicates, Google Photos sync, Bin**: see, add and delete photos, find
   look-alikes, and sync shared Google Photos albums. Opening a photo offers "Favourite"
@@ -643,7 +646,7 @@ On the frame, data lives in `/data/local/frameserver`: `settings.json` (the remi
 `calendars/` (kept copies of subscribed calendars), `index.json`, `thumbs/`, `logs/`.
 
 Environment variables: `FRAME_CLOUD_DIR` (photo folder), `FRAME_DATA_DIR`,
-`FRAME_PORT`, `FRAME_BIND` (listen address), `FRAME_DEVICE=simulated`, `FRAME_TZ` (the
+`FRAME_PORT` (default 80), `FRAME_BIND` (listen address), `FRAME_DEVICE=simulated`, `FRAME_TZ` (the
 simulated frame's time zone), `FRAME_LOG` (log level), `FRAME_SPOTIFY` (where Spotify's
 player is; on the frame it is `framespot` beside the data).
 

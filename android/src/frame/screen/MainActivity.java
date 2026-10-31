@@ -32,7 +32,7 @@ import android.webkit.WebViewClient;
  * screen is off; frameserver reads the measurements to know when a dark room is lit again.
  */
 public class MainActivity extends Activity {
-    private static final String PAGE = "http://127.0.0.1:8080/frame";
+    private static final String PAGE = "http://127.0.0.1/frame";
     private static final long RETRY_MS = 5000;
 
     private final Handler handler = new Handler(Looper.getMainLooper());

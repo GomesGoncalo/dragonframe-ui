@@ -48,7 +48,7 @@ INSTALL_DIR = "/data/local/frameserver"
 # /system's overlay lives on /cache, which is mounted too late for a file there to be seen.
 RC_FILE = "/vendor/etc/init/frameserver.rc"
 OLD_RC_FILE = "/system/etc/init/frameserver.rc"  # where earlier versions put it; never took effect
-PORT = 8080
+PORT = 80
 # What shows the new screen: our app, or the browser that comes with the frame when the
 # app is not installed. `device.rs` starts them; here they only ever need closing.
 BROWSER = "org.chromium.webview_shell"
@@ -187,7 +187,7 @@ def start(frame):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    url = f"http://{frame.target[0]}:{PORT}/"
+    url = f"http://{frame.target[0]}/" if PORT == 80 else f"http://{frame.target[0]}:{PORT}/"
     for _ in range(40):
         time.sleep(0.5)
         try:

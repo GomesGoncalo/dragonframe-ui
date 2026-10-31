@@ -44,7 +44,7 @@ def copy_sample(frame, count):
     photos = SIM / "photos"
     if any(photos.rglob("*.*")):
         return
-    frame = frame or f"{fs.frame_name()}:8080"
+    frame = frame or fs.frame_name()
     print(f"Copying {count} photos from the frame at {frame} to try the slideshow with...")
     try:
         with urllib.request.urlopen(f"http://{frame}/api/state?full=1", timeout=30) as reply:
@@ -68,7 +68,7 @@ def copy_sample(frame, count):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--frame", help="frameserver on the frame, to copy sample photos from (default: the frame's address, port 8080)")
+    parser.add_argument("--frame", help="frameserver on the frame, to copy sample photos from (default: the frame's address)")
     parser.add_argument("--photos", type=int, default=150, help="how many photos to copy on the first run")
     parser.add_argument("--port", type=int, default=8090, help="port to serve on")
     parser.add_argument("--local", action="store_true", help="answer only to this computer, not to phones on the network")

@@ -89,7 +89,7 @@ async fn main() {
         cloud_dir: env_path("FRAME_CLOUD_DIR", "/storage/emulated/0/CloudAlbum/cloud"),
         data_dir: env_path("FRAME_DATA_DIR", "/data/local/frameserver"),
     };
-    let port = std::env::var("FRAME_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080u16);
+    let port = std::env::var("FRAME_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(80u16);
     // Every address by default; FRAME_BIND=127.0.0.1 keeps a copy run on a computer to itself.
     let bind = std::env::var("FRAME_BIND").unwrap_or_else(|_| "0.0.0.0".into());
     if let Err(e) = std::fs::create_dir_all(cfg.data_dir.join("thumbs")) {
