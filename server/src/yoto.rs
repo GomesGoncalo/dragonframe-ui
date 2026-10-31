@@ -1,15 +1,18 @@
 //! How much listening time the Yoto players have left, from Yoto Limiter
 //! (<https://yoto-limiter.com/developers>).
 //!
-//! The frame only reads: it keeps one live stream of Yoto Limiter's status open (server-sent
-//! events, sent at once, whenever a player changes, and at least every minute). Pausing, adding time and changing
-//! limits stay in Yoto Limiter's own app, so a key with the `read` scope alone is enough.
+//! The frame keeps one live stream of Yoto Limiter's status open (server-sent events, sent at
+//! once, whenever a player changes, and at least every minute), which a key with the `read`
+//! scope allows. After the frame's PIN, and with a key that also has the `control` scope, it
+//! gives a player more time today or less, and pauses it, for a moment or for a while.
+//! Changing the limits themselves stays in Yoto Limiter's own app.
 //! What is heard is kept in memory only: it is out of date within minutes anyway.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use reqwest::header::ACCEPT;
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -18,7 +21,7 @@ use tracing::{debug, warn};
 
 use crate::app::{blocking, Moment};
 use crate::store::{self, Config};
-use crate::types::YotoKey;
+use crate::types::{YotoKey, YotoOrder};
 
 pub const YOTO_URL: &str = "https://yoto-limiter.com";
 /// The stream says something at least every 25 seconds (a comment, if nothing else); this
@@ -55,6 +58,12 @@ pub enum YotoError {
     Unreadable,
     #[error("Yoto Limiter's live status went quiet")]
     Quiet,
+    #[error("the frame's key may only read: make one with the read and control scopes")]
+    NoControl,
+    #[error("Yoto Limiter does not know that player")]
+    UnknownPlayer,
+    #[error("Yoto Limiter would not do that: {0}")]
+    WouldNotDo(String),
 }
 
 impl YotoError {
@@ -71,6 +80,17 @@ impl YotoError {
     /// A problem that trying again will not mend: the key or the account has to change first.
     pub fn lasting(&self) -> bool {
         matches!(self, YotoError::UnknownKey | YotoError::NeedsPlus | YotoError::NotAllowed)
+    }
+}
+
+/// Why an order was turned down, from the status and the plain words that came with it.
+fn not_done(status: u16, said: &str) -> YotoError {
+    match status {
+        403 if said.contains("scope") => YotoError::NoControl,
+        // Another reason, such as more than an owner allows to be added in a day; its words say which.
+        403 | 422 => YotoError::WouldNotDo(trimmed(said.trim_end_matches('.'))),
+        404 => YotoError::UnknownPlayer,
+        other => YotoError::from_status(other),
     }
 }
 
@@ -262,6 +282,55 @@ impl Yoto {
         Ok(())
     }
 
+    /// Ask something of a player. What it changes is shown at once rather than when the live
+    /// status next says so: the time Yoto Limiter answers with, or when a hold ends.
+    pub async fn order(
+        &self,
+        http: &reqwest::Client,
+        key: &YotoKey,
+        player: i64,
+        order: YotoOrder,
+    ) -> Result<(), YotoError> {
+        let (method, path, body) = match order {
+            YotoOrder::Time(change) => (Method::POST, "extend", Some(json!({ "minutes": change.minutes() }))),
+            YotoOrder::Pause => (Method::POST, "pause", None),
+            YotoOrder::Hold(hold) => (Method::POST, "hold", Some(json!({ "minutes": hold.minutes() }))),
+            YotoOrder::Resume => (Method::DELETE, "hold", None),
+        };
+        let mut request = http
+            .request(method, format!("{}/api/{path}", self.base))
+            .query(&[("player", player)])
+            .bearer_auth(key.as_str())
+            .timeout(Duration::from_secs(30));
+        if let Some(body) = body {
+            request = request.header(CONTENT_TYPE, "application/json").body(body.to_string());
+        }
+        let response = request.send().await?;
+        let status = response.status().as_u16();
+        let answer = response.bytes().await?;
+        if !(200..300).contains(&status) {
+            return Err(not_done(status, &String::from_utf8_lossy(&answer)));
+        }
+        let mut known = self.known();
+        let Some(known) = known.players.iter_mut().find(|known| known.id == player) else { return Ok(()) };
+        match order {
+            // An answer that cannot be read still means it was done; the live status will tell.
+            YotoOrder::Time(_) => {
+                if let Ok(budget) = serde_json::from_slice::<Budget>(&answer) {
+                    known.budget = budget;
+                }
+            }
+            YotoOrder::Pause => known.budget.playing = false,
+            YotoOrder::Hold(hold) => {
+                let until = chrono::Utc::now() + chrono::Duration::minutes(i64::from(hold.minutes()));
+                known.held_until = Some(until.to_rfc3339());
+                known.budget.playing = false;
+            }
+            YotoOrder::Resume => known.held_until = None,
+        }
+        Ok(())
+    }
+
     /// Follow the live status until the stream ends or fails, and say why it did.
     async fn follow(&self, http: &reqwest::Client, key: &YotoKey) -> YotoError {
         let request = http.get(format!("{}/api/events", self.base)).bearer_auth(key.as_str());
@@ -383,22 +452,25 @@ async fn fetch<T: serde::de::DeserializeOwned>(request: reqwest::RequestBuilder)
 pub mod testing {
     use std::convert::Infallible;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use axum::extract::State;
+    use axum::extract::{Query, State};
     use axum::http::{HeaderMap, StatusCode};
     use axum::response::sse::{Event, KeepAlive, Sse};
     use axum::response::IntoResponse;
-    use axum::routing::get;
+    use axum::routing::{get, post};
     use axum::Router;
     use futures_util::stream;
     use serde_json::{json, Value};
 
-    /// The key the stand-in knows; any other is unknown, and `KEY_WITHOUT_PLUS` is on an
-    /// account that has left Plus.
+    /// The key the stand-in knows, which may read and control; any other is unknown, except
+    /// `KEY_READ_ONLY`, which may only read, and `KEY_WITHOUT_PLUS`, on an account that has left Plus.
     pub const KEY: &str = "yl_test0123456789abcdef";
+    pub const KEY_READ_ONLY: &str = "yl_reader0123456789abcdef";
     pub const KEY_WITHOUT_PLUS: &str = "yl_lapsed0123456789abcdef";
+    /// More than this many minutes at once is past what the owner allows to be added in a day.
+    pub const MOST_ADDED: i64 = 60;
 
     pub fn status(remaining_secs: i64) -> Value {
         json!({ "players": [
@@ -425,14 +497,72 @@ pub mod testing {
     pub struct Seen {
         /// How many times the live status was opened.
         pub streams: AtomicUsize,
+        /// What players were asked to do, as "extend 7 15", "pause 7", "hold 7 30", "resume 7".
+        pub orders: Mutex<Vec<String>>,
     }
 
     fn key(headers: &HeaderMap) -> Result<(), StatusCode> {
         let offered = headers.get("authorization").and_then(|value| value.to_str().ok()).unwrap_or("");
         match offered.strip_prefix("Bearer ") {
-            Some(KEY) => Ok(()),
+            Some(KEY | KEY_READ_ONLY) => Ok(()),
             Some(KEY_WITHOUT_PLUS) => Err(StatusCode::PAYMENT_REQUIRED),
             _ => Err(StatusCode::UNAUTHORIZED),
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Which {
+        player: i64,
+    }
+
+    /// What the control endpoints check, in Yoto Limiter's order: the key, its scope, the player.
+    fn may_control(headers: &HeaderMap, player: i64) -> Result<(), (StatusCode, &'static str)> {
+        key(headers).map_err(|code| (code, "unknown API key"))?;
+        if headers.get("authorization").and_then(|value| value.to_str().ok())
+            == Some(&format!("Bearer {KEY_READ_ONLY}"))
+        {
+            return Err((StatusCode::FORBIDDEN, "This key lacks the control scope."));
+        }
+        if player != 7 && player != 8 {
+            return Err((StatusCode::NOT_FOUND, "Player not found."));
+        }
+        Ok(())
+    }
+
+    async fn ordered(
+        State(seen): State<Arc<Seen>>,
+        method: axum::http::Method,
+        uri: axum::http::Uri,
+        Query(which): Query<Which>,
+        headers: HeaderMap,
+        body: String,
+    ) -> axum::response::Response {
+        if let Err(refused) = may_control(&headers, which.player) {
+            return refused.into_response();
+        }
+        let minutes = serde_json::from_str::<Value>(&body).ok().and_then(|body| body["minutes"].as_i64());
+        let order = match (method.as_str(), uri.path(), minutes) {
+            ("POST", "/api/extend", Some(minutes)) if minutes > MOST_ADDED => {
+                return (StatusCode::FORBIDDEN, "That is more than max_extension_minutes allows today.")
+                    .into_response();
+            }
+            ("POST", "/api/extend", Some(minutes)) => format!("extend {} {minutes}", which.player),
+            ("POST", "/api/pause", _) => format!("pause {}", which.player),
+            ("POST", "/api/hold", Some(minutes)) => format!("hold {} {minutes}", which.player),
+            ("DELETE", "/api/hold", _) => format!("resume {}", which.player),
+            _ => return (StatusCode::UNPROCESSABLE_ENTITY, "minutes is required").into_response(),
+        };
+        seen.orders.lock().unwrap().push(order);
+        match (uri.path(), minutes) {
+            ("/api/extend", Some(minutes)) => {
+                let budget = &status(1800)["players"][0]["budget"];
+                let mut budget = budget.clone();
+                budget["remaining_secs"] = json!(1800 + minutes * 60);
+                budget["extension_secs"] = json!(minutes * 60);
+                axum::Json(budget).into_response()
+            }
+            ("/api/pause", _) => (StatusCode::ACCEPTED, "Sent to the player.").into_response(),
+            _ => StatusCode::NO_CONTENT.into_response(),
         }
     }
 
@@ -465,6 +595,9 @@ pub mod testing {
         let app = Router::new()
             .route("/api/status", get(status_route))
             .route("/api/events", get(events))
+            .route("/api/extend", post(ordered))
+            .route("/api/pause", post(ordered))
+            .route("/api/hold", post(ordered).delete(ordered))
             .with_state(Arc::clone(&seen));
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         (base, seen)
@@ -535,6 +668,39 @@ mod tests {
         assert_eq!(yoto.view()["players"][0]["remaining_secs"], 1800, "what the check heard is kept");
         let nowhere = Yoto::new("http://127.0.0.1:1");
         assert!(matches!(nowhere.check(&http, &key(testing::KEY)).await, Err(YotoError::Unreachable(_))));
+    }
+
+    #[tokio::test]
+    async fn players_are_given_time_and_paused_and_what_changed_is_shown_at_once() {
+        let (base, seen) = testing::yoto_limiter().await;
+        let yoto = Yoto::new(&base);
+        let http = reqwest::Client::new();
+        let order = |text: Value| serde_json::from_value::<YotoOrder>(text).unwrap();
+        yoto.check(&http, &key(testing::KEY)).await.unwrap();
+
+        yoto.order(&http, &key(testing::KEY), 7, order(json!({ "time": 15 }))).await.unwrap();
+        assert_eq!(yoto.view()["players"][0]["remaining_secs"], 1800 + 15 * 60, "the time it answered with");
+        yoto.order(&http, &key(testing::KEY), 7, order(json!({ "time": -10 }))).await.unwrap();
+        assert_eq!(yoto.view()["players"][0]["remaining_secs"], 1800 - 10 * 60);
+        yoto.order(&http, &key(testing::KEY), 7, order(json!("pause"))).await.unwrap();
+        assert_eq!(yoto.view()["players"][0]["playing"], false);
+        yoto.order(&http, &key(testing::KEY), 7, order(json!({ "hold": 30 }))).await.unwrap();
+        let until = yoto.view()["players"][0]["held_until"].as_i64().unwrap();
+        assert!((until - chrono::Utc::now().timestamp() - 30 * 60).abs() < 5, "held for half an hour");
+        yoto.order(&http, &key(testing::KEY), 7, order(json!("resume"))).await.unwrap();
+        assert_eq!(yoto.view()["players"][0]["held_until"], Value::Null);
+        assert_eq!(*seen.orders.lock().unwrap(), ["extend 7 15", "extend 7 -10", "pause 7", "hold 7 30", "resume 7"]);
+
+        let refused = yoto.order(&http, &key(testing::KEY_READ_ONLY), 7, order(json!("pause"))).await;
+        assert_eq!(refused, Err(YotoError::NoControl));
+        let too_much = yoto.order(&http, &key(testing::KEY), 7, order(json!({ "time": 90 }))).await;
+        assert_eq!(
+            too_much.unwrap_err().to_string(),
+            "Yoto Limiter would not do that: That is more than max_extension_minutes allows today"
+        );
+        let nobody = yoto.order(&http, &key(testing::KEY), 99, order(json!("pause"))).await;
+        assert_eq!(nobody, Err(YotoError::UnknownPlayer));
+        assert_eq!(seen.orders.lock().unwrap().len(), 5, "nothing refused was done");
     }
 
     #[tokio::test]

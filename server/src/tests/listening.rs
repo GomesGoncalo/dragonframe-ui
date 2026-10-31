@@ -93,3 +93,45 @@ async fn the_players_are_followed_live_once_there_is_a_key() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(seen.streams.load(Ordering::Relaxed), 1, "a refused key is not tried again until it changes");
 }
+
+#[tokio::test]
+async fn a_grown_up_gives_time_or_pauses_a_player_only_with_the_pin() {
+    let (app, _frame, seen) = app_with_yoto("yoto-order").await;
+    let keep = |key: &str| {
+        let (shared, key) = (Arc::clone(&app), YotoKey::parse(key));
+        async move { blocking(move || shared.update_settings(|settings| settings.yoto_key = key)).await }
+    };
+    keep(testing::KEY).await;
+    app.yoto.check(&app.http, &YotoKey::parse(testing::KEY).unwrap()).await.unwrap();
+    let more = r#"{"player":7,"order":{"time":15}}"#;
+
+    // Without a PIN, anyone at the frame could: so nobody may.
+    let open = post(&app, "/api/yoto/order", more).await;
+    assert_eq!(open.status, StatusCode::FORBIDDEN);
+    assert!(open.json()["error"].as_str().unwrap().starts_with("Set a PIN for the frame first"));
+
+    let token = post(&app, "/api/pin", r#"{"pin":"2468"}"#).await.json()["token"].as_str().unwrap().to_string();
+    assert_eq!(post(&app, "/api/yoto/order", more).await.status, StatusCode::UNAUTHORIZED, "the PIN is asked for");
+    let given = post_as(&app, &token, "/api/yoto/order", more).await;
+    assert_eq!(given.status, StatusCode::OK);
+    assert_eq!(given.json()["players"][0]["remaining_secs"], 1800 + 15 * 60);
+    for order in [r#"{"time":-5}"#, r#""pause""#, r#"{"hold":30}"#, r#""resume""#] {
+        let reply = post_as(&app, &token, "/api/yoto/order", &format!(r#"{{"player":7,"order":{order}}}"#)).await;
+        assert_eq!(reply.status, StatusCode::OK, "{order}");
+    }
+    assert_eq!(*seen.orders.lock().unwrap(), ["extend 7 15", "extend 7 -5", "pause 7", "hold 7 30", "resume 7"]);
+
+    let silly = post_as(&app, &token, "/api/yoto/order", r#"{"player":7,"order":{"time":500}}"#).await;
+    assert_eq!(silly.status, StatusCode::BAD_REQUEST);
+    keep(testing::KEY_READ_ONLY).await;
+    let read_only = post_as(&app, &token, "/api/yoto/order", more).await;
+    assert_eq!(read_only.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(read_only.json()["error"], "The frame's key may only read: make one with the read and control scopes");
+    keep("").await;
+    let not_set_up = post_as(&app, &token, "/api/yoto/order", more).await;
+    assert_eq!(
+        (not_set_up.status, not_set_up.json()["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("Yoto Limiter is not set up"))
+    );
+    assert_eq!(seen.orders.lock().unwrap().len(), 5, "nothing refused reached Yoto Limiter");
+}

@@ -43,7 +43,7 @@ use crate::routes::todo::{
     adjust_points, approve_tick, give_award, redeem, save_awards, save_people, save_rewards, save_rules, save_tasks,
     set_approval, tick_task, todo_view,
 };
-use crate::routes::yoto::{save_yoto_key, yoto_view};
+use crate::routes::yoto::{save_yoto_key, yoto_order, yoto_view};
 use crate::{auth, store};
 
 pub(crate) mod access;
@@ -252,6 +252,7 @@ pub(crate) fn router(app: Shared) -> Router {
         .route("/api/home/forget", post(forget_home))
         .route("/api/yoto", get(yoto_view))
         .route("/api/yoto/key", post(save_yoto_key))
+        .route("/api/yoto/order", post(yoto_order))
         .route("/api/duplicates", get(duplicates))
         .route("/api/analyse", post(analyse))
         .route("/api/watching", post(watching))

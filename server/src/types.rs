@@ -1518,8 +1518,9 @@ impl<'de> Deserialize<'de> for RoadsKey {
 }
 
 /// A key for Yoto Limiter's API, as made in its app (Settings, API keys): `yl_` and then 8 to
-/// 200 letters, digits, dashes and underscores. The frame only ever reads with it, so a key
-/// with the `read` scope alone is enough. It is kept on the frame and never handed back out.
+/// 200 letters, digits, dashes and underscores. The frame reads with it, which the `read` scope
+/// allows; adding time from the frame's screen also takes the `control` scope. It is kept on
+/// the frame and never handed back out.
 #[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct YotoKey(String);
@@ -1551,6 +1552,66 @@ impl<'de> Deserialize<'de> for YotoKey {
         YotoKey::parse(&text)
             .ok_or_else(|| de::Error::custom("that does not look like a Yoto Limiter key, which starts with yl_"))
     }
+}
+
+/// Listening time to give a Yoto player today, or with a minus to take away: up to 120
+/// minutes either way, the most Yoto Limiter changes at once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct TimeChange(i8);
+
+impl TimeChange {
+    pub fn minutes(self) -> i8 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for TimeChange {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let minutes = i64::deserialize(deserializer)?;
+        i8::try_from(minutes)
+            .ok()
+            .filter(|minutes| *minutes != 0 && (-120..=120).contains(minutes))
+            .map(TimeChange)
+            .ok_or_else(|| de::Error::custom("up to 120 minutes can be given or taken at a time"))
+    }
+}
+
+/// How long a Yoto player is kept paused: a minute to a day.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct HoldMinutes(u16);
+
+impl HoldMinutes {
+    pub fn minutes(self) -> u16 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for HoldMinutes {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let minutes = u64::deserialize(deserializer)?;
+        u16::try_from(minutes)
+            .ok()
+            .filter(|minutes| (1..=1440).contains(minutes))
+            .map(HoldMinutes)
+            .ok_or_else(|| de::Error::custom("a player is kept paused for 1 to 1440 minutes"))
+    }
+}
+
+/// What a grown-up asks of a Yoto player from the frame, after the PIN: `{"time": 15}`,
+/// `{"time": -15}`, `"pause"`, `{"hold": 30}` or `"resume"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum YotoOrder {
+    /// More time today, or less.
+    Time(TimeChange),
+    /// Pause what is playing now; it can be played again at once.
+    Pause,
+    /// Pause it and keep it paused for this long.
+    Hold(HoldMinutes),
+    /// End a hold early.
+    Resume,
 }
 
 /// How someone gets to an event: every event with this name and this location is reached
@@ -2511,6 +2572,30 @@ mod tests {
             assert_eq!(YotoKey::parse(bad), None, "{bad:?}");
         }
         assert!(serde_json::from_value::<YotoKey>(json!("nope")).unwrap_err().to_string().contains("yl_"));
+    }
+
+    #[test]
+    fn what_is_asked_of_a_yoto_player_is_one_of_a_few_bounded_orders() {
+        assert_eq!(from_value::<YotoOrder>(json!("pause")).unwrap(), YotoOrder::Pause);
+        assert_eq!(from_value::<YotoOrder>(json!("resume")).unwrap(), YotoOrder::Resume);
+        for minutes in [-120, -15, 1, 120] {
+            let order = from_value::<YotoOrder>(json!({ "time": minutes })).unwrap();
+            assert!(matches!(order, YotoOrder::Time(change) if i64::from(change.minutes()) == minutes), "{minutes}");
+        }
+        assert!(matches!(from_value(json!({ "hold": 30 })).unwrap(), YotoOrder::Hold(hold) if hold.minutes() == 30));
+        for bad in [
+            json!({ "time": 0 }),
+            json!({ "time": 121 }),
+            json!({ "time": -121 }),
+            json!({ "time": 1000 }),
+            json!({ "time": 1.5 }),
+            json!({ "hold": 0 }),
+            json!({ "hold": 1441 }),
+            json!("hold"),
+            json!("stop"),
+        ] {
+            assert!(from_value::<YotoOrder>(bad.clone()).is_err(), "{bad}");
+        }
     }
 
     #[test]

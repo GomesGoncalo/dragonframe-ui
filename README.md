@@ -100,7 +100,8 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   The frame only shows these things; it cannot arm or disarm anything. See
   [The house](#the-house).
   And **Yoto**, once a Yoto Limiter key is given: how much listening time each Yoto
-  player has left today, as a disc that shrinks, for a small child to see. See [Yoto](#yoto).
+  player has left today, as a disc that shrinks, for a small child to see, and, after the
+  PIN, more time or less and a pause for grown-ups. See [Yoto](#yoto).
 - **Settings**, in five parts. If a PIN is set, a keypad asks for it each time Settings
   is opened, and nothing is shown until it is right:
   - Pictures: which photos to show (everything, only the favourites, or one of the
@@ -390,11 +391,19 @@ today's time is all used up, a moon means it is asleep (outside its allowed hour
 night) and two bars mean it is paused. The words underneath ("37 min left of 1 h · Playing The Gruffalo") are for
 grown-ups.
 
+Under each player, "For grown-ups" asks for the frame's PIN and then offers more time today
+(+5, +15, +30 min) or less (−5, −15), pausing it now, or keeping it paused for half an hour
+or an hour (and, while it is kept paused, letting it play again). It is never offered
+without a PIN, since then the child could do it too: the panel says to set one first. The
+PIN is given up again as soon as the panel closes, as for a photo's menu. Changing the
+limits themselves stays in Yoto Limiter's app.
+
 Setting it up: in Yoto Limiter's app (Plus), Settings, API keys, make a key with the
-**read** scope alone. On the management page: Frame tab, Yoto, paste it, "Use this key".
-The frame tries the key before keeping it, and Yoto appears in Utilities within half a
-minute. The frame only reads (`/api/status`, and the live `/api/events` stream, of which
-it keeps one open), so pausing and adding time stay in Yoto Limiter's app. The key is
+**read** and **control** scopes (read alone is enough for the discs; the grown-ups' button
+then says the key may only read). On the management page: Frame tab, Yoto, paste it, "Use
+this key". The frame tries the key before keeping it, and Yoto appears in Utilities within
+half a minute. The frame reads with `/api/status` and the live `/api/events` stream (it
+keeps one open), and changes players with `/api/extend`, `/api/pause` and `/api/hold`. The key is
 kept in the frame's settings and is never shown again or written to the logs. What
 Yoto Limiter says is kept in memory only. If the stream drops, the frame opens it again,
 waiting longer each time up to ten minutes. If the key stops working (deleted, or the

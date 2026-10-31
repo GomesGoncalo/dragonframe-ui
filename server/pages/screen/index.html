@@ -25,8 +25,9 @@
             whole screen), and Home: the house's alarm, sensors and cameras (home.js and
             home.css), there only once the house is connected. A ringing doorbell shows
             over any tab. And Yoto: how much listening time each Yoto player has left
-            today, as a disc that shrinks, for a small child to see (yoto.js and
-            yoto.css), there only once Yoto Limiter can be read. And Now & Next: what is
+            today, as a disc that shrinks, for a small child to see, and for grown-ups,
+            after the PIN, more time or less and a pause (yoto.js and yoto.css), there
+            only once Yoto Limiter can be read. And Now & Next: what is
             on now and what comes next, as pictures, from the events a picture rule is
             about (nownext.js and nownext.css; also a line under the clock on the
             pictures), there only once there are picture rules.
@@ -315,6 +316,18 @@
     <div class="keys" id="pick-keys"></div>
   </div>
   <button class="press" id="pick-close">Cancel</button>
+</div>
+
+<div class="grown" id="yoto-ask">
+  <h2 id="yoto-ask-said"></h2>
+  <div class="ask">
+    <div class="dots" id="yoto-dots"></div>
+    <p id="yoto-pin-note"></p>
+    <div class="keys" id="yoto-keys"></div>
+  </div>
+  <div class="acts" id="yoto-acts"></div>
+  <p class="why" id="yoto-ask-why"></p>
+  <button class="press" id="yoto-ask-close">Close</button>
 </div>
 
 <div class="menu" id="menu">

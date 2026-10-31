@@ -195,3 +195,60 @@ describe('settings', () => {
     await page.eval('showTab("pictures")');
   });
 });
+
+describe('yoto', () => {
+  test('grown-ups give time or pause a player after the PIN, and never without one', async () => {
+    const errorsBefore = page.errors.length;  // Settings, before, typed a wrong PIN on purpose
+    // The server has no Yoto Limiter here: the page is given players, and what it sends is caught.
+    await page.eval(`(() => {
+      document.body.classList.remove('no-yoto');
+      yoto = { set_up: true, in_touch: true, heard: 0, problem: null, players: [{ id: 7, name: "Mia's Yoto",
+        connected: true, locked: false, held_until: null, limited: true, limit_secs: 3600, remaining_secs: 1800,
+        used_secs: 1800, playing: true, exhausted: false, blocked: false, card: 'The Gruffalo' }] };
+      yotoAt = Date.now();
+      window.sent = [];
+      window.realSend = send;
+      send = async (path, body) => { sent.push([path, body]); return yoto; };
+      showTab('utilities');
+      choose('tools', 'tool', 'yoto');
+      drawYoto();
+    })()`);
+    const panel = () => page.eval(`[Array.prototype.slice.call($('yoto-ask').classList).sort().join(' '), $('yoto-ask-said').textContent,
+      Array.prototype.map.call(document.querySelectorAll('#yoto-acts .press'), (b) => b.textContent)]`);
+
+    await page.eval('pinSet = false; token = null');
+    await page.click('#yoto-players .grown-up');
+    assert.deepEqual(await panel(), ['grown no-pin on', "Mia's Yoto", []]);
+    assert.match(await page.eval("$('yoto-ask-why').textContent"), /^Set a PIN for the frame first/);
+    await page.click('#yoto-ask-close');
+
+    await page.eval('pinSet = true');
+    await page.click('#yoto-players .grown-up');
+    assert.deepEqual(await panel(), ['asking grown on', "Enter the PIN to change Mia's Yoto", []]);
+    await page.eval(`send = realSend; ['2', '4', '6', '8', 'OK'].forEach((key) => {
+      Array.prototype.find.call($('yoto-keys').children, (b) => b.textContent === key).click();
+    })`);
+    await until('the choices', async () => (await panel())[2].length);
+    await page.eval('send = async (path, body) => { sent.push([path, body]); return yoto; }');
+    assert.deepEqual(await panel(), ['grown on', "Mia's Yoto",
+      ['+5 min', '+15 min', '+30 min', '−5 min', '−15 min', 'Pause now', '30 min', '1 h']]);
+    // Every choice fits on the screen.
+    assert.ok(await page.eval(`Array.prototype.every.call(document.querySelectorAll('#yoto-acts .press'), (b) => {
+      const r = b.getBoundingClientRect();
+      return r.left >= 0 && r.right <= innerWidth && r.bottom <= $('yoto-ask-close').getBoundingClientRect().top;
+    })`));
+
+    await page.eval("Array.prototype.find.call(document.querySelectorAll('#yoto-acts .press'), (b) => b.textContent === '−15 min').click()");
+    assert.deepEqual(await page.eval('sent'), [['/api/yoto/order', { player: 7, order: { time: -15 } }], ['/api/lock', null]]);
+    assert.deepEqual(await page.eval(`[$('yoto-ask').classList.contains('on'), token, $('soon-what').textContent]`),
+      [false, null, '15 minutes fewer'], 'closed, the PIN given up, and said');
+
+    // Held: it can be let play again.
+    await page.eval('yoto.players[0].held_until = Date.now() / 1000 + 600; token = "made-up"');
+    await page.click('#yoto-players .grown-up');
+    assert.deepEqual((await panel())[2].slice(-3), ['Play again', '30 min', '1 h']);
+    await page.click('#yoto-ask-close');
+    await page.eval('send = realSend; showTab("pictures")');
+    assert.deepEqual(page.errors.slice(errorsBefore), []);
+  });
+});

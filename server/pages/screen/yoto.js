@@ -6,11 +6,14 @@
 // the middle, notes dance while it plays, a play sign shows it may play, a stop sign shows
 // today's time is all used up, a moon shows it is sleeping (outside the hours it may play,
 // as at night) and two bars show it is paused.
-// The words underneath are for grown-ups.
+// The words underneath are for grown-ups, and so is the quiet button under them: after the
+// frame's PIN it gives more time today or less, and pauses the player, for now or for a while.
+// It is never offered without a PIN, which is what keeps it from the child.
 //
-// It comes from Yoto Limiter, which the frame's server follows live with a key that only
-// reads (see yoto.rs). Pausing, adding time and changing limits stay in Yoto Limiter's own
-// app. This part is only there once a key is kept (see `body.no-yoto`). While it is in view
+// It comes from Yoto Limiter, which the frame's server follows live (see yoto.rs); the
+// grown-ups' button also needs the key to have the control scope. Changing the limits
+// themselves stays in Yoto Limiter's own app. This part is only there once a key is kept
+// (see `body.no-yoto`). While it is in view
 // it asks the server every few seconds and, between answers, counts down by itself.
 //
 // Loaded after screen.js, whose helpers it uses.
@@ -18,8 +21,11 @@
 const YOTO_EVERY_MS = 10 * 1000;
 // Under this much time left (seconds) the disc turns orange, and under this, red.
 const YOTO_NEARLY = 10 * 60, YOTO_LAST = 3 * 60;
+// The grown-ups' panel closes by itself when left alone for this long, and the PIN with it.
+const YOTO_ASK_FOR_MS = 60 * 1000;
 let yoto = null;      // what the server last said: { set_up, in_touch, heard, problem, players }
 let yotoAt = 0;       // when it said it, in milliseconds since 1970
+let yotoAsking = null, yotoAskTimer = 0;  // the player the grown-ups' panel is open for
 
 const yotoInView = () => tab === 'utilities' && document.body.dataset.tool === 'yoto';
 
@@ -93,6 +99,8 @@ function drawYoto() {
       panel.appendChild(element('div', 'face', ''));
       panel.appendChild(element('div', 'said', one.looks.said));
       panel.appendChild(element('div', 'more', ''));
+      const grown = panel.appendChild(element('button', 'press grown-up', 'For grown-ups'));
+      grown.onclick = () => openYotoAsk(one.player.id);
       box.appendChild(panel);
     });
   }
@@ -101,9 +109,109 @@ function drawYoto() {
     drawDisc(panel.querySelector('.face'), one.looks);
     const card = one.player.card ? (one.player.playing ? 'Playing ' : 'In it: ') + one.player.card : '';
     const more = [one.looks.more, card].filter(Boolean).join('  ·  ');
-    if (panel.lastChild.textContent !== more) panel.lastChild.textContent = more;
+    const words = panel.querySelector('.more');
+    if (words.textContent !== more) words.textContent = more;
   });
 }
+
+// --- for grown-ups: more time or less, and a pause, after the PIN ------------------------
+
+const yotoPlayer = () => (yoto ? yoto.players : []).filter((player) => player.id === yotoAsking)[0];
+
+/// The panel as things are now: no PIN set, the PIN to type, or what can be done.
+function drawYotoAsk() {
+  const player = yotoPlayer();
+  if (!player) return closeYotoAsk();
+  const locked = pinSet && !token, box = $('yoto-acts');
+  $('yoto-ask').classList.toggle('no-pin', !pinSet);
+  $('yoto-ask').classList.toggle('asking', locked);
+  $('yoto-ask-said').textContent = locked ? 'Enter the PIN to change ' + player.name : player.name;
+  $('yoto-ask-why').textContent = pinSet ? ''
+    : 'Set a PIN for the frame first (in Settings, or from a phone), so that only grown-ups can do this.';
+  box.textContent = '';
+  if (locked || !pinSet) return;
+  const row = (label, buttons) => {
+    const line = box.appendChild(element('div', 'row', ''));
+    line.appendChild(element('span', 'label', label));
+    buttons.forEach((b) => {
+      const button = line.appendChild(element('button', 'press' + (b.on ? ' on' : ''), b.text));
+      button.onclick = () => yotoOrder(b.order, b.done);
+    });
+  };
+  const time = (minutes) => ({
+    text: (minutes > 0 ? '+' : '−') + Math.abs(minutes) + ' min',
+    order: { time: minutes },
+    done: Math.abs(minutes) + (minutes > 0 ? ' more minutes' : ' minutes fewer'),
+  });
+  if (player.limited) {
+    row('More time', [time(5), time(15), time(30)]);
+    row('Less time', [time(-5), time(-15)]);
+  }
+  const held = player.held_until && player.held_until > Date.now() / 1000;
+  const pause = [];
+  if (held) pause.push({ text: 'Play again', order: 'resume', done: 'It may play again', on: true });
+  else if (player.playing && player.connected) pause.push({ text: 'Pause now', order: 'pause', done: 'Paused' });
+  pause.push({ text: '30 min', order: { hold: 30 }, done: 'Paused for 30 minutes' });
+  pause.push({ text: '1 h', order: { hold: 60 }, done: 'Paused for an hour' });
+  row(held ? 'Paused' : 'Pause', pause);
+}
+
+function openYotoAsk(id) {
+  yotoAsking = id;
+  clearYotoPin();
+  drawYotoAsk();
+  $('yoto-ask').classList.add('on');
+  stayYotoAsk();
+}
+
+function closeYotoAsk() {
+  if (yotoAsking === null) return;
+  yotoAsking = null;
+  clearTimeout(yotoAskTimer);
+  $('yoto-ask').classList.remove('on');
+  lockSettings();  // what the PIN bought was for this only
+}
+
+function stayYotoAsk() {
+  clearTimeout(yotoAskTimer);
+  yotoAskTimer = setTimeout(closeYotoAsk, YOTO_ASK_FOR_MS);
+}
+
+async function yotoOrder(order, done) {
+  const player = yotoPlayer();
+  if (!player) return closeYotoAsk();
+  try {
+    yoto = await send('/api/yoto/order', { player: player.id, order: order });
+    yotoAt = Date.now();
+  } catch (error) {
+    if (error.message === 'PIN required') {
+      token = null;
+      pinSet = true;
+      return drawYotoAsk();
+    }
+    if (/^Set a PIN/.test(error.message)) {
+      pinSet = false;
+      return drawYotoAsk();
+    }
+    $('yoto-ask-why').textContent = error.message.replace(/\.?$/, '.');
+    return;
+  }
+  closeYotoAsk();
+  drawYoto();
+  say(done, player.name);
+}
+
+const clearYotoPin = keypad($('yoto-keys'), $('yoto-dots'), $('yoto-pin-note'), (bought) => {
+  token = bought;
+  drawYotoAsk();
+});
+$('yoto-ask-close').onclick = closeYotoAsk;
+// Touches on the panel are its own: they neither step through photos nor bring up the tabs.
+$('yoto-ask').addEventListener('click', (event) => {
+  event.stopPropagation();
+  stayYotoAsk();
+  touched();
+});
 
 // Asked often while in view; the disc moves on every couple of seconds between answers.
 setInterval(() => {
