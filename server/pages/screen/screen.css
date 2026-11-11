@@ -62,6 +62,13 @@ body.bar .nav { opacity: 1; pointer-events: auto; }
 .clock { position: absolute; left: 5vmin; bottom: 4.5vmin; right: 5vmin; text-shadow: 0 .2vmin 1.2vmin rgba(0, 0, 0, .6); pointer-events: none; }
 .time { font-size: 13vmin; font-weight: 300; line-height: 1; letter-spacing: -.2vmin; }
 .date { font-size: 3.6vmin; margin-top: 1vmin; opacity: .92; }
+/* On Pictures, the time is always there; the date and weather, the morning list and what is next
+   appear with each new photo (as its date does), and while the tabs are up, then rest. */
+.clock .date, .clock .morning, .clock .nownext, .scrim { transition: opacity .8s ease; }
+body[data-tab="pictures"]:not(.dated):not(.bar) .clock .date,
+body[data-tab="pictures"]:not(.dated):not(.bar) .clock .morning,
+body[data-tab="pictures"]:not(.dated):not(.bar) .clock .nownext { opacity: 0; }
+body[data-tab="pictures"]:not(.dated):not(.bar) .scrim { opacity: .5; }
 .date .weather { margin-left: 2.4vmin; opacity: .9; }
 .morning { font-size: 2.8vmin; margin-top: .8vmin; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .morning:empty { display: none; }

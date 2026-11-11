@@ -418,7 +418,13 @@ $('tools').addEventListener('click', (event) => {
   if (event.target.dataset.tool) choose('tools', 'tool', event.target.dataset.tool);
 });
 
-choose('tools', 'tool', params.get('tool') || 'timers');
+// The launcher's tiles open a tool; "All" in the row above a tool comes back to them.
+$('launcher').addEventListener('click', (event) => {
+  const tile = event.target.closest ? event.target.closest('[data-tool]') : null;
+  if (tile) choose('tools', 'tool', tile.dataset.tool);
+});
+// Utilities opens on the launcher.
+choose('tools', 'tool', params.get('tool') || 'menu');
 drawTimers();
 drawAlarms();
 drawPomodoro();

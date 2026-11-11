@@ -176,3 +176,16 @@ details.hint p { margin-top: 8px; }
 .pager { display: flex; align-items: center; gap: 8px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .chips.pictures button { font-size: 22px; min-height: 40px; padding: 0 8px; }
+
+/* --- the Frame tab: its cards in three groups, and a line for each connection --- */
+#tab-frame .card[data-part] { display: none; }
+#tab-frame[data-part="screen"] .card[data-part="screen"], #tab-frame[data-part="connections"] .card[data-part="connections"],
+#tab-frame[data-part="display"] .card[data-part="display"] { display: block; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.chips button { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; color: var(--muted); }
+.chips button.active { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.pills:empty { display: none; }
+.pill { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 10px; font-size: 14px; cursor: pointer; }
+.pill .dot { width: 8px; height: 8px; }
+.pill.problem { border-color: var(--danger); }

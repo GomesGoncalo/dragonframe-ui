@@ -59,6 +59,8 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   twice as often in shuffled order) or to hide it. With a PIN set the keypad comes
   first, so a child cannot hide photos. A hidden photo is not deleted: it stays on the
   frame and is shown again from the management page (Photos, "Hidden from the frame").
+  On Pictures the time is always shown; the date and weather, the morning list and
+  what is next appear with each new photo and while the tabs are up, then rest.
 - **Calendar.** A Month view (dots on days with events, and "Coming up" grouped by day
   with each event's time and calendar) and a Week view (seven days with their events
   and the forecast). Each subscribed calendar has its own colour; events added by hand
@@ -69,7 +71,9 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   far they are towards the reward they are saving for, a column for tasks that are
   anyone's, and the rewards points buy. See
   [Things to do](#things-to-do).
-- **Utilities.** Timers (up to four at once, from preset lengths or one set by hand),
+- **Utilities.** Opens on one big tile for each tool (the three a child uses, Timers,
+  Now & Next and Yoto, first and largest); "All", above a tool, comes back to them.
+  Timers (up to four at once, from preset lengths or one set by hand),
   alarms (once, every day, weekdays or weekends, with a five-minute snooze) and a
   pomodoro clock (focus and break lengths can be chosen; a long break after four
   rounds). When a timer or alarm goes off, the frame chimes repeatedly and shows a
@@ -589,7 +593,12 @@ Each page in `server/pages/` is an ordinary `index.html` with its stylesheets an
 beside it (the screen's Utilities tab has its own pair, `utilities.css` and
 `utilities.js`; Home, inside it, has `home.*`; a photo's menu and the reminders are in
 `extras.*`; the To do tab is `todo.*`; music is `music.*`, and `actions.js` is where
-anything the screen is told to do is carried out). The server sends a page as one document with those put inside it, so a
+anything the screen is told to do is carried out). The screen's own script is in four
+parts that run in this order (`screen.js` for the photos and weather, `calendar.js`,
+`settings.js` with the PIN, and `tabs.js`, which starts it all); the management page's is
+in seven (`manage.js` for the photos, then `duplicates.js`, `calendar.js`, `todo.js`,
+`travel.js`, `frame.js` and `status.js`, which also wires the page up). They share one
+scope, as one file would. The server sends a page as one document with those put inside it, so a
 page arrives in one request and is never half old and half new. Changing a page means
 editing those files and rebuilding.
 

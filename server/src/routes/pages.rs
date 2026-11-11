@@ -40,6 +40,12 @@ static MANAGE: LazyLock<String> = LazyLock::new(|| {
         &[
             ("manage.css", include_str!("../../pages/manage/manage.css")),
             ("manage.js", include_str!("../../pages/manage/manage.js")),
+            ("duplicates.js", include_str!("../../pages/manage/duplicates.js")),
+            ("calendar.js", include_str!("../../pages/manage/calendar.js")),
+            ("todo.js", include_str!("../../pages/manage/todo.js")),
+            ("travel.js", include_str!("../../pages/manage/travel.js")),
+            ("frame.js", include_str!("../../pages/manage/frame.js")),
+            ("status.js", include_str!("../../pages/manage/status.js")),
         ],
     )
 });
@@ -58,6 +64,9 @@ static SCREEN: LazyLock<String> = LazyLock::new(|| {
             ("extras.css", include_str!("../../pages/screen/extras.css")),
             ("todo.css", include_str!("../../pages/screen/todo.css")),
             ("screen.js", include_str!("../../pages/screen/screen.js")),
+            ("calendar.js", include_str!("../../pages/screen/calendar.js")),
+            ("settings.js", include_str!("../../pages/screen/settings.js")),
+            ("tabs.js", include_str!("../../pages/screen/tabs.js")),
             ("utilities.js", include_str!("../../pages/screen/utilities.js")),
             ("home.js", include_str!("../../pages/screen/home.js")),
             ("yoto.js", include_str!("../../pages/screen/yoto.js")),

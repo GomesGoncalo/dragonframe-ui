@@ -2,7 +2,7 @@
    something is ringing, and the small countdown shown over the pictures. */
 body[data-tab="utilities"] #utilities { display: block; }
 #utilities { background: var(--bg); }
-body[data-tool="timers"] #tool-timers, body[data-tool="alarms"] #tool-alarms, body[data-tool="pomodoro"] #tool-pomodoro { display: block; }
+body[data-tool="menu"] #tool-menu, body[data-tool="timers"] #tool-timers, body[data-tool="alarms"] #tool-alarms, body[data-tool="pomodoro"] #tool-pomodoro { display: block; }
 
 /* One running timer or one alarm: what it is on the left, what can be done on the right. */
 .entry { margin-bottom: 1.4vmin; padding: 1.6vmin 2.4vmin; border-radius: 1.8vmin; background: var(--panel); white-space: nowrap; }
@@ -61,3 +61,33 @@ body[data-tool="timers"] #tool-timers, body[data-tool="alarms"] #tool-alarms, bo
   .entry .about { min-width: 0; display: block; margin: .4vmin 0 1vmin; }
   .ring { padding-top: 34vh; }
 }
+
+/* --- the launcher: Utilities opens on one big tile for each tool, so nothing has to be found in a row of small buttons.
+   The tools a child uses (timers, Now and Next, Yoto) come first and largest. Inside a tool, "All" comes back. --- */
+body[data-tool="menu"] #tools { display: none; }
+#launcher { text-align: center; }
+#launcher .kids, #launcher .grownups { white-space: nowrap; }
+.tile-go {
+  display: inline-block; vertical-align: top; box-sizing: border-box; margin: 0 1.2vmin 2.4vmin; border-radius: 3vmin;
+  background: var(--panel); color: var(--ink); text-align: center; font-size: 2.8vmin;
+}
+.tile-go:active { opacity: .7; }
+.tile-go svg { display: block; width: 8vmin; height: 8vmin; margin: 0 auto 1.2vmin; }
+#launcher .grownups .tile-go { width: 21vmin; padding: 2.6vmin 1vmin; font-size: 2.6vmin; color: var(--soft); }
+#launcher .grownups .tile-go svg { width: 6vmin; height: 6vmin; }
+#launcher .kids .tile-go { width: 30vmin; padding: 4vmin 1vmin 3.4vmin; font-size: 3.6vmin; font-weight: 500; }
+#launcher .kids .tile-go svg { width: 15vmin; height: 15vmin; stroke-width: 1.7; }
+/* Each tile of the three a child uses has its own colour, as the discs inside do. */
+.tile-go.kid[data-tool="timers"] svg { stroke: var(--red); }
+.tile-go.kid[data-tool="nownext"] svg { stroke: var(--blue); }
+.tile-go.kid[data-tool="yoto"] svg { stroke: var(--green); }
+@media (orientation: portrait) {
+  #launcher .kids .tile-go { width: 44%; margin-bottom: 2.4vmin; }
+  #launcher .kids, #launcher .grownups { white-space: normal; }
+  #launcher .grownups .tile-go { width: 44%; }
+}
+/* Inside a tool a child uses, the row of small words gives way to one big way back. */
+body[data-tool="timers"] #tools button:not([data-tool="menu"]), body[data-tool="nownext"] #tools button:not([data-tool="menu"]),
+body[data-tool="yoto"] #tools button:not([data-tool="menu"]) { display: none; }
+body[data-tool="timers"] #tools [data-tool="menu"], body[data-tool="nownext"] #tools [data-tool="menu"],
+body[data-tool="yoto"] #tools [data-tool="menu"] { font-size: 3.2vmin; padding: 1.6vmin 4.4vmin 1.6vmin 3vmin; border-radius: 4vmin; }

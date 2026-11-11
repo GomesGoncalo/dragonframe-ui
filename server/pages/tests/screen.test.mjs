@@ -32,6 +32,22 @@ describe('loading', () => {
     assert.equal(await page.eval('getComputedStyle(document.querySelector("[data-tool=yoto]")).display'), 'none');
   });
 
+  test('Utilities opens on a tile for each tool, and "All" comes back to them', async () => {
+    const shown = (sel) => page.eval(`getComputedStyle(document.querySelector('${sel}')).display`);
+    await page.eval('showTab("utilities")');
+    assert.equal(await page.eval('document.body.dataset.tool'), 'menu');
+    assert.equal(await shown('#tool-menu'), 'block');
+    assert.equal(await shown('#tools'), 'none');
+    assert.equal(await shown('#launcher [data-tool=yoto]'), 'none');  // not offered yet
+    assert.equal(await shown('#launcher [data-tool=timers]'), 'inline-block');
+    await page.click('#launcher [data-tool=alarms]');
+    assert.equal(await shown('#tool-alarms'), 'block');
+    assert.equal(await shown('#tool-menu'), 'none');
+    await page.click('#tools [data-tool=menu]');
+    assert.equal(await page.eval('document.body.dataset.tool'), 'menu');
+    await page.eval('showTab("pictures")');
+  });
+
   test('with no photos it says it is waiting for them', async () => {
     await until('the notice', () => page.eval('$("notice").textContent.includes("No photos")'));
   });

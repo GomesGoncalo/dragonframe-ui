@@ -191,7 +191,23 @@
 <div class="view" id="utilities">
   <div class="top"><h1>Utilities</h1><div class="now" id="now-too"></div></div>
   <div class="switch" id="tools">
-    <button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button><button data-tool="nownext" data-icon="nownext">Now &amp; Next</button><button data-tool="yoto" data-icon="yoto">Yoto</button>
+    <button data-tool="menu" data-icon="back">All</button><button data-tool="timers" data-icon="utilities">Timers</button><button data-tool="alarms" data-icon="alarm">Alarms</button><button data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button><button data-tool="music" data-icon="music">Music</button><button data-tool="home" data-icon="home">Home</button><button data-tool="nownext" data-icon="nownext">Now &amp; Next</button><button data-tool="yoto" data-icon="yoto">Yoto</button>
+  </div>
+
+  <div class="part" id="tool-menu">
+    <div class="launcher" id="launcher">
+      <div class="kids">
+        <button class="tile-go kid" data-tool="timers" data-icon="utilities">Timers</button>
+        <button class="tile-go kid" data-tool="nownext" data-icon="nownext">Now &amp; Next</button>
+        <button class="tile-go kid" data-tool="yoto" data-icon="yoto">Yoto</button>
+      </div>
+      <div class="grownups">
+        <button class="tile-go" data-tool="alarms" data-icon="alarm">Alarms</button>
+        <button class="tile-go" data-tool="pomodoro" data-icon="pomodoro">Pomodoro</button>
+        <button class="tile-go" data-tool="music" data-icon="music">Music</button>
+        <button class="tile-go" data-tool="home" data-icon="home">Home</button>
+      </div>
+    </div>
   </div>
 
   <div class="part" id="tool-timers">
@@ -373,6 +389,9 @@
 <div class="asleep">The screen is off (night mode). On the frame this is a dark screen.</div>
 
 <script src="screen.js"></script>
+<script src="calendar.js"></script>
+<script src="settings.js"></script>
+<script src="tabs.js"></script>
 <script src="utilities.js"></script>
 <script src="home.js"></script>
 <script src="yoto.js"></script>

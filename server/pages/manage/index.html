@@ -267,8 +267,12 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
     </div>
   </section>
 
-  <section id="tab-frame" class="hidden">
-    <div class="card narrow">
+  <section id="tab-frame" class="hidden" data-part="screen">
+    <div class="pills" id="connections"></div>
+    <div class="chips" id="frameParts">
+      <button data-part="screen">Screen</button><button data-part="connections">Connections</button><button data-part="display">Night, sound and pictures</button>
+    </div>
+    <div class="card narrow" data-part="screen">
       <h2>Screen</h2>
       <p class="muted" id="frScreen"></p>
       <div class="bar" style="margin: 14px 0 0">
@@ -276,7 +280,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <button class="btn" id="frWifi">Open Wi-Fi settings on the frame</button>
       </div>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="screen">
       <h2>Remote control</h2>
       <p class="muted" id="rcSaid"></p>
       <div class="bar" style="margin: 14px 0 10px">
@@ -307,7 +311,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <button class="btn" id="rcSay">Show the note</button>
       </div>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="connections">
       <h2>Radio stations</h2>
       <p class="muted">The frame plays these itself, from each station's own address: on its screen under Utilities, Music; from the remote control above; or by a reminder rule (Calendar), which makes a station that starts with an event an alarm clock. Find a station by its name, in the directory at radio-browser.info (which is sent only what is typed here).</p>
       <p class="muted" id="rsNone"></p>
@@ -325,13 +329,13 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         </div>
       </details>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="connections">
       <h2>Spotify</h2>
       <p class="muted" id="spSaid"></p>
       <label class="row"><input type="checkbox" id="spOn"> <span>Let Spotify's apps play on the frame</span></label>
       <p class="muted">With this on, the frame appears as a speaker called "Frame" in the Spotify app of anyone on this Wi-Fi (the devices button, beside the play button), as a smart speaker does. It needs Spotify Premium. Nobody signs in on the frame and nothing of anyone's account is kept there: the app hands over what is needed when the frame is chosen, and after the frame restarts it has to be chosen again. Starting a radio station hands the music back to the app.</p>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="connections">
       <h2>House</h2>
       <p class="muted" id="frHouse"></p>
       <p class="muted">The frame can show the doorbell, cameras, alarm and door sensors that Home Assistant knows about. It does not sign in to them: a small relay beside Home Assistant tells the frame what to show, and proves itself with a key made here. See the README for setting the relay up.</p>
@@ -341,7 +345,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <button class="btn danger hidden" id="frDisconnect">Disconnect the house</button>
       </div>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="connections">
       <h2>Yoto</h2>
       <p class="muted" id="ytSaid"></p>
       <p class="muted">The frame can show how much listening time each Yoto player has left today, as a disc that shrinks, in Utilities on its screen. It reads this from Lullimit with an API key (Plus; in its app: Settings, API keys). Make the key with the <b>read</b> and <b>control</b> scopes: with control, a grown-up can give more time or less and pause a player from the frame's screen, after the frame's PIN (never without a PIN). Changing the limits stays in Lullimit's app. The key is kept on the frame and never shown again.</p>
@@ -351,7 +355,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         <button class="btn danger hidden" id="ytForget">Forget the key</button>
       </div>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="display">
       <h2>Night</h2>
       <p class="muted">The frame switches its screen off for the night and back on in the morning. It can also go dark whenever the room does. A frame that was touched in the last five minutes stays on.</p>
       <label class="row"><input type="checkbox" id="frNight"> <span>Switch the screen off at night</span></label>
@@ -359,7 +363,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
       <label class="row"><input type="checkbox" id="frDark"> <span>Also off whenever the room has been dark for two minutes</span></label>
       <p class="muted" id="frLight"></p>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="display">
       <h2>Sound</h2>
       <label class="row"><span>Chime for calendar events</span>
         <select id="frChime">
@@ -368,7 +372,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
         </select></label>
       <p class="muted">Events with a time are announced with a soft chime and a note on the screen. Nothing sounds while the screen is off for the night.</p>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="display">
       <h2>Weather</h2>
       <p class="muted" id="frPlace"></p>
       <div class="bar" style="margin: 14px 0 0">
@@ -378,7 +382,7 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
       </div>
       <p class="muted" style="margin-top: 10px">The forecast comes from Open-Meteo, which is sent only the place's position on the map.</p>
     </div>
-    <div class="card narrow">
+    <div class="card narrow" data-part="display">
       <h2>Pictures</h2>
       <label class="row"><span>Show</span> <select id="frShow"></select></label>
       <p class="muted">Favourites are chosen on the frame (press and hold a photo) or here, by opening a photo under Photos. A choice with no photos to it shows them all.</p>
@@ -433,5 +437,11 @@ try { const t = localStorage.getItem("frameTheme"), h = new Date().getHours(); i
 <div class="toast" id="toast" role="status"></div>
 
 <script src="manage.js"></script>
+<script src="duplicates.js"></script>
+<script src="calendar.js"></script>
+<script src="todo.js"></script>
+<script src="travel.js"></script>
+<script src="frame.js"></script>
+<script src="status.js"></script>
 </body>
 </html>
