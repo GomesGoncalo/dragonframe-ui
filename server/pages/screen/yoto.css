@@ -1,7 +1,7 @@
 /* How Yoto looks, a part of the Utilities tab: a disc for each Yoto player that shrinks as
    its listening time is used, big enough to see from across the room. */
 body[data-tool="yoto"] #tool-yoto { display: block; }
-/* Until Yoto Limiter can be read there is no Yoto to go to. */
+/* Until Lullimit can be read there is no Yoto to go to. */
 body.no-yoto [data-tool="yoto"] { display: none; }
 
 #yoto-note { margin: 0 0 1.4vmin; font-size: 2.5vmin; color: var(--orange); text-align: center; }

@@ -16,7 +16,7 @@
 //!   them, and syncing albums.
 //! - `ical`, `calendar`, `weather`: calendars and the forecast.
 //! - `home`: the doorbell, cameras, alarm and sensors, as a relay elsewhere reports them.
-//! - `yoto`: how much listening time the Yoto players have left, read from Yoto Limiter.
+//! - `yoto`: how much listening time the Yoto players have left, read from Lullimit.
 //! - `device`, `night`: the frame itself (Wi-Fi, screen, light) and night mode.
 //! - `auth`, `types`, `dns`, `plain`: the PIN, values checked where they enter,
 //!   and two pieces of networking the frame needs.

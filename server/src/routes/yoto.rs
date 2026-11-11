@@ -1,5 +1,5 @@
 //! The Yoto players: how much listening time they have left, for the frame's screen, what a
-//! grown-up asks of them there (more time or less, a pause), and the key for Yoto Limiter.
+//! grown-up asks of them there (more time or less, a pause), and the key for Lullimit.
 
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ use crate::types::{YotoKey, YotoOrder};
 
 #[derive(Deserialize)]
 pub(crate) struct YotoKeyRequest {
-    /// The key, or null to stop reading Yoto Limiter.
+    /// The key, or null to stop reading Lullimit.
     pub(crate) key: Option<YotoKey>,
 }
 
@@ -48,7 +48,7 @@ pub(crate) async fn yoto_order(State(app): State<Shared>, Parsed(request): Parse
             "Set a PIN for the frame first, so that only grown-ups can change the Yoto players",
         ));
     }
-    let key = settings.yoto_key.ok_or_else(|| ApiError::bad_request("Yoto Limiter is not set up"))?;
+    let key = settings.yoto_key.ok_or_else(|| ApiError::bad_request("Lullimit is not set up"))?;
     app.yoto
         .order(&app.http, &key, request.player, request.order)
         .await
@@ -59,7 +59,7 @@ pub(crate) async fn yoto_order(State(app): State<Shared>, Parsed(request): Parse
     Ok(Json(view))
 }
 
-/// Keep a key for Yoto Limiter, once it has been tried and works, or with null forget it.
+/// Keep a key for Lullimit, once it has been tried and works, or with null forget it.
 /// It is never handed back.
 pub(crate) async fn save_yoto_key(State(app): State<Shared>, Parsed(request): Parsed<YotoKeyRequest>) -> ApiResult {
     if let Some(key) = &request.key {
@@ -75,7 +75,7 @@ pub(crate) async fn save_yoto_key(State(app): State<Shared>, Parsed(request): Pa
         app.yoto.forget();
     }
     app.yoto.key_changed();
-    info!(set_up, "the Yoto Limiter key was changed");
+    info!(set_up, "the Lullimit key was changed");
     let mut view = app.yoto.view();
     view["set_up"] = json!(set_up);
     Ok(Json(view))

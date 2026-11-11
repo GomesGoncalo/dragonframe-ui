@@ -548,7 +548,7 @@ pub struct Settings {
     pub stations: Vec<Station>,
     /// Whether Spotify's apps may play on the frame.
     pub spotify: bool,
-    /// The key for reading Yoto Limiter: how much listening time the Yoto players have left.
+    /// The key for reading Lullimit: how much listening time the Yoto players have left.
     pub yoto_key: Option<YotoKey>,
 }
 

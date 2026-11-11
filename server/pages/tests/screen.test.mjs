@@ -26,7 +26,7 @@ describe('loading', () => {
     assert.deepEqual(page.errors, []);
   });
 
-  test('Yoto is not offered in Utilities until Yoto Limiter can be read', async () => {
+  test('Yoto is not offered in Utilities until Lullimit can be read', async () => {
     await until('the server being heard', () => page.eval('heard'));
     assert.equal(await page.eval('document.body.classList.contains("no-yoto")'), true);
     assert.equal(await page.eval('getComputedStyle(document.querySelector("[data-tool=yoto]")).display'), 'none');
@@ -199,7 +199,7 @@ describe('settings', () => {
 describe('yoto', () => {
   test('grown-ups give time or pause a player after the PIN, and never without one', async () => {
     const errorsBefore = page.errors.length;  // Settings, before, typed a wrong PIN on purpose
-    // The server has no Yoto Limiter here: the page is given players, and what it sends is caught.
+    // The server has no Lullimit here: the page is given players, and what it sends is caught.
     await page.eval(`(() => {
       document.body.classList.remove('no-yoto');
       yoto = { set_up: true, in_touch: true, heard: 0, problem: null, players: [{ id: 7, name: "Mia's Yoto",

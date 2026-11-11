@@ -1517,7 +1517,7 @@ impl<'de> Deserialize<'de> for RoadsKey {
     }
 }
 
-/// A key for Yoto Limiter's API, as made in its app (Settings, API keys): `yl_` and then 8 to
+/// A key for Lullimit's API, as made in its app (Settings, API keys): `yl_` and then 8 to
 /// 200 letters, digits, dashes and underscores. The frame reads with it, which the `read` scope
 /// allows; adding time from the frame's screen also takes the `control` scope. It is kept on
 /// the frame and never handed back out.
@@ -1550,12 +1550,12 @@ impl<'de> Deserialize<'de> for YotoKey {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
         YotoKey::parse(&text)
-            .ok_or_else(|| de::Error::custom("that does not look like a Yoto Limiter key, which starts with yl_"))
+            .ok_or_else(|| de::Error::custom("that does not look like a Lullimit key, which starts with yl_"))
     }
 }
 
 /// Listening time to give a Yoto player today, or with a minus to take away: up to 120
-/// minutes either way, the most Yoto Limiter changes at once.
+/// minutes either way, the most Lullimit changes at once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct TimeChange(i8);

@@ -1186,7 +1186,7 @@ async function sayAlive() {
     // Home, in Utilities, is there only while the house is connected.
     document.body.classList.toggle('no-home', !reply.home);
     if (!reply.home && document.body.dataset.tool === 'home') choose('tools', 'tool', 'timers');
-    // Yoto likewise, while Yoto Limiter can be read.
+    // Yoto likewise, while Lullimit can be read.
     const yotoBefore = !document.body.classList.contains('no-yoto');
     document.body.classList.toggle('no-yoto', !reply.yoto);
     if (!reply.yoto && document.body.dataset.tool === 'yoto') choose('tools', 'tool', 'timers');

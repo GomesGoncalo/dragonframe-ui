@@ -1,11 +1,11 @@
-//! How much listening time the Yoto players have left, from Yoto Limiter
-//! (<https://yoto-limiter.com/developers>).
+//! How much listening time the Yoto players have left, from Lullimit
+//! (<https://lullimit.com/developers>).
 //!
-//! The frame keeps one live stream of Yoto Limiter's status open (server-sent events, sent at
+//! The frame keeps one live stream of Lullimit's status open (server-sent events, sent at
 //! once, whenever a player changes, and at least every minute), which a key with the `read`
 //! scope allows. After the frame's PIN, and with a key that also has the `control` scope, it
 //! gives a player more time today or less, and pauses it, for a moment or for a while.
-//! Changing the limits themselves stays in Yoto Limiter's own app.
+//! Changing the limits themselves stays in Lullimit's own app.
 //! What is heard is kept in memory only: it is out of date within minutes anyway.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -23,7 +23,7 @@ use crate::app::{blocking, Moment};
 use crate::store::{self, Config};
 use crate::types::{YotoKey, YotoOrder};
 
-pub const YOTO_URL: &str = "https://yoto-limiter.com";
+pub const YOTO_URL: &str = "https://lullimit.com";
 /// The stream says something at least every 25 seconds (a comment, if nothing else); this
 /// long without a word and it is given up and opened again.
 const QUIET_LIMIT: Duration = Duration::from_secs(90);
@@ -40,29 +40,27 @@ const LONGEST_LINE: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum YotoError {
-    #[error("Yoto Limiter could not be reached ({0})")]
+    #[error("Lullimit could not be reached ({0})")]
     Unreachable(String),
-    #[error("Yoto Limiter does not know that key: it may have been mistyped or deleted")]
+    #[error("Lullimit does not know that key: it may have been mistyped or deleted")]
     UnknownKey,
-    #[error("the Yoto Limiter account is not on Plus, which API keys need")]
+    #[error("the Lullimit account is not on Plus, which API keys need")]
     NeedsPlus,
     #[error("the key is not allowed to read: make one with the read scope")]
     NotAllowed,
-    #[error(
-        "the key already has two live connections open, the most Yoto Limiter allows; another app may be using it"
-    )]
+    #[error("the key already has two live connections open, the most Lullimit allows; another app may be using it")]
     TooManyStreams,
-    #[error("Yoto Limiter answered with status {0}")]
+    #[error("Lullimit answered with status {0}")]
     Refused(u16),
-    #[error("Yoto Limiter sent something that could not be read")]
+    #[error("Lullimit sent something that could not be read")]
     Unreadable,
-    #[error("Yoto Limiter's live status went quiet")]
+    #[error("Lullimit's live status went quiet")]
     Quiet,
     #[error("the frame's key may only read: make one with the read and control scopes")]
     NoControl,
-    #[error("Yoto Limiter does not know that player")]
+    #[error("Lullimit does not know that player")]
     UnknownPlayer,
-    #[error("Yoto Limiter would not do that: {0}")]
+    #[error("Lullimit would not do that: {0}")]
     WouldNotDo(String),
 }
 
@@ -236,7 +234,7 @@ impl Events {
 }
 
 impl Yoto {
-    /// Yoto Limiter at this address (its own, or a stand-in during tests).
+    /// Lullimit at this address (its own, or a stand-in during tests).
     pub fn new(base: &str) -> Yoto {
         Yoto { base: base.trim_end_matches('/').to_string(), known: Mutex::default(), key_changed: Notify::new() }
     }
@@ -283,7 +281,7 @@ impl Yoto {
     }
 
     /// Ask something of a player. What it changes is shown at once rather than when the live
-    /// status next says so: the time Yoto Limiter answers with, or when a hold ends.
+    /// status next says so: the time Lullimit answers with, or when a hold ends.
     pub async fn order(
         &self,
         http: &reqwest::Client,
@@ -341,7 +339,7 @@ impl Yoto {
         if !response.status().is_success() {
             return YotoError::from_status(response.status().as_u16());
         }
-        debug!("following Yoto Limiter's live status");
+        debug!("following Lullimit's live status");
         let mut events = Events::default();
         loop {
             let piece = match tokio::time::timeout(QUIET_LIMIT, response.chunk()).await {
@@ -357,7 +355,7 @@ impl Yoto {
             for data in statuses {
                 match serde_json::from_str::<Status>(&data) {
                     Ok(status) => self.hear(status),
-                    Err(e) => debug!(error = %e, "a Yoto Limiter status could not be read"),
+                    Err(e) => debug!(error = %e, "a Lullimit status could not be read"),
                 }
             }
         }
@@ -385,7 +383,7 @@ impl Yoto {
             if self.known().heard.is_some_and(|heard| heard.elapsed() < QUIET_LIMIT) {
                 pause = RETRY_FIRST;
             }
-            warn!(error = %problem, "Yoto Limiter's live status stopped");
+            warn!(error = %problem, "Lullimit's live status stopped");
             let lasting = problem.lasting();
             self.trouble(problem);
             if lasting {
@@ -515,7 +513,7 @@ pub mod testing {
         player: i64,
     }
 
-    /// What the control endpoints check, in Yoto Limiter's order: the key, its scope, the player.
+    /// What the control endpoints check, in Lullimit's order: the key, its scope, the player.
     fn may_control(headers: &HeaderMap, player: i64) -> Result<(), (StatusCode, &'static str)> {
         key(headers).map_err(|code| (code, "unknown API key"))?;
         if headers.get("authorization").and_then(|value| value.to_str().ok())
@@ -566,7 +564,7 @@ pub mod testing {
         }
     }
 
-    /// Start a stand-in for Yoto Limiter and return its address. The live status sends a
+    /// Start a stand-in for Lullimit and return its address. The live status sends a
     /// status with 30 minutes left at once, a comment, then one with 29 minutes left, and stays open.
     pub async fn yoto_limiter() -> (String, Arc<Seen>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -696,7 +694,7 @@ mod tests {
         let too_much = yoto.order(&http, &key(testing::KEY), 7, order(json!({ "time": 90 }))).await;
         assert_eq!(
             too_much.unwrap_err().to_string(),
-            "Yoto Limiter would not do that: That is more than max_extension_minutes allows today"
+            "Lullimit would not do that: That is more than max_extension_minutes allows today"
         );
         let nobody = yoto.order(&http, &key(testing::KEY), 99, order(json!("pause"))).await;
         assert_eq!(nobody, Err(YotoError::UnknownPlayer));

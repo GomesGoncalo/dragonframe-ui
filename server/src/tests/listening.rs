@@ -1,11 +1,11 @@
-//! Route tests: the Yoto players' listening time, from a stand-in for Yoto Limiter.
+//! Route tests: the Yoto players' listening time, from a stand-in for Lullimit.
 
 use std::sync::atomic::Ordering;
 
 use super::*;
 use crate::yoto::{testing, Yoto};
 
-/// An app that reads its Yoto players from a stand-in for Yoto Limiter.
+/// An app that reads its Yoto players from a stand-in for Lullimit.
 async fn app_with_yoto(name: &str) -> (Shared, TempFrame, Arc<testing::Seen>) {
     let (base, seen) = testing::yoto_limiter().await;
     let frame = TempFrame::new(&format!("route-{name}"));
@@ -27,7 +27,7 @@ async fn a_key_is_kept_only_once_it_works_and_is_never_handed_back() {
     assert!(malformed.json()["error"].as_str().unwrap().contains("yl_"));
     let unknown = post(&app, "/api/yoto/key", r#"{"key":"yl_wrong0123456789"}"#).await;
     assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
-    assert_eq!(unknown.json()["error"], "Yoto Limiter does not know that key: it may have been mistyped or deleted");
+    assert_eq!(unknown.json()["error"], "Lullimit does not know that key: it may have been mistyped or deleted");
     let lapsed = post(&app, "/api/yoto/key", &json!({ "key": testing::KEY_WITHOUT_PLUS }).to_string()).await;
     assert!(lapsed.json()["error"].as_str().unwrap().contains("not on Plus"));
     assert_eq!(store::load_settings(&frame.0).yoto_key, None, "a key that does not work is not kept");
@@ -131,7 +131,7 @@ async fn a_grown_up_gives_time_or_pauses_a_player_only_with_the_pin() {
     let not_set_up = post_as(&app, &token, "/api/yoto/order", more).await;
     assert_eq!(
         (not_set_up.status, not_set_up.json()["error"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("Yoto Limiter is not set up"))
+        (StatusCode::BAD_REQUEST, Some("Lullimit is not set up"))
     );
-    assert_eq!(seen.orders.lock().unwrap().len(), 5, "nothing refused reached Yoto Limiter");
+    assert_eq!(seen.orders.lock().unwrap().len(), 5, "nothing refused reached Lullimit");
 }

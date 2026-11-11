@@ -62,7 +62,7 @@ pub(crate) struct App {
     pub(crate) radio: Radio,
     /// The frame as a speaker for Spotify's apps.
     pub(crate) spotify: Arc<Spotify>,
-    /// How much listening time the Yoto players have left, as Yoto Limiter says.
+    /// How much listening time the Yoto players have left, as Lullimit says.
     pub(crate) yoto: Arc<Yoto>,
     /// How many times the calendar has been changed from the page (an event, a calendar, a
     /// rule, a trip), so the screen can tell there is something new to fetch.

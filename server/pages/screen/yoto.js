@@ -10,9 +10,9 @@
 // frame's PIN it gives more time today or less, and pauses the player, for now or for a while.
 // It is never offered without a PIN, which is what keeps it from the child.
 //
-// It comes from Yoto Limiter, which the frame's server follows live (see yoto.rs); the
+// It comes from Lullimit, which the frame's server follows live (see yoto.rs); the
 // grown-ups' button also needs the key to have the control scope. Changing the limits
-// themselves stays in Yoto Limiter's own app. This part is only there once a key is kept
+// themselves stays in Lullimit's own app. This part is only there once a key is kept
 // (see `body.no-yoto`). While it is in view
 // it asks the server every few seconds and, between answers, counts down by itself.
 //
@@ -76,8 +76,8 @@ function drawYoto() {
   if (!yoto) return;
   const since = (yoto.heard || 0) + (Date.now() - yotoAt) / 1000;
   const note = yoto.problem ? yoto.problem.charAt(0).toUpperCase() + yoto.problem.slice(1) + '.'
-    : !yoto.in_touch && yoto.players.length ? 'Yoto Limiter has not been heard from lately. This is how things were.'
-    : !yoto.players.length ? 'Waiting to hear from Yoto Limiter…' : '';
+    : !yoto.in_touch && yoto.players.length ? 'Lullimit has not been heard from lately. This is how things were.'
+    : !yoto.players.length ? 'Waiting to hear from Lullimit…' : '';
   $('yoto-note').textContent = note;
 
   const box = $('yoto-players');
