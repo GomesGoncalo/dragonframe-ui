@@ -14,6 +14,7 @@ with another key cannot replace it on the frame without being uninstalled first.
 """
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -33,18 +34,22 @@ KEY_PASSWORD = "frame-screen"  # the key only says "built on this computer"; it 
 OUT = APP / "build"
 APK = OUT / "FrameScreen.apk"
 PACKAGE = "frame.screen"
-JDK_URL = "https://api.adoptium.net/v3/binary/latest/17/ga/mac/aarch64/jdk/hotspot/normal/eclipse"
-SDK_TOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip"
+MAC = sys.platform == "darwin"
+ARCH = "aarch64" if platform.machine() in ("arm64", "aarch64") else "x64"
+JDK_URL = f"https://api.adoptium.net/v3/binary/latest/17/ga/{'mac' if MAC else 'linux'}/{ARCH}/jdk/hotspot/normal/eclipse"
+SDK_TOOLS_URL = f"https://dl.google.com/android/repository/commandlinetools-{'mac' if MAC else 'linux'}-11076708_latest.zip"
 
 
 def java_home():
-    found = sorted(TOOLS.glob("jdk-*/Contents/Home"))
+    found = sorted(TOOLS.glob("jdk-*/Contents/Home" if MAC else "jdk-*"))
     return found[-1] if found else None
 
 
 def fetch(url, to):
     print(f"==> downloading {url}")
-    with urllib.request.urlopen(url, timeout=600) as reply, open(to, "wb") as out:
+    # Adoptium answers 403 to Python's own User-Agent.
+    request = urllib.request.Request(url, headers={"User-Agent": "frame-screen-build"})
+    with urllib.request.urlopen(request, timeout=600) as reply, open(to, "wb") as out:
         shutil.copyfileobj(reply, out)
 
 
@@ -103,6 +108,4 @@ def build():
 
 
 if __name__ == "__main__":
-    if sys.platform != "darwin":
-        sys.exit("The tool downloads here are the macOS ones; adjust JDK_URL and SDK_TOOLS_URL for another system.")
     print(f"Built {build()}")
