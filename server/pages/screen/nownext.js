@@ -64,6 +64,10 @@ function panelsOf(found, now) {
     const e = found.tomorrow;
     panels.push({ kind: 'tomorrow', heading: 'Tomorrow', event: e, share: 1, more: e.allDay ? 'all day' : 'at ' + clockText(e.start) });
   }
+  // Nothing timed to show, but a whole-day event is on: it is what today is.
+  if (!panels.length && found.today.length) {
+    panels.push({ kind: 'now', heading: 'Today', event: found.today[0], share: 1, more: 'all day' });
+  }
   return panels;
 }
 
