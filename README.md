@@ -59,8 +59,9 @@ Settings go back to Pictures when left alone (5 minutes unless set otherwise).
   twice as often in shuffled order) or to hide it. With a PIN set the keypad comes
   first, so a child cannot hide photos. A hidden photo is not deleted: it stays on the
   frame and is shown again from the management page (Photos, "Hidden from the frame").
-  On Pictures the time is always shown; the date and weather, the morning list and
-  what is next appear with each new photo and while the tabs are up, then rest.
+  On Pictures the time, date and weather, the morning list and what is next are
+  always shown, so they can be read without a touch; the clock moves up clear of the
+  tabs while they are up.
 - **Calendar.** A Month view (dots on days with events, and "Coming up" grouped by day
   with each event's time and calendar) and a Week view (seven days with their events
   and the forecast). Each subscribed calendar has its own colour; events added by hand
